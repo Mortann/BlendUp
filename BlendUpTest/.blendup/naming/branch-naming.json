@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "branch_naming_rules",
+  "patterns": {
+    "asset": "asset/{assetName}-{workType}",
+    "task": "task/{taskCode}-{slug}",
+    "fix": "fix/{assetId}-{slug}",
+    "review": "review/{assetName}-validation"
+  },
+  "examples": [
+    "asset/PROP_Barrel_01-modeling",
+    "asset/CHR_Knight_01-rig",
+    "task/BU-124-door-interactable",
+    "fix/asset_7a42-unity-import",
+    "review/PROP_Barrel_01-validation"
+  ]
+}
+

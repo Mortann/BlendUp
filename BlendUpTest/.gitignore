@@ -1,0 +1,31 @@
+# Unity generated folders
+Unity/Library/
+Unity/Temp/
+Unity/Obj/
+Unity/Build/
+Unity/Builds/
+Unity/Logs/
+Unity/UserSettings/
+
+# Unity generated files
+Unity/*.csproj
+Unity/*.sln
+Unity/*.slnx
+Unity/*.user
+Unity/*.pidb
+Unity/*.booproj
+Unity/*.svd
+Unity/*.pdb
+Unity/*.mdb
+Unity/sysinfo.txt
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+
+# BlendUp local-only generated cache, if created later
+.blendup/cache/
+.blendup/tmp/
+

@@ -1,0 +1,18 @@
+{
+  "name": "blendup",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BlendUp production workspace.",
+  "type": "module",
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @blendup/desktop run dev",
+    "build": "npm --workspace @blendup/desktop run build",
+    "typecheck": "npm --workspace @blendup/desktop run typecheck",
+    "preview": "npm --workspace @blendup/desktop run preview",
+    "tauri:dev": "npm --workspace @blendup/desktop run tauri:dev",
+    "tauri:build": "npm --workspace @blendup/desktop run tauri:build"
+  }
+}

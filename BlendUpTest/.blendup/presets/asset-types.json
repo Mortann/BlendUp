@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "kind": "asset_type_presets",
+  "items": [
+    {
+      "id": "static_mesh",
+      "displayName": "Static Mesh",
+      "prefix": "PROP",
+      "defaultExportProfile": "static_mesh_default",
+      "defaultQualityBudget": "static_mesh_default"
+    },
+    {
+      "id": "prop",
+      "displayName": "Prop",
+      "prefix": "PROP",
+      "defaultExportProfile": "static_mesh_default",
+      "defaultQualityBudget": "prop_default"
+    },
+    {
+      "id": "environment_piece",
+      "displayName": "Environment Piece",
+      "prefix": "ENV",
+      "defaultExportProfile": "environment_piece_default",
+      "defaultQualityBudget": "environment_piece_default"
+    },
+    {
+      "id": "material",
+      "displayName": "Material",
+      "prefix": "MAT",
+      "defaultExportProfile": null,
+      "defaultQualityBudget": "material_default"
+    },
+    {
+      "id": "texture",
+      "displayName": "Texture",
+      "prefix": "TEX",
+      "defaultExportProfile": null,
+      "defaultQualityBudget": "texture_default"
+    },
+    {
+      "id": "ui_image",
+      "displayName": "UI Image",
+      "prefix": "UI",
+      "defaultExportProfile": null,
+      "defaultQualityBudget": "ui_image_default"
+    }
+  ]
+}
+
