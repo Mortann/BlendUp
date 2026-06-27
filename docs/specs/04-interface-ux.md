@@ -123,9 +123,17 @@ Actions V1 :
 
 - ouvrir un projet via selecteur de dossier natif ;
 - ouvrir un projet par chemin si besoin ;
+- creer un projet via assistant ;
 - rouvrir un projet recent ;
-- ouvrir le projet test pendant la production ;
-- reserver l'action creer un projet pour l'assistant de creation.
+- ouvrir le projet test pendant la production.
+
+L'assistant de creation doit rester compact :
+
+- nom projet ;
+- dossier racine ;
+- option pour preparer les dossiers Unity ;
+- option pour ajouter un `.gitignore` adapte ;
+- ouverture automatique du projet cree sur le dashboard.
 
 L'application ne doit pas charger automatiquement un snapshot de demo comme si c'etait un vrai projet. Le snapshot reste seulement un secours de developpement quand Tauri n'est pas disponible.
 
@@ -460,3 +468,24 @@ Exemples :
 - un lead peut changer les conventions.
 
 Ces permissions doivent etre presentees comme des garde-fous, pas comme de la securite.
+
+## Etat D'Implementation - Vues Artiste/Dev
+
+Implemente (V1, 2026-06-27) :
+
+- bascule artiste/dev dans la barre laterale ;
+- role gere par `apps/desktop/src/blendup/roles.ts` (type `Role`, capacites par role) ;
+- defaut du role depuis `project.defaultView` ; role actif persiste localement (hors Git) ;
+- fiche asset adaptee au role : ordre des sections et emphase des notes ;
+- garde-fous doux sur les actions : l'export FBX est reserve a la vue artiste.
+
+Limite V1 : deux roles seulement (artiste/dev). Les roles lead/admin des "permissions douces" ne sont pas implementes pour l'instant.
+
+## Differenciation Artiste/Dev (implemente, 2026-06-27)
+
+Les deux vues ne different pas seulement par l'emphase : elles ont un contenu et un theme distincts.
+
+- Vue artiste : fiche `ArtistAssetDetail`, epuree, orientee Blender, peu de details techniques (source Blender, references, notes artiste, problemes a corriger). Accent teal.
+- Vue dev : fiche `DevAssetDetail`, dense, orientee Unity, beaucoup de details et d'options (import/prefab, composants attendus + presents, warnings Unity, chemins bruts, details d'export, equipe, notes). Accent bleu.
+
+Les capacites par role sont centralisees dans `apps/desktop/src/blendup/roles.ts` (couleur d'accent, orientation, flags d'affichage, actions autorisees). L'export FBX est reserve a la vue artiste.

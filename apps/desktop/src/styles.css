@@ -1589,3 +1589,111 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* Bascule de vue artiste/dev et emphase des notes selon le role */
+.role-switch {
+  display: grid;
+  gap: 6px;
+  padding: 0 4px 10px;
+}
+
+.note-block {
+  display: grid;
+  gap: 6px;
+}
+
+.note-block.primary p {
+  border: 1px solid rgba(143, 191, 195, 0.55);
+  background: rgba(143, 191, 195, 0.12);
+}
+
+.action-hint {
+  color: #aeb8b2;
+  font-size: 0.82rem;
+}
+
+/* ===== Differenciation visuelle des vues Artiste / Dev ===== */
+
+/* Accent du role (injecte via --role-accent sur .app-shell) */
+.role-switch .segmented-control button.active {
+  background: var(--role-accent, #1d9e75);
+  border-color: var(--role-accent, #1d9e75);
+  color: #06120e;
+}
+
+.role-badge {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--role-accent, #1d9e75);
+  color: #06120e;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Bandeau d'accent en haut de la fiche selon le role */
+.detail-panel--artist,
+.detail-panel--dev {
+  border-top: 3px solid var(--role-accent, #1d9e75);
+}
+
+.section-block h3 {
+  border-left: 3px solid var(--role-accent, #1d9e75);
+  padding-left: 8px;
+}
+
+/* Vue artiste : aeree, peu de technique */
+.detail-sections.airy {
+  gap: 20px;
+}
+
+.detail-thumbnail.large {
+  width: 84px;
+  height: 84px;
+}
+
+.notes-grid.single {
+  grid-template-columns: 1fr;
+}
+
+/* Vue dev : dense, technique */
+.detail-panel--dev .detail-sections {
+  gap: 10px;
+}
+
+.detail-header.compact {
+  gap: 10px;
+}
+
+.detail-thumbnail.small {
+  width: 44px;
+  height: 44px;
+}
+
+.detail-panel--dev .path-line code {
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.asset-action-bar.wrap {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soft-text {
+  margin: 0;
+  color: #aeb8b2;
+  font-size: 0.86rem;
+}
+
+.eyebrow.subhead {
+  margin-top: 10px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

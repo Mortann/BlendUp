@@ -26,12 +26,12 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 - [x] Creer activity log.
 - [x] Creer schemaVersion.
 - [x] Creer systeme de lecture/ecriture.
-- [ ] Creer premiere migration vide.
+- [x] Creer premiere migration vide.
 
 ## Phase 2 - Application BlendUp
 
 - [x] Ouvrir projet.
-- [ ] Creer projet.
+- [x] Creer projet.
 - [x] Configurer chemins.
 - [x] Stocker settings locaux utilisateur.
 - [x] Rouvrir le dernier projet connu.
@@ -45,10 +45,10 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 - [x] Rechercher assets.
 - [ ] Filtrer assets.
 - [x] Afficher fiche asset.
-- [ ] Afficher vue artiste.
-- [ ] Afficher vue dev.
+- [x] Afficher vue artiste.
+- [x] Afficher vue dev.
 - [x] Afficher Problems.
-- [ ] Afficher Project Settings.
+- [x] Afficher Project Settings.
 
 ## Phase 3 - Nomenclature Et Validation
 

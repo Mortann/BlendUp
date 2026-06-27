@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   AlertTriangle,
   Boxes,
@@ -6,22 +7,48 @@ import {
   CircleDot,
   ClipboardList,
   FileSearch,
+  FolderOpen,
   GitBranch,
+  Home,
   Layers3,
+  Plus,
+  RotateCcw,
+  Save,
   Search,
   Settings,
+  Wrench,
   UserRound
 } from "lucide-react";
 import type {
   BlendUpAsset,
   BlendUpProblem,
   BlendUpTask,
+  LocalToolsSnapshot,
   ProjectSnapshot,
   TaskPriority,
-  TaskStatus
+  TaskStatus,
+  UserSettings
 } from "./blendup/types";
+import type { Role, RoleCapabilities } from "./blendup/roles";
+import {
+  capabilitiesFor,
+  defaultRoleFromProject,
+  loadStoredRole,
+  roleLabel,
+  storeRole
+} from "./blendup/roles";
 import { exportAssetToFbx } from "./blendup/actions";
-import { loadDefaultProjectSnapshot, loadProjectSnapshot } from "./blendup/projectLoader";
+import {
+  createProject,
+  detectLocalTools,
+  loadDefaultProjectSnapshot,
+  loadProjectSnapshot,
+  loadUserSettings,
+  rememberProjectInSettings,
+  saveUserSettings,
+  selectProjectDirectory,
+  takeOpenRequest
+} from "./blendup/projectLoader";
 import {
   formatAssetType,
   formatExportStatus,
@@ -31,9 +58,7 @@ import {
   severityLabel
 } from "./ui/format";
 
-const snapshot = await loadDefaultProjectSnapshot();
-
-type ActiveView = "assets" | "git" | "problems" | "tasks";
+type ActiveView = "assets" | "dashboard" | "git" | "problems" | "settings" | "tasks";
 type OperationMessage = {
   detail?: string;
   title: string;
@@ -43,6 +68,11 @@ type SeverityFilter = BlendUpProblem["severity"] | "all";
 type SourceFilter = BlendUpProblem["source"] | "all";
 type TaskPriorityFilter = TaskPriority | "all";
 type TaskStatusFilter = TaskStatus | "all";
+
+const roleFilters: Array<{ label: string; value: Role }> = [
+  { label: "Artiste", value: "artist" },
+  { label: "Dev", value: "developer" }
+];
 
 const severityFilters: Array<{ label: string; value: SeverityFilter }> = [
   { label: "Tout", value: "all" },
@@ -77,36 +107,306 @@ const taskPriorityFilters: Array<{ label: string; value: TaskPriorityFilter }> =
   { label: "Critical", value: "critical" }
 ];
 
+const initialUserSettings = await loadUserSettings();
+let initialProject: ProjectSnapshot | null = null;
+let initialOperationMessage: OperationMessage | null = null;
+
+if (initialUserSettings.lastProjectRoot) {
+  try {
+    initialProject = await loadProjectSnapshot(initialUserSettings.lastProjectRoot);
+  } catch (error) {
+    initialOperationMessage = {
+      tone: "error",
+      title: "Dernier projet introuvable",
+      detail: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+const initialRole: Role = loadStoredRole() ?? (initialProject ? defaultRoleFromProject(initialProject.project) : "artist");
+
 function App() {
-  const [project, setProject] = useState<ProjectSnapshot>(snapshot);
-  const [activeView, setActiveView] = useState<ActiveView>("assets");
-  const [blenderPathInput, setBlenderPathInput] = useState("");
+  const [project, setProject] = useState<ProjectSnapshot | null>(initialProject);
+  const [role, setRole] = useState<Role>(initialRole);
+  const [activeView, setActiveView] = useState<ActiveView>(initialProject ? "dashboard" : "assets");
+  const [blenderPathInput, setBlenderPathInput] = useState(initialUserSettings.blenderPath ?? "");
+  const [createGitignore, setCreateGitignore] = useState(true);
+  const [createProjectName, setCreateProjectName] = useState("");
+  const [createProjectRoot, setCreateProjectRoot] = useState("");
+  const [createUnityFolders, setCreateUnityFolders] = useState(true);
   const [exportingAssetId, setExportingAssetId] = useState<string | null>(null);
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isDetectingTools, setIsDetectingTools] = useState(false);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [operationMessage, setOperationMessage] = useState<OperationMessage | null>(null);
-  const [projectPathInput, setProjectPathInput] = useState(snapshot.projectRoot ?? "");
+  const [operationMessage, setOperationMessage] = useState<OperationMessage | null>(initialOperationMessage);
+  const [projectPathInput, setProjectPathInput] = useState(
+    initialProject?.projectRoot ?? initialUserSettings.lastProjectRoot ?? ""
+  );
+  const [pureRefPathInput, setPureRefPathInput] = useState(initialUserSettings.pureRefPath ?? "");
   const [query, setQuery] = useState("");
-  const [selectedAssetId, setSelectedAssetId] = useState(project.assets[0]?.id ?? "");
-  const selectedAsset = project.assets.find((asset) => asset.id === selectedAssetId) ?? project.assets[0];
+  const [selectedAssetId, setSelectedAssetId] = useState(initialProject?.assets[0]?.id ?? "");
+  const [toolsSnapshot, setToolsSnapshot] = useState<LocalToolsSnapshot | null>(null);
+  const [unityPathInput, setUnityPathInput] = useState(initialUserSettings.unityPath ?? "");
+  const [userSettings, setUserSettings] = useState<UserSettings>(initialUserSettings);
 
-  const currentProjectRoot = project.projectRoot ?? "Snapshot local";
+  const selectedAsset = project
+    ? project.assets.find((asset) => asset.id === selectedAssetId) ?? project.assets[0]
+    : undefined;
 
-  const reloadProject = async () => {
-    setIsLoadingProject(true);
-    setLoadError("");
+  const capabilities = capabilitiesFor(role);
+  const shellStyle = { "--role-accent": capabilities.accent } as CSSProperties;
+
+  useEffect(() => {
+    storeRole(role);
+  }, [role]);
+
+  useEffect(() => {
+    void refreshToolDetection(true);
+    // Run once on startup to detect tools without overriding saved paths.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const persistUserSettings = async (nextSettings: UserSettings) => {
+    const savedSettings = await saveUserSettings(nextSettings);
+    setUserSettings(savedSettings);
+    setBlenderPathInput(savedSettings.blenderPath ?? "");
+    setUnityPathInput(savedSettings.unityPath ?? "");
+    setPureRefPathInput(savedSettings.pureRefPath ?? "");
+
+    return savedSettings;
+  };
+
+  const chooseProjectDirectory = async () => {
+    try {
+      const selectedDirectory = await selectProjectDirectory();
+
+      if (selectedDirectory) {
+        setProjectPathInput(selectedDirectory);
+        await openProject(selectedDirectory);
+      }
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Selection indisponible",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
+  const chooseCreateProjectDirectory = async () => {
+    try {
+      const selectedDirectory = await selectProjectDirectory();
+
+      if (selectedDirectory) {
+        setCreateProjectRoot(selectedDirectory);
+      }
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Selection indisponible",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
+  const refreshToolDetection = async (fillEmptyPaths = false) => {
+    setIsDetectingTools(true);
 
     try {
-      const nextProject = await loadProjectSnapshot(projectPathInput);
+      const detectedTools = await detectLocalTools({
+        blenderPath: blenderPathInput,
+        pureRefPath: pureRefPathInput,
+        unityPath: unityPathInput
+      });
+      const nextBlenderPath = fillEmptyPaths && !blenderPathInput ? detectedTools.blender.path ?? "" : blenderPathInput;
+      const nextUnityPath = fillEmptyPaths && !unityPathInput ? detectedTools.unity.path ?? "" : unityPathInput;
+      const nextPureRefPath = fillEmptyPaths && !pureRefPathInput ? detectedTools.pureRef.path ?? "" : pureRefPathInput;
+
+      setToolsSnapshot(detectedTools);
+
+      if (
+        nextBlenderPath !== blenderPathInput ||
+        nextUnityPath !== unityPathInput ||
+        nextPureRefPath !== pureRefPathInput
+      ) {
+        setBlenderPathInput(nextBlenderPath);
+        setUnityPathInput(nextUnityPath);
+        setPureRefPathInput(nextPureRefPath);
+        await persistUserSettings({
+          ...userSettings,
+          blenderPath: nextBlenderPath,
+          unityPath: nextUnityPath,
+          pureRefPath: nextPureRefPath
+        });
+      }
+    } finally {
+      setIsDetectingTools(false);
+    }
+  };
+
+  const openProject = async (projectRoot: string): Promise<boolean> => {
+    const trimmedProjectRoot = projectRoot.trim();
+
+    if (!trimmedProjectRoot) {
+      setOperationMessage({
+        tone: "error",
+        title: "Projet non charge",
+        detail: "Renseigne un dossier projet BlendUp."
+      });
+      return false;
+    }
+
+    setIsLoadingProject(true);
+
+    try {
+      const nextProject = await loadProjectSnapshot(trimmedProjectRoot);
+      const nextSettings = rememberProjectInSettings(userSettings, nextProject.projectRoot ?? trimmedProjectRoot);
+      const openRequest = nextProject.projectRoot ? await takeOpenRequest(nextProject.projectRoot) : null;
+      const requestedAsset = openRequest?.assetId
+        ? nextProject.assets.find((asset) => asset.id === openRequest.assetId)
+        : undefined;
+
+      await persistUserSettings({
+        ...nextSettings,
+        blenderPath: blenderPathInput,
+        unityPath: unityPathInput,
+        pureRefPath: pureRefPathInput
+      });
       setProject(nextProject);
-      setSelectedAssetId(nextProject.assets[0]?.id ?? "");
-      setActiveView("assets");
-      setProjectPathInput(nextProject.projectRoot ?? projectPathInput);
+      setProjectPathInput(nextProject.projectRoot ?? trimmedProjectRoot);
+      setSelectedAssetId(requestedAsset?.id ?? nextProject.assets[0]?.id ?? "");
+      setActiveView(requestedAsset ? "assets" : "dashboard");
+      setRole(loadStoredRole() ?? defaultRoleFromProject(nextProject.project));
+      setOperationMessage({
+        tone: "success",
+        title: requestedAsset ? "Asset ouvert" : "Projet ouvert",
+        detail: requestedAsset?.displayName ?? nextProject.projectRoot ?? trimmedProjectRoot
+      });
+      return true;
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
+      setOperationMessage({
+        tone: "error",
+        title: "Projet non charge",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+      return false;
     } finally {
       setIsLoadingProject(false);
     }
+  };
+
+  const openDefaultProject = async () => {
+    setIsLoadingProject(true);
+
+    try {
+      const nextProject = await loadDefaultProjectSnapshot();
+      const projectRoot = nextProject.projectRoot;
+
+      if (projectRoot) {
+        await persistUserSettings({
+          ...rememberProjectInSettings(userSettings, projectRoot),
+          blenderPath: blenderPathInput,
+          unityPath: unityPathInput,
+          pureRefPath: pureRefPathInput
+        });
+        setProjectPathInput(projectRoot);
+      }
+
+      setProject(nextProject);
+      setSelectedAssetId(nextProject.assets[0]?.id ?? "");
+      setActiveView("dashboard");
+      setRole(loadStoredRole() ?? defaultRoleFromProject(nextProject.project));
+      setOperationMessage({
+        tone: "success",
+        title: "Projet test ouvert",
+        detail: nextProject.projectRoot ?? "Snapshot local"
+      });
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Projet test indisponible",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setIsLoadingProject(false);
+    }
+  };
+
+  const createProjectFromWelcome = async () => {
+    const trimmedName = createProjectName.trim();
+    const trimmedRoot = createProjectRoot.trim();
+
+    if (!trimmedName || !trimmedRoot) {
+      setOperationMessage({
+        tone: "error",
+        title: "Projet non cree",
+        detail: "Renseigne un nom et un dossier racine."
+      });
+      return;
+    }
+
+    setIsCreatingProject(true);
+
+    try {
+      const result = await createProject({
+        projectName: trimmedName,
+        projectRoot: trimmedRoot,
+        createUnityFolders,
+        createGitignore
+      });
+      const wasOpened = await openProject(result.projectRoot);
+
+      if (wasOpened) {
+        setCreateProjectName("");
+        setCreateProjectRoot("");
+        setIsCreateProjectOpen(false);
+        setOperationMessage({
+          tone: "success",
+          title: "Projet cree",
+          detail: result.message
+        });
+      }
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Projet non cree",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  const saveLocalSettings = async () => {
+    const savedSettings = await persistUserSettings({
+      ...userSettings,
+      blenderPath: blenderPathInput,
+      unityPath: unityPathInput,
+      pureRefPath: pureRefPathInput
+    });
+
+    setOperationMessage({
+      tone: "success",
+      title: "Settings enregistres",
+      detail: savedSettings.lastProjectRoot ?? "Aucun projet par defaut"
+    });
+  };
+
+  const forgetLastProject = async () => {
+    await persistUserSettings({
+      ...userSettings,
+      lastProjectRoot: null
+    });
+    setProject(null);
+    setProjectPathInput("");
+    setSelectedAssetId("");
+    setActiveView("dashboard");
+    setOperationMessage({
+      tone: "info",
+      title: "Projet ferme",
+      detail: "BlendUp affichera l'accueil au prochain demarrage."
+    });
   };
 
   const openAsset = (assetId?: string) => {
@@ -118,7 +418,16 @@ function App() {
   };
 
   const handleExportAsset = async (assetId: string) => {
-    if (!project.projectRoot) {
+    if (!capabilities.canExport) {
+      setOperationMessage({
+        tone: "info",
+        title: "Export reserve a la vue Artiste",
+        detail: "Bascule en vue Artiste pour exporter cet asset en FBX."
+      });
+      return;
+    }
+
+    if (!project?.projectRoot) {
       setOperationMessage({
         tone: "error",
         title: "Export impossible",
@@ -162,6 +471,10 @@ function App() {
   };
 
   const filteredAssets = useMemo(() => {
+    if (!project) {
+      return [];
+    }
+
     const normalizedQuery = query.trim().toLowerCase();
 
     if (!normalizedQuery) {
@@ -184,24 +497,73 @@ function App() {
 
       return searchable.includes(normalizedQuery);
     });
-  }, [project.assets, query]);
+  }, [project, query]);
 
-  const selectedProblems = project.problems.filter(
-    (problem) => !problem.assetId || problem.assetId === selectedAsset?.id
-  );
+  const selectedProblems =
+    project?.problems.filter((problem) => !problem.assetId || problem.assetId === selectedAsset?.id) ?? [];
+
+  if (!project) {
+    return (
+      <main className="welcome-shell">
+        <WelcomePage
+          createGitignore={createGitignore}
+          createProjectName={createProjectName}
+          createProjectRoot={createProjectRoot}
+          createUnityFolders={createUnityFolders}
+          isCreateProjectOpen={isCreateProjectOpen}
+          isCreatingProject={isCreatingProject}
+          isLoadingProject={isLoadingProject}
+          onCreateProject={createProjectFromWelcome}
+          onOpenDefaultProject={openDefaultProject}
+          onOpenProject={openProject}
+          onSelectCreateProjectDirectory={chooseCreateProjectDirectory}
+          onSelectProjectDirectory={chooseProjectDirectory}
+          onToggleCreateProject={() => setIsCreateProjectOpen((current) => !current)}
+          projectPathInput={projectPathInput}
+          recentProjects={userSettings.recentProjects}
+          setCreateGitignore={setCreateGitignore}
+          setCreateProjectName={setCreateProjectName}
+          setCreateProjectRoot={setCreateProjectRoot}
+          setCreateUnityFolders={setCreateUnityFolders}
+          setProjectPathInput={setProjectPathInput}
+        />
+        {operationMessage ? (
+          <OperationBanner message={operationMessage} onClose={() => setOperationMessage(null)} />
+        ) : null}
+      </main>
+    );
+  }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell role-${role}`} style={shellStyle}>
       <aside className="sidebar" aria-label="Navigation principale">
-        <div className="brand">
+        <button className="brand brand-button" onClick={() => setActiveView("dashboard")} type="button">
           <div className="brand-mark">BU</div>
           <div>
             <strong>BlendUp</strong>
             <span>{project.project.name}</span>
           </div>
+        </button>
+
+        <div className="role-switch">
+          <span className="eyebrow">Vue</span>
+          <SegmentedControl
+            ariaLabel="Choisir la vue"
+            options={roleFilters}
+            value={role}
+            onChange={setRole}
+          />
         </div>
 
         <nav className="nav-list">
+          <button
+            className={`nav-item ${activeView === "dashboard" ? "active" : ""}`}
+            onClick={() => setActiveView("dashboard")}
+            type="button"
+          >
+            <Home size={18} />
+            Dashboard
+          </button>
           <button
             className={`nav-item ${activeView === "assets" ? "active" : ""}`}
             onClick={() => setActiveView("assets")}
@@ -240,7 +602,11 @@ function App() {
             <GitBranch size={18} />
             Git
           </button>
-          <button className="nav-item" type="button">
+          <button
+            className={`nav-item ${activeView === "settings" ? "active" : ""}`}
+            onClick={() => setActiveView("settings")}
+            type="button"
+          >
             <Settings size={18} />
             Settings
           </button>
@@ -250,65 +616,38 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">Projet test</span>
+            <span className="eyebrow">Vue {roleLabel(role)}</span>
             <h1>{viewTitle(activeView)}</h1>
           </div>
-          <div className="topbar-side">
-            <form
-              className="project-loader"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void reloadProject();
-              }}
-            >
-              <label>
-                <span>Projet</span>
-                <input
-                  aria-label="Chemin du projet BlendUp"
-                  onChange={(event) => setProjectPathInput(event.target.value)}
-                  placeholder="Chemin du projet"
-                  title={currentProjectRoot}
-                  value={projectPathInput}
-                />
-              </label>
-              <button disabled={isLoadingProject} type="submit">
-                {isLoadingProject ? "Chargement" : "Charger"}
-              </button>
-            </form>
-            <label className="tool-path-input">
-              <span>Blender</span>
-              <input
-                aria-label="Chemin de Blender"
-                onChange={(event) => setBlenderPathInput(event.target.value)}
-                placeholder="Auto ou chemin blender.exe"
-                value={blenderPathInput}
-              />
-            </label>
-            {loadError ? <span className="project-load-error">{loadError}</span> : null}
-            <div className="topbar-meta">
-              <span>Blender {project.project.targets.blenderMinimumVersion}+</span>
-              <span>Unity {project.project.targets.unityTestVersion}</span>
-            </div>
+          <div className="topbar-meta">
+            <span title={project.projectRoot}>{project.projectRoot ?? "Snapshot local"}</span>
+            <span>Blender {project.project.targets.blenderMinimumVersion}+</span>
+            <span>Unity {project.project.targets.unityTestVersion ?? project.project.targets.unityMinimumVersion}</span>
           </div>
         </header>
 
         {operationMessage ? (
-          <div className={`operation-banner ${operationMessage.tone}`}>
-            <strong>{operationMessage.title}</strong>
-            {operationMessage.detail ? <span>{operationMessage.detail}</span> : null}
-            <button onClick={() => setOperationMessage(null)} type="button">
-              Fermer
-            </button>
-          </div>
+          <OperationBanner message={operationMessage} onClose={() => setOperationMessage(null)} />
         ) : null}
 
-        {activeView === "assets" ? (
+        {activeView === "dashboard" ? (
+          <DashboardView
+            onOpenAsset={openAsset}
+            onOpenProblems={() => setActiveView("problems")}
+            onOpenSettings={() => setActiveView("settings")}
+            onOpenTasks={() => setActiveView("tasks")}
+            snapshot={project}
+            toolsSnapshot={toolsSnapshot}
+          />
+        ) : activeView === "assets" ? (
           <AssetsView
-            filteredAssets={filteredAssets}
+            capabilities={capabilities}
             exportingAssetId={exportingAssetId}
+            filteredAssets={filteredAssets}
             onExportAsset={handleExportAsset}
             problems={project.problems}
             query={query}
+            role={role}
             selectedAsset={selectedAsset}
             selectedProblems={selectedProblems}
             setQuery={setQuery}
@@ -316,6 +655,7 @@ function App() {
           />
         ) : activeView === "problems" ? (
           <ProblemsView
+            exportAllowed={capabilities.canExport}
             exportingAssetId={exportingAssetId}
             onExportAsset={handleExportAsset}
             onOpenAsset={openAsset}
@@ -323,6 +663,28 @@ function App() {
           />
         ) : activeView === "tasks" ? (
           <TasksView onOpenAsset={openAsset} snapshot={project} />
+        ) : activeView === "settings" ? (
+          <SettingsView
+            blenderPathInput={blenderPathInput}
+            isDetectingTools={isDetectingTools}
+            isLoadingProject={isLoadingProject}
+            onDetectTools={() => refreshToolDetection(false)}
+            onForgetLastProject={forgetLastProject}
+            onOpenDefaultProject={openDefaultProject}
+            onOpenProject={openProject}
+            onSaveSettings={saveLocalSettings}
+            onSelectProjectDirectory={chooseProjectDirectory}
+            project={project}
+            projectPathInput={projectPathInput}
+            pureRefPathInput={pureRefPathInput}
+            recentProjects={userSettings.recentProjects}
+            setBlenderPathInput={setBlenderPathInput}
+            setProjectPathInput={setProjectPathInput}
+            setPureRefPathInput={setPureRefPathInput}
+            setUnityPathInput={setUnityPathInput}
+            toolsSnapshot={toolsSnapshot}
+            unityPathInput={unityPathInput}
+          />
         ) : (
           <GitView snapshot={project} />
         )}
@@ -331,12 +693,512 @@ function App() {
   );
 }
 
+function OperationBanner({
+  message,
+  onClose
+}: {
+  message: OperationMessage;
+  onClose: () => void;
+}) {
+  return (
+    <div className={`operation-banner ${message.tone}`}>
+      <strong>{message.title}</strong>
+      {message.detail ? <span>{message.detail}</span> : null}
+      <button onClick={onClose} type="button">
+        Fermer
+      </button>
+    </div>
+  );
+}
+
+function WelcomePage({
+  createGitignore,
+  createProjectName,
+  createProjectRoot,
+  createUnityFolders,
+  isCreateProjectOpen,
+  isCreatingProject,
+  isLoadingProject,
+  onCreateProject,
+  onOpenDefaultProject,
+  onOpenProject,
+  onSelectCreateProjectDirectory,
+  onSelectProjectDirectory,
+  onToggleCreateProject,
+  projectPathInput,
+  recentProjects,
+  setCreateGitignore,
+  setCreateProjectName,
+  setCreateProjectRoot,
+  setCreateUnityFolders,
+  setProjectPathInput
+}: {
+  createGitignore: boolean;
+  createProjectName: string;
+  createProjectRoot: string;
+  createUnityFolders: boolean;
+  isCreateProjectOpen: boolean;
+  isCreatingProject: boolean;
+  isLoadingProject: boolean;
+  onCreateProject: () => void;
+  onOpenDefaultProject: () => void;
+  onOpenProject: (projectRoot: string) => Promise<boolean>;
+  onSelectCreateProjectDirectory: () => void;
+  onSelectProjectDirectory: () => void;
+  onToggleCreateProject: () => void;
+  projectPathInput: string;
+  recentProjects: string[];
+  setCreateGitignore: (createGitignore: boolean) => void;
+  setCreateProjectName: (projectName: string) => void;
+  setCreateProjectRoot: (projectRoot: string) => void;
+  setCreateUnityFolders: (createUnityFolders: boolean) => void;
+  setProjectPathInput: (projectRoot: string) => void;
+}) {
+  return (
+    <section className="welcome-page" aria-label="Accueil BlendUp">
+      <div className="welcome-brand">
+        <div className="brand-mark">BU</div>
+        <div>
+          <span className="eyebrow">BlendUp</span>
+          <h1>Ouvrir un projet</h1>
+        </div>
+      </div>
+
+      <div className="welcome-actions">
+        <form
+          className="settings-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onOpenProject(projectPathInput);
+          }}
+        >
+          <label className="settings-field">
+            <span>Dossier projet</span>
+            <input
+              onChange={(event) => setProjectPathInput(event.target.value)}
+              placeholder="C:\Users\morit\Desktop\BlendUp\BlendUp_projet_Test"
+              value={projectPathInput}
+            />
+          </label>
+
+          <div className="settings-actions">
+            <button disabled={isLoadingProject} onClick={onSelectProjectDirectory} type="button">
+              <FolderOpen size={16} />
+              {isLoadingProject ? "Ouverture" : "Choisir"}
+            </button>
+            <button className="secondary" disabled={isLoadingProject} type="submit">
+              Ouvrir ce chemin
+            </button>
+            <button onClick={onToggleCreateProject} type="button">
+              <Plus size={16} />
+              Creer
+            </button>
+            <button className="secondary" onClick={onOpenDefaultProject} type="button">
+              <RotateCcw size={16} />
+              Projet test
+            </button>
+          </div>
+        </form>
+
+        {isCreateProjectOpen ? (
+          <CreateProjectPanel
+            createGitignore={createGitignore}
+            createProjectName={createProjectName}
+            createProjectRoot={createProjectRoot}
+            createUnityFolders={createUnityFolders}
+            isCreatingProject={isCreatingProject}
+            onCreateProject={onCreateProject}
+            onSelectProjectDirectory={onSelectCreateProjectDirectory}
+            setCreateGitignore={setCreateGitignore}
+            setCreateProjectName={setCreateProjectName}
+            setCreateProjectRoot={setCreateProjectRoot}
+            setCreateUnityFolders={setCreateUnityFolders}
+          />
+        ) : null}
+
+        {recentProjects.length > 0 ? (
+          <section className="recent-projects" aria-label="Projets recents">
+            <h2>Recents</h2>
+            {recentProjects.map((projectRoot) => (
+              <button key={projectRoot} onClick={() => void onOpenProject(projectRoot)} type="button">
+                <FolderOpen size={16} />
+                <span>{projectRoot}</span>
+              </button>
+            ))}
+          </section>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function CreateProjectPanel({
+  createGitignore,
+  createProjectName,
+  createProjectRoot,
+  createUnityFolders,
+  isCreatingProject,
+  onCreateProject,
+  onSelectProjectDirectory,
+  setCreateGitignore,
+  setCreateProjectName,
+  setCreateProjectRoot,
+  setCreateUnityFolders
+}: {
+  createGitignore: boolean;
+  createProjectName: string;
+  createProjectRoot: string;
+  createUnityFolders: boolean;
+  isCreatingProject: boolean;
+  onCreateProject: () => void;
+  onSelectProjectDirectory: () => void;
+  setCreateGitignore: (createGitignore: boolean) => void;
+  setCreateProjectName: (projectName: string) => void;
+  setCreateProjectRoot: (projectRoot: string) => void;
+  setCreateUnityFolders: (createUnityFolders: boolean) => void;
+}) {
+  return (
+    <form
+      className="create-project-panel"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onCreateProject();
+      }}
+    >
+      <div className="settings-heading">
+        <span className="eyebrow">Nouveau projet</span>
+        <h2>Creation guidee</h2>
+      </div>
+
+      <div className="create-project-grid">
+        <label className="settings-field">
+          <span>Nom</span>
+          <input
+            onChange={(event) => setCreateProjectName(event.target.value)}
+            placeholder="Mon projet Unity"
+            value={createProjectName}
+          />
+        </label>
+
+        <label className="settings-field">
+          <span>Dossier racine</span>
+          <input
+            onChange={(event) => setCreateProjectRoot(event.target.value)}
+            placeholder="C:\Users\morit\Desktop\MonProjet"
+            value={createProjectRoot}
+          />
+        </label>
+      </div>
+
+      <div className="settings-actions">
+        <button className="secondary" onClick={onSelectProjectDirectory} type="button">
+          <FolderOpen size={16} />
+          Choisir dossier
+        </button>
+      </div>
+
+      <div className="create-project-options">
+        <label className="settings-check">
+          <input
+            checked={createUnityFolders}
+            onChange={(event) => setCreateUnityFolders(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Preparer les dossiers Unity</span>
+        </label>
+        <label className="settings-check">
+          <input
+            checked={createGitignore}
+            onChange={(event) => setCreateGitignore(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Ajouter un .gitignore adapte</span>
+        </label>
+      </div>
+
+      <div className="settings-actions">
+        <button disabled={isCreatingProject} type="submit">
+          <Plus size={16} />
+          {isCreatingProject ? "Creation" : "Creer le projet"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function DashboardView({
+  onOpenAsset,
+  onOpenProblems,
+  onOpenSettings,
+  onOpenTasks,
+  snapshot,
+  toolsSnapshot
+}: {
+  onOpenAsset: (assetId?: string) => void;
+  onOpenProblems: () => void;
+  onOpenSettings: () => void;
+  onOpenTasks: () => void;
+  snapshot: ProjectSnapshot;
+  toolsSnapshot: LocalToolsSnapshot | null;
+}) {
+  const firstProblem = snapshot.problems[0];
+  const firstTask = snapshot.tasks.find((task) => task.status !== "done") ?? snapshot.tasks[0];
+  const exportedAssets = snapshot.assets.filter((asset) => asset.export.lastExportStatus === "success").length;
+  const importedAssets = snapshot.assets.filter((asset) => asset.unity.importStatus === "imported").length;
+
+  return (
+    <section className="dashboard-page" aria-label="Dashboard">
+      <div className="dashboard-summary">
+        <DashboardCard label="Assets" value={String(snapshot.assets.length)} detail={`${exportedAssets} exporte(s)`} />
+        <DashboardCard label="Problems" value={String(snapshot.problems.length)} detail={problemSummary(snapshot)} />
+        <DashboardCard label="Tasks" value={String(snapshot.tasks.length)} detail={taskSummary(snapshot)} />
+        <DashboardCard label="Unity" value={String(importedAssets)} detail="prefab(s) importe(s)" />
+      </div>
+
+      <div className="dashboard-grid">
+        <section className="dashboard-panel">
+          <div className="settings-heading">
+            <span className="eyebrow">A traiter</span>
+            <h2>{firstProblem?.title ?? "Aucun probleme"}</h2>
+          </div>
+          <p>{firstProblem?.detail ?? "Le projet ne remonte pas de probleme avec les validations actuelles."}</p>
+          <div className="settings-actions">
+            <button onClick={onOpenProblems} type="button">
+              <AlertTriangle size={16} />
+              Problems
+            </button>
+            {firstProblem?.assetId ? (
+              <button className="secondary" onClick={() => onOpenAsset(firstProblem.assetId)} type="button">
+                Voir l'asset
+              </button>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="dashboard-panel">
+          <div className="settings-heading">
+            <span className="eyebrow">Prochaine tache</span>
+            <h2>{firstTask?.title ?? "Aucune tache"}</h2>
+          </div>
+          <p>{firstTask?.description ?? "Les taches internes apparaitront ici quand elles seront creees."}</p>
+          <div className="settings-actions">
+            <button onClick={onOpenTasks} type="button">
+              <ClipboardList size={16} />
+              Tasks
+            </button>
+          </div>
+        </section>
+
+        <section className="dashboard-panel wide">
+          <div className="settings-heading">
+            <span className="eyebrow">Outils locaux</span>
+            <h2>Disponibilite</h2>
+          </div>
+          <div className="tool-status-grid">
+            <ToolStatus label="Blender" status={toolsSnapshot?.blender} />
+            <ToolStatus label="Unity" status={toolsSnapshot?.unity} />
+            <ToolStatus label="PureRef" status={toolsSnapshot?.pureRef} />
+          </div>
+          <div className="settings-actions">
+            <button className="secondary" onClick={onOpenSettings} type="button">
+              <Settings size={16} />
+              Settings
+            </button>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function DashboardCard({ detail, label, value }: { detail: string; label: string; value: string }) {
+  return (
+    <div className="dashboard-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function ToolStatus({ label, status }: { label: string; status?: LocalToolsSnapshot["blender"] }) {
+  const isFound = Boolean(status?.found);
+
+  return (
+    <div className={`tool-status ${isFound ? "ok" : "missing"}`}>
+      {isFound ? <CheckCircle2 size={16} /> : <Wrench size={16} />}
+      <div>
+        <strong>{label}</strong>
+        <span title={status?.message}>{status?.path ?? status?.message ?? "Detection en attente"}</span>
+      </div>
+    </div>
+  );
+}
+
+function SettingsView({
+  blenderPathInput,
+  isDetectingTools,
+  isLoadingProject,
+  onDetectTools,
+  onForgetLastProject,
+  onOpenDefaultProject,
+  onOpenProject,
+  onSaveSettings,
+  onSelectProjectDirectory,
+  project,
+  projectPathInput,
+  pureRefPathInput,
+  recentProjects,
+  setBlenderPathInput,
+  setProjectPathInput,
+  setPureRefPathInput,
+  setUnityPathInput,
+  toolsSnapshot,
+  unityPathInput
+}: {
+  blenderPathInput: string;
+  isDetectingTools: boolean;
+  isLoadingProject: boolean;
+  onDetectTools: () => void;
+  onForgetLastProject: () => void;
+  onOpenDefaultProject: () => void;
+  onOpenProject: (projectRoot: string) => Promise<boolean>;
+  onSaveSettings: () => void;
+  onSelectProjectDirectory: () => void;
+  project: ProjectSnapshot;
+  projectPathInput: string;
+  pureRefPathInput: string;
+  recentProjects: string[];
+  setBlenderPathInput: (blenderPath: string) => void;
+  setProjectPathInput: (projectRoot: string) => void;
+  setPureRefPathInput: (pureRefPath: string) => void;
+  setUnityPathInput: (unityPath: string) => void;
+  toolsSnapshot: LocalToolsSnapshot | null;
+  unityPathInput: string;
+}) {
+  return (
+    <section className="settings-page" aria-label="Settings">
+      <div className="settings-layout">
+        <section className="settings-panel">
+          <div className="settings-heading">
+            <span className="eyebrow">Projet ouvert</span>
+            <h2>{project.project.name}</h2>
+          </div>
+
+          <form
+            className="settings-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onOpenProject(projectPathInput);
+            }}
+          >
+            <label className="settings-field">
+              <span>Dossier projet</span>
+              <input onChange={(event) => setProjectPathInput(event.target.value)} value={projectPathInput} />
+            </label>
+
+            <div className="settings-actions">
+              <button disabled={isLoadingProject} onClick={onSelectProjectDirectory} type="button">
+                <FolderOpen size={16} />
+                {isLoadingProject ? "Ouverture" : "Choisir"}
+              </button>
+              <button className="secondary" disabled={isLoadingProject} type="submit">
+                Ouvrir ce chemin
+              </button>
+              <button className="secondary" onClick={onOpenDefaultProject} type="button">
+                <RotateCcw size={16} />
+                Projet test
+              </button>
+              <button className="secondary danger" onClick={onForgetLastProject} type="button">
+                Fermer
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="settings-panel">
+          <div className="settings-heading">
+            <span className="eyebrow">Machine</span>
+            <h2>Chemins locaux</h2>
+          </div>
+
+          <div className="settings-form">
+            <label className="settings-field">
+              <span>Blender</span>
+              <input
+                onChange={(event) => setBlenderPathInput(event.target.value)}
+                placeholder="Auto ou chemin blender.exe"
+                value={blenderPathInput}
+              />
+            </label>
+            <ToolStatus label="Blender" status={toolsSnapshot?.blender} />
+            <label className="settings-field">
+              <span>Unity</span>
+              <input
+                onChange={(event) => setUnityPathInput(event.target.value)}
+                placeholder="Chemin Unity Editor"
+                value={unityPathInput}
+              />
+            </label>
+            <ToolStatus label="Unity" status={toolsSnapshot?.unity} />
+            <label className="settings-field">
+              <span>PureRef</span>
+              <input
+                onChange={(event) => setPureRefPathInput(event.target.value)}
+                placeholder="Chemin PureRef"
+                value={pureRefPathInput}
+              />
+            </label>
+            <ToolStatus label="PureRef" status={toolsSnapshot?.pureRef} />
+
+            <div className="settings-actions">
+              <button className="secondary" disabled={isDetectingTools} onClick={onDetectTools} type="button">
+                <Wrench size={16} />
+                {isDetectingTools ? "Detection" : "Detecter"}
+              </button>
+              <button onClick={onSaveSettings} type="button">
+                <Save size={16} />
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-panel wide">
+          <div className="settings-heading">
+            <span className="eyebrow">Historique</span>
+            <h2>Projets recents</h2>
+          </div>
+
+          <div className="recent-projects inline">
+            {recentProjects.length > 0 ? (
+              recentProjects.map((projectRoot) => (
+                <button key={projectRoot} onClick={() => void onOpenProject(projectRoot)} type="button">
+                  <FolderOpen size={16} />
+                  <span>{projectRoot}</span>
+                </button>
+              ))
+            ) : (
+              <div className="empty-state compact">
+                <FileSearch size={28} />
+                <span>Aucun projet recent</span>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 interface AssetsViewProps {
+  capabilities: RoleCapabilities;
   exportingAssetId: string | null;
   filteredAssets: BlendUpAsset[];
   onExportAsset: (assetId: string) => void;
   problems: BlendUpProblem[];
   query: string;
+  role: Role;
   selectedAsset?: BlendUpAsset;
   selectedProblems: BlendUpProblem[];
   setQuery: (query: string) => void;
@@ -344,11 +1206,13 @@ interface AssetsViewProps {
 }
 
 function AssetsView({
+  capabilities,
   exportingAssetId,
   filteredAssets,
   onExportAsset,
   problems,
   query,
+  role,
   selectedAsset,
   selectedProblems,
   setQuery,
@@ -384,12 +1248,23 @@ function AssetsView({
       </section>
 
       {selectedAsset ? (
-        <AssetDetail
-          asset={selectedAsset}
-          isExporting={exportingAssetId === selectedAsset.id}
-          onExportAsset={onExportAsset}
-          problems={selectedProblems}
-        />
+        role === "developer" ? (
+          <DevAssetDetail
+            asset={selectedAsset}
+            capabilities={capabilities}
+            isExporting={exportingAssetId === selectedAsset.id}
+            onExportAsset={onExportAsset}
+            problems={selectedProblems}
+          />
+        ) : (
+          <ArtistAssetDetail
+            asset={selectedAsset}
+            capabilities={capabilities}
+            isExporting={exportingAssetId === selectedAsset.id}
+            onExportAsset={onExportAsset}
+            problems={selectedProblems}
+          />
+        )
       ) : (
         <section className="detail-panel empty-state">
           <FileSearch size={32} />
@@ -656,13 +1531,20 @@ function GitView({ snapshot }: { snapshot: ProjectSnapshot }) {
 }
 
 interface ProblemsViewProps {
+  exportAllowed: boolean;
   exportingAssetId: string | null;
   onExportAsset: (assetId: string) => void;
   onOpenAsset: (assetId?: string) => void;
   snapshot: ProjectSnapshot;
 }
 
-function ProblemsView({ exportingAssetId, onExportAsset, onOpenAsset, snapshot }: ProblemsViewProps) {
+function ProblemsView({
+  exportAllowed,
+  exportingAssetId,
+  onExportAsset,
+  onOpenAsset,
+  snapshot
+}: ProblemsViewProps) {
   const [problemQuery, setProblemQuery] = useState("");
   const [selectedProblemId, setSelectedProblemId] = useState(snapshot.problems[0]?.id ?? "");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
@@ -769,6 +1651,7 @@ function ProblemsView({ exportingAssetId, onExportAsset, onOpenAsset, snapshot }
 
         <ProblemDetail
           asset={selectedAsset}
+          exportAllowed={exportAllowed}
           isExporting={selectedAsset?.id === exportingAssetId}
           onExportAsset={onExportAsset}
           onOpenAsset={onOpenAsset}
@@ -828,13 +1711,21 @@ function SegmentedControl<TValue extends string>({
 
 interface ProblemDetailProps {
   asset?: BlendUpAsset;
+  exportAllowed: boolean;
   isExporting: boolean;
   onExportAsset: (assetId: string) => void;
   onOpenAsset: (assetId?: string) => void;
   problem?: BlendUpProblem;
 }
 
-function ProblemDetail({ asset, isExporting, onExportAsset, onOpenAsset, problem }: ProblemDetailProps) {
+function ProblemDetail({
+  asset,
+  exportAllowed,
+  isExporting,
+  onExportAsset,
+  onOpenAsset,
+  problem
+}: ProblemDetailProps) {
   if (!problem) {
     return (
       <aside className="problem-detail-panel empty-state">
@@ -867,6 +1758,7 @@ function ProblemDetail({ asset, isExporting, onExportAsset, onOpenAsset, problem
         {problem.actionLabel ? (
           <ProblemActionButton
             asset={asset}
+            exportAllowed={exportAllowed}
             isExporting={isExporting}
             onExportAsset={onExportAsset}
             problem={problem}
@@ -920,21 +1812,139 @@ function AssetRow({ asset, isSelected, onSelect, problemCount }: AssetRowProps) 
 
 interface AssetDetailProps {
   asset: BlendUpAsset;
+  capabilities: RoleCapabilities;
   isExporting: boolean;
   onExportAsset: (assetId: string) => void;
   problems: BlendUpProblem[];
 }
 
-function AssetDetail({ asset, isExporting, onExportAsset, problems }: AssetDetailProps) {
+function AssetProblems({
+  asset,
+  capabilities,
+  isExporting,
+  onExportAsset,
+  problems
+}: AssetDetailProps) {
+  if (problems.length === 0) {
+    return (
+      <div className="empty-state compact">
+        <CheckCircle2 size={24} />
+        <span>Aucun probleme pour cet asset</span>
+      </div>
+    );
+  }
+
   return (
-    <section className="detail-panel" aria-label="Detail asset">
+    <div className="problem-list">
+      {problems.map((problem) => (
+        <div className={`problem-row ${problem.severity}`} key={problem.id}>
+          <AlertTriangle size={16} />
+          <div>
+            <strong>{problem.title}</strong>
+            <span>
+              {severityLabel(problem.severity)} - {problem.detail}
+            </span>
+          </div>
+          {problem.actionLabel ? (
+            <ProblemActionButton
+              asset={asset}
+              exportAllowed={capabilities.canExport}
+              isExporting={isExporting}
+              onExportAsset={onExportAsset}
+              problem={problem}
+            />
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ArtistAssetDetail({ asset, capabilities, isExporting, onExportAsset, problems }: AssetDetailProps) {
+  const exported = asset.export.lastExportStatus === "success";
+
+  return (
+    <section className="detail-panel detail-panel--artist" aria-label="Detail asset (artiste)">
       <div className="detail-header">
-        <div className="detail-thumbnail">
-          <Boxes size={30} />
+        <div className="detail-thumbnail large">
+          <Boxes size={34} />
         </div>
         <div>
-          <span className="eyebrow">{formatAssetType(asset.type)}</span>
+          <span className="role-badge">{capabilities.orientationLabel}</span>
           <h2>{asset.displayName}</h2>
+          <span className="eyebrow">{formatAssetType(asset.type)}</span>
+        </div>
+      </div>
+
+      <div className="status-strip">
+        <StatusPill label={formatStatus(asset.status)} tone="blue" />
+        <StatusPill label={asset.productionMode} tone="neutral" />
+        <StatusPill label={exported ? "Exporte" : "A exporter"} tone={exported ? "green" : "orange"} />
+      </div>
+
+      <div className="asset-action-bar">
+        {capabilities.canExport ? (
+          <button disabled={isExporting} onClick={() => onExportAsset(asset.id)} type="button">
+            {isExporting ? "Export en cours" : "Exporter FBX"}
+          </button>
+        ) : null}
+        <button className="secondary" disabled title="A venir" type="button">
+          Ouvrir dans Blender
+        </button>
+      </div>
+
+      <div className="detail-sections airy">
+        <section className="section-block">
+          <h3>Source</h3>
+          <PathLine label="Fichier Blender" value={asset.paths.blenderSource} />
+        </section>
+
+        <section className="section-block">
+          <h3>References</h3>
+          <p className="soft-text">
+            {asset.references.length > 0
+              ? `${asset.references.length} reference(s) liee(s).`
+              : "Aucune reference liee pour le moment."}
+          </p>
+        </section>
+
+        <section className="section-block">
+          <h3>Notes artiste</h3>
+          <div className="notes-grid single">
+            <div className="note-block primary">
+              <p>{asset.notes.artist || "Aucune note artiste."}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="section-block">
+          <h3>A corriger</h3>
+          <AssetProblems
+            asset={asset}
+            capabilities={capabilities}
+            isExporting={isExporting}
+            onExportAsset={onExportAsset}
+            problems={problems}
+          />
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function DevAssetDetail({ asset, capabilities, isExporting, onExportAsset, problems }: AssetDetailProps) {
+  return (
+    <section className="detail-panel detail-panel--dev" aria-label="Detail asset (dev)">
+      <div className="detail-header compact">
+        <div className="detail-thumbnail small">
+          <Boxes size={22} />
+        </div>
+        <div>
+          <span className="role-badge">{capabilities.orientationLabel}</span>
+          <h2>{asset.displayName}</h2>
+          <span className="eyebrow">
+            {formatAssetType(asset.type)} - {asset.id}
+          </span>
         </div>
       </div>
 
@@ -946,85 +1956,146 @@ function AssetDetail({ asset, isExporting, onExportAsset, problems }: AssetDetai
         <StatusPill label={asset.unity.importStatus.replace("_", " ")} tone="orange" />
       </div>
 
-      <div className="asset-action-bar">
-        <button disabled={isExporting} onClick={() => onExportAsset(asset.id)} type="button">
-          {isExporting ? "Export en cours" : "Exporter FBX"}
+      <div className="asset-action-bar wrap">
+        {capabilities.canExport ? (
+          <button disabled={isExporting} onClick={() => onExportAsset(asset.id)} type="button">
+            Exporter FBX
+          </button>
+        ) : (
+          <span className="action-hint">Export en vue Artiste</span>
+        )}
+        {capabilities.canRebuildPrefab ? (
+          <button className="secondary" disabled title="A venir" type="button">
+            Rebuild prefab
+          </button>
+        ) : null}
+        {capabilities.canEditExpectedComponents ? (
+          <button className="secondary" disabled title="A venir" type="button">
+            Definir composants
+          </button>
+        ) : null}
+        <button className="secondary" disabled title="A venir" type="button">
+          Besoin correction art
         </button>
-        <span>
-          {asset.export.lastExportAt
-            ? `Dernier export: ${asset.export.lastExportAt}`
-            : "Aucun export enregistre"}
-        </span>
+        <button className="secondary" disabled title="A venir" type="button">
+          Ouvrir dans Unity
+        </button>
       </div>
 
       <div className="detail-sections">
         <section className="section-block">
-          <h3>Fichiers</h3>
-          <PathLine label="Blender" value={asset.paths.blenderSource} />
-          <PathLine label="FBX" value={asset.paths.fbxExport} />
-          <PathLine label="Prefab" value={asset.paths.unityPrefab} />
-        </section>
-
-        <section className="section-block">
-          <h3>Equipe</h3>
-          <div className="owner-grid">
-            <Owner label="Artiste" value={asset.owners.artist} />
-            <Owner label="Dev" value={asset.owners.developer} />
-            <Owner label="Review" value={asset.owners.reviewer} />
-          </div>
-        </section>
-
-        <section className="section-block">
           <h3>Unity</h3>
-          <div className="component-list">
-            {asset.unity.expectedComponents.map((component) => (
-              <div className="component-row" key={component.name}>
-                <CheckCircle2 size={16} />
-                <span>{component.name}</span>
-                <small>{component.requirement}</small>
-              </div>
-            ))}
+          <div className="problem-detail-meta">
+            <DetailMeta label="Import" value={asset.unity.importStatus.replace("_", " ")} />
+            <DetailMeta label="Dernier import" value={asset.unity.lastImportAt ?? "Jamais"} />
           </div>
+          <PathLine label="Prefab" value={asset.paths.unityPrefab} />
+
+          <span className="eyebrow subhead">Composants attendus</span>
+          <div className="component-list">
+            {asset.unity.expectedComponents.length > 0 ? (
+              asset.unity.expectedComponents.map((component) => (
+                <div className="component-row" key={component.name}>
+                  <CheckCircle2 size={16} />
+                  <span>{component.name}</span>
+                  <small>
+                    {component.requirement}
+                    {component.confirmedRemoved ? " - retire confirme" : ""}
+                  </small>
+                </div>
+              ))
+            ) : (
+              <p className="soft-text">Aucun composant attendu defini.</p>
+            )}
+          </div>
+
+          <span className="eyebrow subhead">Composants presents</span>
+          {asset.unity.components.length > 0 ? (
+            <div className="chip-row">
+              {asset.unity.components.map((component) => (
+                <span className="status-pill neutral" key={component}>
+                  {component}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="soft-text">Aucun composant remonte par Unity.</p>
+          )}
+
+          {asset.unity.warnings.length > 0 ? (
+            <>
+              <span className="eyebrow subhead">Warnings Unity</span>
+              <div className="problem-list">
+                {asset.unity.warnings.map((warning) => (
+                  <div className="problem-row warning" key={warning}>
+                    <AlertTriangle size={16} />
+                    <div>
+                      <span>{warning}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
         </section>
+
+        {capabilities.showRawPaths ? (
+          <section className="section-block">
+            <h3>Fichiers</h3>
+            <PathLine label="Blender" value={asset.paths.blenderSource} />
+            <PathLine label="FBX" value={asset.paths.fbxExport} />
+            <PathLine label="Prefab" value={asset.paths.unityPrefab} />
+            <PathLine label="Thumbnail" value={asset.paths.thumbnail} />
+          </section>
+        ) : null}
+
+        {capabilities.showExportDetails ? (
+          <section className="section-block">
+            <h3>Export</h3>
+            <div className="problem-detail-meta">
+              <DetailMeta label="Profil" value={asset.export.profileId ?? "Aucun"} />
+              <DetailMeta label="Auto-export" value={asset.export.autoExport ? "Oui" : "Non"} />
+              <DetailMeta label="Import Unity" value={asset.export.importInUnity ? "Oui" : "Non"} />
+              <DetailMeta label="Dernier export" value={asset.export.lastExportAt ?? "Jamais"} />
+              <DetailMeta label="Statut" value={formatExportStatus(asset.export.lastExportStatus)} />
+            </div>
+          </section>
+        ) : null}
+
+        {capabilities.showAllOwners ? (
+          <section className="section-block">
+            <h3>Equipe</h3>
+            <div className="owner-grid">
+              <Owner label="Artiste" value={asset.owners.artist} />
+              <Owner label="Dev" value={asset.owners.developer} />
+              <Owner label="Review" value={asset.owners.reviewer} />
+            </div>
+          </section>
+        ) : null}
 
         <section className="section-block">
           <h3>Notes</h3>
           <div className="notes-grid">
-            <p>{asset.notes.artist}</p>
-            <p>{asset.notes.developer}</p>
+            <div className="note-block primary">
+              <span className="eyebrow">Notes dev</span>
+              <p>{asset.notes.developer || "Aucune note dev."}</p>
+            </div>
+            <div className="note-block">
+              <span className="eyebrow">Notes artiste</span>
+              <p>{asset.notes.artist || "Aucune note artiste."}</p>
+            </div>
           </div>
         </section>
 
         <section className="section-block">
           <h3>Problems</h3>
-          <div className="problem-list">
-            {problems.length > 0 ? (
-              problems.map((problem) => (
-                <div className={`problem-row ${problem.severity}`} key={problem.id}>
-                  <AlertTriangle size={16} />
-                  <div>
-                    <strong>{problem.title}</strong>
-                    <span>
-                      {severityLabel(problem.severity)} - {problem.detail}
-                    </span>
-                  </div>
-                  {problem.actionLabel ? (
-                    <ProblemActionButton
-                      asset={asset}
-                      isExporting={isExporting}
-                      onExportAsset={onExportAsset}
-                      problem={problem}
-                    />
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <div className="empty-state compact">
-                <CheckCircle2 size={24} />
-                <span>Aucun probleme pour cet asset</span>
-              </div>
-            )}
-          </div>
+          <AssetProblems
+            asset={asset}
+            capabilities={capabilities}
+            isExporting={isExporting}
+            onExportAsset={onExportAsset}
+            problems={problems}
+          />
         </section>
       </div>
     </section>
@@ -1033,16 +2104,19 @@ function AssetDetail({ asset, isExporting, onExportAsset, problems }: AssetDetai
 
 function ProblemActionButton({
   asset,
+  exportAllowed,
   isExporting,
   onExportAsset,
   problem
 }: {
   asset?: BlendUpAsset;
+  exportAllowed: boolean;
   isExporting: boolean;
   onExportAsset: (assetId: string) => void;
   problem: BlendUpProblem;
 }) {
-  const canExport = problem.actionLabel === "Exporter" && Boolean(asset);
+  const isExportAction = problem.actionLabel === "Exporter";
+  const canExport = isExportAction && Boolean(asset) && exportAllowed;
 
   return (
     <button
@@ -1052,7 +2126,13 @@ function ProblemActionButton({
           onExportAsset(asset.id);
         }
       }}
-      title={canExport ? "Exporter l'asset en FBX" : "Action pas encore disponible"}
+      title={
+        isExportAction && !exportAllowed
+          ? "Export disponible en vue Artiste"
+          : canExport
+            ? "Exporter l'asset en FBX"
+            : "Action pas encore disponible"
+      }
       type="button"
     >
       {isExporting && canExport ? "Export" : problem.actionLabel}
@@ -1094,11 +2174,27 @@ function sourceLabel(source: BlendUpProblem["source"]): string {
   return labels[source];
 }
 
+function problemSummary(snapshot: ProjectSnapshot): string {
+  const blockingProblems = snapshot.problems.filter(
+    (problem) => problem.severity === "critical" || problem.severity === "error"
+  ).length;
+
+  return blockingProblems > 0 ? `${blockingProblems} bloquant(s)` : "Rien de bloquant";
+}
+
+function taskSummary(snapshot: ProjectSnapshot): string {
+  const openTasks = snapshot.tasks.filter((task) => task.status !== "done").length;
+
+  return openTasks > 0 ? `${openTasks} ouverte(s)` : "Tout est ferme";
+}
+
 function viewTitle(view: ActiveView): string {
   const labels: Record<ActiveView, string> = {
     assets: "Assets",
+    dashboard: "Dashboard",
     git: "Git",
     problems: "Problems",
+    settings: "Settings",
     tasks: "Tasks"
   };
 

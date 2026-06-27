@@ -157,6 +157,15 @@ Selection de dossier :
 - plugin Tauri utilise : `@tauri-apps/plugin-dialog` / `tauri-plugin-dialog` ;
 - permission Tauri : `dialog:allow-open`.
 
+Creation de projet :
+
+- commande Tauri : `create_project` ;
+- creation du dossier racine si necessaire ;
+- refus si `.blendup/project.json` existe deja ;
+- generation de `.blendup/project.json`, presets, conventions de nommage, migrations appliquees vides et journal d'activite vide ;
+- creation optionnelle des dossiers Unity de base ;
+- creation optionnelle d'un `.gitignore` Unity/BlendUp si le fichier n'existe pas encore.
+
 Detection outils locaux :
 
 - Blender : chemin explicite, variable `BLENDUP_BLENDER_PATH`, commande `blender`, dossiers `Blender Foundation` ;

@@ -446,77 +446,126 @@
 - Ajouter ensuite les actions d'ouverture de fichiers/dossiers depuis les fiches assets.
 - Continuer le flux Blender vers FBX et la premiere integration Unity.
 
-## 2026-06-27 - Reprise Sur Nouvel Ordinateur Et Synchro Documentation
+## 2026-06-27 - Socle Vues Artiste/Dev
 
 ### Contexte
 
-- Recuperation du depot sur un autre ordinateur via Git.
-- Lecture complete du README et de la documentation `docs/` pour reprendre le contexte.
-- Confrontation de la documentation a l'etat reel du code.
-
-### Constats
-
-- La creation de projet assistee est en fait deja implementee dans le code :
-  - commande Tauri `create_project` dans `apps/desktop/src-tauri/src/main.rs` ;
-  - formulaire `createProjectFromWelcome` dans l'ecran d'accueil de `App.tsx`.
-  Les entrees de journal precedentes la listaient encore comme "a implementer".
-- Le backend Tauri lit et ecrit maintenant des donnees `.blendup` (settings, export, creation de projet), au-dela de la simple lecture.
-- L'application expose les vues `Dashboard`, `Assets`, `Problems`, `Tasks`, `Git` et `Settings`.
-- Le dossier de test reel est `BlendUp_projet_Test/` (sous-module Git), alors que la doc le nommait `BlendUpTest/`.
-- Le projet test contient deux fiches assets (`PROP_CubeCrate_01`, `ENV_Rock_01`) et deux taches internes ; le troisieme asset test reste a creer.
-- Le working tree apparait entierement modifie sous Git, mais il s'agit uniquement de differences de fins de ligne (CRLF/LF) liees au changement de machine, pas de modifications de contenu.
+- Avant de reimplementer les ecrans perdus (Dashboard, Settings, accueil, creation de projet), pose du socle des deux vues artiste/dev, conformement a `docs/specs/04-interface-ux.md`.
+- Decision produit : V1 limitee a deux roles (artiste/dev) ; le role adapte l'affichage ET les actions (garde-fous doux).
 
 ### Fait
 
-- Mise a jour du README (`Etat actuel`) pour refleter les vues Dashboard/Settings, les settings locaux, le selecteur de dossier natif, la detection d'outils et la creation de projet assistee.
-- Alignement du nom du projet test sur le dossier reel `BlendUp_projet_Test` dans la documentation de reference (`README.md`, `docs/00-index.md`, `docs/preproduction/04-questions-ouvertes.md`, `docs/preproduction/05-projet-test.md`).
-- Precision dans `05-projet-test.md` que le projet test est integre comme sous-module Git.
-
-### Notes
-
-- Cette session est volontairement limitee a la synchronisation de la documentation avec l'etat deja realise. Les plans futurs (roadmap, backlog, scope) n'ont pas ete modifies.
-- L'add-on Blender dedie et le package Unity dedie ne sont toujours pas implementes.
-
-### Prochaine Etape
-
-- Continuer le flux Blender vers FBX et la premiere integration Unity/prefab.
-- Ajouter les actions d'ouverture de fichiers/dossiers depuis les fiches assets.
-- Creer le troisieme asset test (`material`/`texture`).
-
-## 2026-06-27 - Add-on Blender V1
-
-### Fait
-
-- Creation de l'add-on Blender dans `apps/blender-addon` (package `blendup/`).
-- Architecture en deux couches :
-  - `blendup/core/` : logique metier sans `bpy` (detection projet/asset, lecture/ecriture `.blendup`, nomenclature, validation, format JSON, liens) ;
-  - `bpy_adapter.py`, `ops/`, `ui/`, `prefs.py`, `handlers.py` : couche Blender.
-- Detection du projet par recherche d'un parent contenant `.blendup/project.json`.
-- Detection de l'asset lie par `paths.blenderSource`, avec memorisation d'un id dans la scene.
-- Panneau BlendUp dans la sidebar de la vue 3D (onglet `BlendUp`).
-- Export FBX manuel vers `paths.fbxExport`, ecriture de l'etat d'export dans la fiche (`lastExportAt`, `lastExportStatus`, `status`, `updatedAt`) au meme format JSON que le backend.
-- Auto-export au save selon le mode d'export par asset (auto / manuel / disabled).
-- Reglages d'export FBX places dans les preferences de l'add-on.
-- Validation de base avant export (objets exportables, echelle, nomenclature, materiaux).
-- Templates simples : materiau de base, collider simple, preparation static mesh.
-- Action "ouvrir la fiche dans BlendUp" via `.blendup/temp/open-request.json` + tentative `blendup://asset/<id>`.
-- Journal d'activite alimente (`asset.exported`, `asset.export_failed`, `asset.export_mode_changed`).
-- Tests du coeur sans Blender dans `apps/blender-addon/tests`.
+- Nouveau module `apps/desktop/src/blendup/roles.ts` : type `Role` (`artist` | `developer`), table de capacites par role (`RoleCapabilities`), defaut depuis `project.defaultView`, persistance locale du role actif.
+- `App.tsx` : etat `role`, selecteur Artiste/Dev dans la barre laterale, indicateur de vue dans l'en-tete.
+- Fiche asset adaptee au role : ordre des sections (Unity d'abord en dev, Fichiers/Notes d'abord en artiste), emphase des notes du role, action Export reservee a la vue artiste.
+- Action Export filtree par capacite dans la fiche asset et dans la vue Problems.
+- CSS pour le selecteur de vue et l'emphase des notes.
 
 ### Verification
 
-- `python apps/blender-addon/tests/test_core.py` : 8/8 OK.
-- `py_compile` sur tous les fichiers de l'add-on : OK (syntaxe valide).
-- Format JSON ecrit par l'add-on : identique octet pour octet a une fiche ecrite par le backend.
+- `npm run typecheck` : OK.
+- Build complet (`vite`) et `cargo check` a relancer cote Windows (binaire natif Vite/rolldown et cargo indisponibles dans l'environnement Linux courant).
 
 ### Notes
 
-- Le test "vivant" dans Blender (panneau, export reel, auto-export) reste a faire par l'utilisateur : pas de Blender dans l'environnement de developpement courant.
-- L'add-on cible Blender 4.0+ via `bl_info`.
-- L'ouverture de fiche depuis Blender necessite encore un suivi cote application : surveiller `.blendup/temp/open-request.json` ou enregistrer le protocole `blendup://`.
+- Le role actif est persiste cote frontend (localStorage) pour la V1 ; il pourra rejoindre les settings utilisateur natifs (hors Git) plus tard sans changer l'API de `roles.ts`.
+- Permissions douces V1 limitees a deux roles ; lead/admin non prevus pour l'instant.
+- Le frontend etait encore sur l'UI simple (Assets/Problems/Tasks/Git) suite a la perte d'App.tsx ; le socle de roles a ensuite ete fusionne avec les ecrans reimplementes.
 
 ### Prochaine Etape
 
-- Tester l'add-on dans Blender sur le projet test (`PROP_CubeCrate_01`).
-- Cote application : consommer `.blendup/temp/open-request.json` pour ouvrir une fiche.
+- Finaliser la restauration de Dashboard / Settings / accueil / creation de projet en s'appuyant sur le role et le backend existant.
+- Re-brancher la consommation `open-request`.
+
+## 2026-06-27 - Incident : Perte De Travail Non Committe Sur App.tsx
+
+### Ce Qui S'Est Passe
+
+- Le working tree contenait un gros travail **non committe** (frontend tres en avance sur le dernier commit Git).
+- Lors d'une correction de fins de ligne, une restauration depuis le dernier commit (`git show HEAD`) a **ecrase la version de travail** de `App.tsx`, `projectLoader.ts` et `types.ts`.
+- `projectLoader.ts` et `types.ts` ont ete restaures a l'identique. `main.rs` n'avait pas ete ecrase (seule sa fin, tronquee par l'outil d'edition, a ete reconstruite).
+- `App.tsx` n'a pas pu etre recupere dans sa version la plus recente. L'utilisateur a fourni une version anterieure de `App.tsx`, qui a ete reinstallee.
+
+### Fonctionnalites Frontend Perdues (UI seulement)
+
+Ces ecrans existaient dans la version non committee et ne sont plus dans le `App.tsx` courant. Le **backend Rust correspondant existe toujours** (`main.rs`) :
+
+- ecran d'accueil (aucun projet charge) ;
+- vue `Dashboard` projet ;
+- vue `Settings` (chemins locaux, detection d'outils) ;
+- creation de projet assistee (UI) ;
+- selecteur de dossier natif et detection d'outils cote UI ;
+- chargement automatique du dernier projet / projets recents cote UI.
+
+Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/dist/` (minifie). A reimplementer proprement par-dessus le socle actuel.
+
+### Etat Frontend Courant
+
+- UI active : `Assets`, `Problems`, `Tasks`, `Git` + socle de roles artiste/dev.
+- `npm run typecheck` : OK.
+
+### Lecons / A Faire
+
+- Committer regulierement ; ne jamais restaurer depuis Git par-dessus du non committe sans sauvegarde.
+- Ajouter un `.gitattributes` (`* text=auto`) pour stopper le bruit CRLF/LF.
+
+## 2026-06-27 - Differenciation Forte Artiste/Dev
+
+### Fait
+
+- Capacites de role enrichies dans `roles.ts` (accent couleur, orientation, `showRawPaths`, `showUnityDetails`, `showExportDetails`, `showAllOwners`, `canRebuildPrefab`...).
+- Deux fiches asset distinctes :
+  - `ArtistAssetDetail` : epuree, orientee Blender, peu de technique (source Blender, references, notes artiste, a corriger) ;
+  - `DevAssetDetail` : dense, orientee Unity (import/prefab, composants attendus + presents, warnings Unity, chemins bruts, details d'export, equipe, notes dev+artiste, problems, plus d'actions).
+- Difference visuelle : classe `role-*` + variable CSS `--role-accent` (teal artiste / bleu dev), badge d'orientation, bandeau d'accent en haut de fiche, densite differente, chemins en monospace cote dev.
+- L'export FBX reste reserve a la vue artiste.
+
+### Verification
+
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `cargo check` dans `apps/desktop/src-tauri` : OK.
+
+### Notes
+
+- Les actions dev (rebuild prefab, definir composants, ouvrir Unity, besoin correction art) sont presentes mais desactivees ("a venir").
+- Build complet (`vite`) et `cargo check` a relancer cote Windows.
+- Prochaine action : consommer `.blendup/temp/open-request.json` pour ouvrir une fiche.
 - Demarrer le package Unity minimal (import FBX -> prefab) pour fermer la boucle.
+
+## 2026-06-27 - Restauration Accueil, Dashboard, Settings Et Creation
+
+### Contexte
+
+- Apres l'incident Git, le backend de creation de projet, settings locaux et detection outils etait encore present.
+- `App.tsx` avait perdu les ecrans d'accueil sans projet, Dashboard, Settings et l'assistant de creation.
+- Entre temps, le socle des vues Artiste/Dev avait ete ajoute et devait etre conserve.
+
+### Fait
+
+- Fusion de l'ancien flux projet avec les vues Artiste/Dev.
+- Restauration de l'accueil quand aucun projet n'est charge.
+- Restauration de l'ouverture de projet via selecteur de dossier natif, chemin manuel, projets recents et projet test.
+- Restauration du dashboard comme premiere page d'un projet ouvert.
+- Le logo BlendUp renvoie au dashboard du projet ouvert.
+- Restauration de `Settings` pour :
+  - ouvrir/fermer un projet ;
+  - enregistrer les chemins Blender, Unity et PureRef ;
+  - detecter les outils locaux ;
+  - rouvrir un projet recent.
+- Restauration de l'assistant de creation de projet :
+  - nom ;
+  - dossier racine ;
+  - dossiers Unity optionnels ;
+  - `.gitignore` optionnel ;
+  - ouverture automatique du projet cree sur le dashboard.
+- Rebranchement de la consommation ponctuelle de `.blendup/temp/open-request.json` lors de l'ouverture d'un projet.
+
+### Verification
+
+- `npm run typecheck` : OK.
+
+### Notes
+
+- `BlendUp_projet_Test` reste un sous-module modifie dans le working tree ; il n'a pas ete modifie pendant cette restauration.
+- Les actions dev restent visibles mais desactivees tant que les integrations Unity ne sont pas implementees.

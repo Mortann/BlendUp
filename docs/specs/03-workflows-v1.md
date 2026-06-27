@@ -20,6 +20,15 @@ Etapes :
 6. BlendUp cree les dossiers de base si necessaire.
 7. BlendUp affiche la page projet.
 
+Implementation actuelle :
+
+- l'accueil propose un assistant de creation simple ;
+- l'utilisateur renseigne un nom et un dossier racine ;
+- BlendUp cree les dossiers `.blendup`, `Art`, `Art/Blender`, `Art/References`, `Art/Textures`, `Art/UI` ;
+- les dossiers Unity de base peuvent etre prepares automatiquement ;
+- BlendUp cree les presets de types d'assets, les conventions de nommage, le journal d'activite vide, le fichier de migrations vide et un `.gitignore` adapte si demande ;
+- le projet cree est ouvert automatiquement sur le dashboard.
+
 Resultat :
 
 - projet ouvert ;
