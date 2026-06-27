@@ -21,7 +21,7 @@ import type {
   TaskStatus
 } from "./blendup/types";
 import { exportAssetToFbx } from "./blendup/actions";
-import { loadProjectSnapshot } from "./blendup/projectLoader";
+import { loadDefaultProjectSnapshot, loadProjectSnapshot } from "./blendup/projectLoader";
 import {
   formatAssetType,
   formatExportStatus,
@@ -31,7 +31,7 @@ import {
   severityLabel
 } from "./ui/format";
 
-const snapshot = await loadProjectSnapshot();
+const snapshot = await loadDefaultProjectSnapshot();
 
 type ActiveView = "assets" | "git" | "problems" | "tasks";
 type OperationMessage = {
