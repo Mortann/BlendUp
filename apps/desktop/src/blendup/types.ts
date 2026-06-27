@@ -153,6 +153,40 @@ export interface ProjectSnapshot {
   problems: BlendUpProblem[];
 }
 
+export interface UserSettings {
+  schemaVersion: number;
+  kind: "user_settings";
+  lastProjectRoot: string | null;
+  recentProjects: string[];
+  blenderPath: string | null;
+  unityPath: string | null;
+  pureRefPath: string | null;
+}
+
+export interface ToolDetection {
+  found: boolean;
+  path?: string;
+  message: string;
+}
+
+export interface LocalToolsSnapshot {
+  blender: ToolDetection;
+  unity: ToolDetection;
+  pureRef: ToolDetection;
+}
+
+export interface CreateProjectOptions {
+  projectRoot: string;
+  projectName: string;
+  createUnityFolders: boolean;
+  createGitignore: boolean;
+}
+
+export interface CreateProjectResult {
+  projectRoot: string;
+  message: string;
+}
+
 export interface ExportAssetResult {
   success: boolean;
   assetId: string;
@@ -160,4 +194,9 @@ export interface ExportAssetResult {
   outputPath?: string;
   blenderPath?: string;
   log: string;
+}
+
+export interface OpenRequest {
+  assetId: string;
+  requestedAt: string;
 }

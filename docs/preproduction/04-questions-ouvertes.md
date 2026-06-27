@@ -188,7 +188,7 @@ Cela permet :
 
 ### Tests Et Projet Exemple
 
-- [x] Creer un mini projet Unity/Blender exemple : `BlendUpTest/`.
+- [x] Creer un mini projet Unity/Blender exemple : `BlendUp_projet_Test/`.
 - [ ] Creer 3 assets test.
 - [ ] Tester export/import.
 - [ ] Tester prefab update.

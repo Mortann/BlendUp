@@ -33,6 +33,12 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 - [x] Ouvrir projet.
 - [ ] Creer projet.
 - [x] Configurer chemins.
+- [x] Stocker settings locaux utilisateur.
+- [x] Rouvrir le dernier projet connu.
+- [x] Afficher accueil si aucun projet n'est charge.
+- [x] Ajouter selecteur de dossier natif pour ouvrir un projet.
+- [x] Ajouter dashboard projet.
+- [x] Detecter et valider les chemins outils locaux.
 - [x] Lister assets.
 - [ ] Creer asset.
 - [ ] Editer asset.

@@ -366,3 +366,157 @@
 - Ajouter un selecteur de dossier natif.
 - Tester l'export FBX avec un vrai chemin Blender local.
 - Continuer vers une premiere integration Unity/prefab.
+
+## 2026-06-27 - Settings Locaux Et Accueil Projet
+
+### Fait
+
+- Ajout d'un modele de settings utilisateur local.
+- Ajout des commandes Tauri :
+  - `read_user_settings` ;
+  - `save_user_settings`.
+- Stockage natif des settings hors Git dans le dossier de configuration utilisateur.
+- Ajout d'un fallback `localStorage` quand l'interface tourne hors Tauri.
+- Ajout du dernier projet ouvert et des projets recents.
+- Ajout des chemins locaux :
+  - Blender ;
+  - Unity ;
+  - PureRef.
+- Suppression des champs projet/Blender de la barre du haut.
+- Ajout d'une page d'accueil quand aucun projet n'est charge.
+- Ajout d'une vue `Settings` pour ouvrir un projet, fermer le projet courant et modifier les chemins locaux.
+- Chargement automatique du dernier projet au demarrage quand il existe.
+
+### Verification
+
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `cargo fmt` dans `apps/desktop/src-tauri` : OK.
+- `cargo check` dans `apps/desktop/src-tauri` : OK.
+
+### Notes
+
+- La creation assistee de projet n'est pas encore implementee.
+- Le selecteur de dossier natif reste a ajouter pour remplacer la saisie manuelle de chemin.
+- Le snapshot `BlendUpTest` reste disponible comme projet test pendant la production.
+
+### Prochaine Etape
+
+- Ajouter un selecteur de dossier natif.
+- Implementer la creation assistee de projet.
+- Continuer ensuite l'export Blender et l'integration Unity.
+
+## 2026-06-27 - Selecteur Dossier, Dashboard Et Detection Outils
+
+### Fait
+
+- Ajout du plugin Tauri de dialogue :
+  - `@tauri-apps/plugin-dialog` ;
+  - `tauri-plugin-dialog`.
+- Ajout de la permission `dialog:open`.
+- Ajout du selecteur de dossier natif pour ouvrir un projet.
+- Conservation du fallback par chemin manuel.
+- Ajout d'une vue `Dashboard` comme accueil du projet ouvert.
+- Le logo BlendUp en haut a gauche ramene au dashboard projet.
+- Ouverture d'un projet et ouverture du projet test arrivent maintenant sur le dashboard.
+- Ajout d'une commande Tauri `detect_local_tools`.
+- Detection/validation des outils locaux :
+  - Blender ;
+  - Unity ;
+  - PureRef.
+- Affichage de la disponibilite des outils dans le dashboard et dans `Settings`.
+- Bouton `Detecter` dans `Settings`.
+
+### Notes
+
+- Unity et PureRef ne sont pas lances pour la detection ; BlendUp verifie les chemins explicites et les emplacements d'installation courants.
+- Blender peut aussi etre trouve via la commande `blender` ou `BLENDUP_BLENDER_PATH`.
+- La creation assistee de projet reste a implementer.
+
+### Verification
+
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `cargo fmt` dans `apps/desktop/src-tauri` : OK.
+- `cargo check` dans `apps/desktop/src-tauri` : OK.
+
+### Prochaine Etape
+
+- Ajouter l'assistant de creation de projet.
+- Ajouter ensuite les actions d'ouverture de fichiers/dossiers depuis les fiches assets.
+- Continuer le flux Blender vers FBX et la premiere integration Unity.
+
+## 2026-06-27 - Reprise Sur Nouvel Ordinateur Et Synchro Documentation
+
+### Contexte
+
+- Recuperation du depot sur un autre ordinateur via Git.
+- Lecture complete du README et de la documentation `docs/` pour reprendre le contexte.
+- Confrontation de la documentation a l'etat reel du code.
+
+### Constats
+
+- La creation de projet assistee est en fait deja implementee dans le code :
+  - commande Tauri `create_project` dans `apps/desktop/src-tauri/src/main.rs` ;
+  - formulaire `createProjectFromWelcome` dans l'ecran d'accueil de `App.tsx`.
+  Les entrees de journal precedentes la listaient encore comme "a implementer".
+- Le backend Tauri lit et ecrit maintenant des donnees `.blendup` (settings, export, creation de projet), au-dela de la simple lecture.
+- L'application expose les vues `Dashboard`, `Assets`, `Problems`, `Tasks`, `Git` et `Settings`.
+- Le dossier de test reel est `BlendUp_projet_Test/` (sous-module Git), alors que la doc le nommait `BlendUpTest/`.
+- Le projet test contient deux fiches assets (`PROP_CubeCrate_01`, `ENV_Rock_01`) et deux taches internes ; le troisieme asset test reste a creer.
+- Le working tree apparait entierement modifie sous Git, mais il s'agit uniquement de differences de fins de ligne (CRLF/LF) liees au changement de machine, pas de modifications de contenu.
+
+### Fait
+
+- Mise a jour du README (`Etat actuel`) pour refleter les vues Dashboard/Settings, les settings locaux, le selecteur de dossier natif, la detection d'outils et la creation de projet assistee.
+- Alignement du nom du projet test sur le dossier reel `BlendUp_projet_Test` dans la documentation de reference (`README.md`, `docs/00-index.md`, `docs/preproduction/04-questions-ouvertes.md`, `docs/preproduction/05-projet-test.md`).
+- Precision dans `05-projet-test.md` que le projet test est integre comme sous-module Git.
+
+### Notes
+
+- Cette session est volontairement limitee a la synchronisation de la documentation avec l'etat deja realise. Les plans futurs (roadmap, backlog, scope) n'ont pas ete modifies.
+- L'add-on Blender dedie et le package Unity dedie ne sont toujours pas implementes.
+
+### Prochaine Etape
+
+- Continuer le flux Blender vers FBX et la premiere integration Unity/prefab.
+- Ajouter les actions d'ouverture de fichiers/dossiers depuis les fiches assets.
+- Creer le troisieme asset test (`material`/`texture`).
+
+## 2026-06-27 - Add-on Blender V1
+
+### Fait
+
+- Creation de l'add-on Blender dans `apps/blender-addon` (package `blendup/`).
+- Architecture en deux couches :
+  - `blendup/core/` : logique metier sans `bpy` (detection projet/asset, lecture/ecriture `.blendup`, nomenclature, validation, format JSON, liens) ;
+  - `bpy_adapter.py`, `ops/`, `ui/`, `prefs.py`, `handlers.py` : couche Blender.
+- Detection du projet par recherche d'un parent contenant `.blendup/project.json`.
+- Detection de l'asset lie par `paths.blenderSource`, avec memorisation d'un id dans la scene.
+- Panneau BlendUp dans la sidebar de la vue 3D (onglet `BlendUp`).
+- Export FBX manuel vers `paths.fbxExport`, ecriture de l'etat d'export dans la fiche (`lastExportAt`, `lastExportStatus`, `status`, `updatedAt`) au meme format JSON que le backend.
+- Auto-export au save selon le mode d'export par asset (auto / manuel / disabled).
+- Reglages d'export FBX places dans les preferences de l'add-on.
+- Validation de base avant export (objets exportables, echelle, nomenclature, materiaux).
+- Templates simples : materiau de base, collider simple, preparation static mesh.
+- Action "ouvrir la fiche dans BlendUp" via `.blendup/temp/open-request.json` + tentative `blendup://asset/<id>`.
+- Journal d'activite alimente (`asset.exported`, `asset.export_failed`, `asset.export_mode_changed`).
+- Tests du coeur sans Blender dans `apps/blender-addon/tests`.
+
+### Verification
+
+- `python apps/blender-addon/tests/test_core.py` : 8/8 OK.
+- `py_compile` sur tous les fichiers de l'add-on : OK (syntaxe valide).
+- Format JSON ecrit par l'add-on : identique octet pour octet a une fiche ecrite par le backend.
+
+### Notes
+
+- Le test "vivant" dans Blender (panneau, export reel, auto-export) reste a faire par l'utilisateur : pas de Blender dans l'environnement de developpement courant.
+- L'add-on cible Blender 4.0+ via `bl_info`.
+- L'ouverture de fiche depuis Blender necessite encore un suivi cote application : surveiller `.blendup/temp/open-request.json` ou enregistrer le protocole `blendup://`.
+
+### Prochaine Etape
+
+- Tester l'add-on dans Blender sur le projet test (`PROP_CubeCrate_01`).
+- Cote application : consommer `.blendup/temp/open-request.json` pour ouvrir une fiche.
+- Demarrer le package Unity minimal (import FBX -> prefab) pour fermer la boucle.

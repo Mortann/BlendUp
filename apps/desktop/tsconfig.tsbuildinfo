@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/blendup/actions.ts","./src/blendup/projectloader.ts","./src/blendup/types.ts","./src/fixtures/blenduptest.ts","./src/ui/format.ts","./vite.config.ts"],"version":"6.0.3"}
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/blendup/actions.ts","./src/blendup/projectLoader.ts","./src/blendup/types.ts","./src/fixtures/blendUpTest.ts","./src/ui/format.ts","./vite.config.ts"],"version":"6.0.3"}

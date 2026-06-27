@@ -34,17 +34,21 @@ Version cible V1 :
 
 ### Integration V1
 
-Via add-on Python.
+Via add-on Python (implemente dans `apps/blender-addon`).
 
 Fonctions V1 :
 
-- detection du projet BlendUp ;
-- detection de l'asset lie ;
-- panneau BlendUp ;
-- export FBX ;
-- validation ;
-- creation depuis templates ;
-- retour de statut export.
+- detection du projet BlendUp ; [fait]
+- detection de l'asset lie ; [fait]
+- panneau BlendUp ; [fait]
+- export FBX ; [fait]
+- validation ; [fait]
+- creation depuis templates ; [fait, version simple]
+- retour de statut export. [fait, ecrit dans la fiche asset]
+
+Reglages d'export : stockes dans les preferences de l'add-on Blender. Les reglages par defaut reprennent ceux du script d'export du backend pour garder une sortie coherente.
+
+Ouverture de fiche depuis Blender : l'add-on ecrit `.blendup/temp/open-request.json` (et tente `blendup://asset/<id>`). L'ecoute cote application desktop reste a ajouter.
 
 ### Auto-export
 

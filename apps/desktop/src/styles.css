@@ -29,6 +29,115 @@ button {
   cursor: pointer;
 }
 
+.welcome-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 100vh;
+}
+
+.welcome-page {
+  display: grid;
+  align-content: center;
+  gap: 28px;
+  width: min(760px, calc(100vw - 32px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.welcome-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.welcome-brand .brand-mark {
+  width: 52px;
+  height: 52px;
+}
+
+.welcome-brand h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: 0;
+}
+
+.welcome-actions {
+  display: grid;
+  gap: 14px;
+}
+
+.recent-projects {
+  display: grid;
+  gap: 8px;
+}
+
+.recent-projects h2 {
+  margin: 0 0 4px;
+  color: #dce1dd;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+}
+
+.recent-projects button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #f5f2eb;
+  text-align: left;
+}
+
+.recent-projects button:hover {
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.recent-projects span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-project-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.create-project-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+}
+
+.create-project-options {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  color: #dce1dd;
+  font-size: 0.86rem;
+}
+
+.settings-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2e6f73;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
@@ -49,6 +158,19 @@ button {
   align-items: center;
   gap: 12px;
   min-height: 44px;
+}
+
+.brand-button {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.brand-button:hover .brand-mark {
+  background: #3d8589;
 }
 
 .brand-mark {
@@ -293,6 +415,7 @@ button {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+  min-width: 0;
 }
 
 .topbar-meta span,
@@ -307,6 +430,13 @@ button {
   background: rgba(255, 255, 255, 0.06);
   color: #dce1dd;
   font-size: 0.78rem;
+}
+
+.topbar-meta span {
+  max-width: min(560px, 52vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .content-grid {
@@ -666,6 +796,213 @@ button {
   gap: 14px;
   min-height: 0;
   padding: 18px;
+}
+
+.dashboard-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.dashboard-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-card {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.dashboard-card span,
+.dashboard-card small {
+  overflow: hidden;
+  color: #aeb8b2;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-card strong {
+  color: #f5f2eb;
+  font-size: 1.35rem;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dashboard-panel {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dashboard-panel.wide {
+  grid-column: 1 / -1;
+}
+
+.dashboard-panel p {
+  margin: 0 0 14px;
+  color: #cbd3cf;
+  line-height: 1.45;
+}
+
+.settings-page {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-panel {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-panel.wide {
+  grid-column: 1 / -1;
+}
+
+.settings-heading {
+  margin-bottom: 14px;
+}
+
+.settings-heading h2 {
+  margin: 0;
+  font-size: 1.12rem;
+  letter-spacing: 0;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-field span {
+  color: #aeb8b2;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settings-field input {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 0 10px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #2e6f73;
+  color: white;
+}
+
+.settings-actions button.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5f2eb;
+}
+
+.settings-actions button.danger {
+  color: #ffb0a6;
+}
+
+.settings-actions button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.recent-projects.inline {
+  max-width: 100%;
+}
+
+.tool-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tool-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.tool-status.ok {
+  color: #b9f1ca;
+}
+
+.tool-status.missing {
+  color: #ffc56f;
+}
+
+.tool-status div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-status strong,
+.tool-status span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-status span {
+  color: #aeb8b2;
+  font-size: 0.76rem;
 }
 
 .problem-summary-grid {
@@ -1238,12 +1575,17 @@ button {
 
   .owner-grid,
   .notes-grid,
-  .problem-summary-grid,
+    .dashboard-summary,
+    .dashboard-grid,
+    .create-project-grid,
+    .problem-summary-grid,
+    .settings-layout,
   .task-summary-grid,
   .git-summary-grid,
   .problem-layout,
   .task-layout,
-  .problem-detail-meta {
+  .problem-detail-meta,
+  .tool-status-grid {
     grid-template-columns: 1fr;
   }
 }

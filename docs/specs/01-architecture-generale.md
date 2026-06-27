@@ -189,7 +189,7 @@ Les choix techniques de la V1 sont maintenant valides et le premier scaffold exi
 - Vite ;
 - backend Rust minimal via commandes Tauri.
 
-Le premier backend lit les fichiers `.blendup`, calcule des problems simples, lit l'etat Git en lecture seule et lance un export FBX via Blender quand l'application tourne en natif.
+Le backend lit les fichiers `.blendup`, calcule des problems simples, lit l'etat Git en lecture seule et lance un export FBX via Blender quand l'application tourne en natif. Il ecrit aussi des donnees : settings utilisateur locaux (hors Git), mise a jour de fiche asset apres export, et creation de projet assistee (`create_project`). Une commande `detect_local_tools` localise Blender, Unity et PureRef.
 
 ### Add-on Blender
 
@@ -197,7 +197,7 @@ Direction V1 :
 
 - Python Blender API.
 
-L'add-on dedie n'est pas encore implemente. Le premier export FBX passe pour l'instant par un script Python Blender temporaire lance par le backend Tauri.
+L'add-on dedie existe dans `apps/blender-addon`. Il fournit un panneau BlendUp dans la vue 3D, la detection projet/asset (recherche d'un parent contenant `.blendup/project.json` + chemin `paths.blenderSource`), l'export FBX manuel et l'auto-export au save, la validation de base, des templates simples, et l'ecriture de l'etat d'export dans la fiche asset au meme format JSON que le backend. Sa logique metier est isolee dans `blendup/core` (sans `bpy`) et couverte par des tests. Le backend Tauri garde en parallele son export FBX via script temporaire pour declencher un export hors Blender.
 
 ### Package Unity
 

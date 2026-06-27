@@ -81,6 +81,47 @@ L'environnement attendu doit afficher :
 - Tauri 2 detecte ;
 - React + Vite detectes.
 
+## Settings Locaux
+
+L'application native stocke les preferences utilisateur hors Git.
+
+Sur Windows :
+
+```text
+%APPDATA%/BlendUp/user-settings.json
+```
+
+Ce fichier peut contenir :
+
+- dernier projet ouvert ;
+- projets recents ;
+- chemin Blender ;
+- chemin Unity ;
+- chemin PureRef.
+
+## Ouverture De Projet
+
+Dans l'application native, l'ouverture de projet utilise le selecteur de dossier Tauri.
+
+Fallback utile :
+
+- saisir ou coller un chemin dans le champ projet ;
+- cliquer sur `Ouvrir ce chemin`.
+
+Dans le navigateur de developpement seul, le selecteur natif n'est pas disponible.
+
+## Detection Des Outils
+
+La vue `Settings` affiche la disponibilite des outils locaux.
+
+Outils detectes actuellement :
+
+- Blender ;
+- Unity ;
+- PureRef.
+
+La detection peut remplir automatiquement les chemins absents au demarrage quand un outil est trouve.
+
 ## Etat Verifie Le 2026-06-27
 
 - `npm install` : OK, 95 packages ajoutes, 0 vulnerabilite.

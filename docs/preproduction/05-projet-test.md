@@ -2,7 +2,7 @@
 
 ## Objectif
 
-Le dossier `BlendUpTest/` sert de projet exemple pour tester BlendUp pendant la production.
+Le dossier `BlendUp_projet_Test/` sert de projet exemple pour tester BlendUp pendant la production. Il est integre au depot principal comme sous-module Git.
 
 Il doit permettre de verifier progressivement :
 
@@ -19,7 +19,7 @@ Il doit permettre de verifier progressivement :
 ## Emplacement
 
 ```text
-BlendUpTest/
+BlendUp_projet_Test/
   .blendup/
   Art/
   Unity/
@@ -48,14 +48,14 @@ Le projet test doit ignorer les dossiers Unity generes :
 - `Unity/UserSettings/`
 - fichiers `.csproj`, `.sln`, `.slnx`
 
-Un `.gitignore` a ete ajoute dans `BlendUpTest/`.
+Un `.gitignore` a ete ajoute dans `BlendUp_projet_Test/`.
 
 ## Prochaine Structure A Completer
 
 Structure recommandee pour les premiers tests :
 
 ```text
-BlendUpTest/
+BlendUp_projet_Test/
   .blendup/
     project.json
     assets/

@@ -44,12 +44,17 @@ Ce depot contient :
 
 - la documentation de preproduction et de production ;
 - une application desktop Tauri + React + TypeScript dans `apps/desktop` ;
-- un backend Tauri/Rust minimal capable de lire un projet `.blendup` ;
-- un projet test `BlendUpTest/` avec Unity, deux fiches assets et deux taches internes ;
-- une premiere interface avec vues `Assets`, `Problems`, `Tasks` et `Git` lecture seule ;
-- une premiere action d'export FBX via Blender depuis l'application native.
+- un backend Tauri/Rust capable de lire et d'ecrire des donnees `.blendup` ;
+- un projet test `BlendUp_projet_Test/` (sous-module Git) avec Unity, deux fiches assets et deux taches internes ;
+- une interface avec vues `Dashboard`, `Assets`, `Problems`, `Tasks`, `Git` (lecture seule) et `Settings` ;
+- des settings utilisateur locaux stockes hors Git (dernier projet, projets recents, chemins Blender/Unity/PureRef) ;
+- un selecteur de dossier natif pour ouvrir un projet, avec fallback par chemin manuel ;
+- une detection des outils locaux Blender, Unity et PureRef ;
+- une premiere version de creation de projet assistee depuis l'ecran d'accueil ;
+- une premiere action d'export FBX via Blender depuis l'application native ;
+- un add-on Blender dans `apps/blender-addon` (panneau, export FBX manuel/auto, validation, templates, liaison asset).
 
-L'add-on Blender dedie et le package Unity dedie ne sont pas encore implementes.
+Le package Unity dedie n'est pas encore implemente. Cote add-on, l'action "ouvrir la fiche dans BlendUp" ecrit une requete `.blendup/temp/open-request.json` mais l'ecoute de cette requete cote application reste a ajouter.
 
 ## Installation Et Verification Rapide
 

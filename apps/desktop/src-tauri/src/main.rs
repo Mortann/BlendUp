@@ -1,5 +1,5 @@
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::{
     collections::HashSet,
     env, fs,
@@ -75,10 +75,50 @@ struct ExportAssetResult {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct OpenRequest {
+    asset_id: String,
+    requested_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct BlenderDetectionResult {
     found: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolDetection {
+    found: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalToolsSnapshot {
+    blender: ToolDetection,
+    unity: ToolDetection,
+    pure_ref: ToolDetection,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateProjectOptions {
+    project_root: String,
+    project_name: String,
+    create_unity_folders: bool,
+    create_gitignore: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateProjectResult {
+    project_root: String,
     message: String,
 }
 
@@ -99,13 +139,80 @@ struct GitStatusFile {
     path: String,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UserSettings {
+    schema_version: u32,
+    kind: String,
+    last_project_root: Option<String>,
+    recent_projects: Vec<String>,
+    blender_path: Option<String>,
+    unity_path: Option<String>,
+    pure_ref_path: Option<String>,
+}
+
+impl Default for UserSettings {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            kind: "user_settings".to_string(),
+            last_project_root: None,
+            recent_projects: Vec::new(),
+            blender_path: None,
+            unity_path: None,
+            pure_ref_path: None,
+        }
+    }
+}
+
+#[tauri::command]
+fn read_user_settings() -> Result<UserSettings, String> {
+    let path = user_settings_path()?;
+
+    if !path.exists() {
+        return Ok(UserSettings::default());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|error| format!("Impossible de lire {}: {error}", path.display()))?;
+
+    serde_json::from_str(&content)
+        .map_err(|error| format!("JSON invalide dans {}: {error}", path.display()))
+}
+
+#[tauri::command]
+fn save_user_settings(settings: UserSettings) -> Result<UserSettings, String> {
+    let normalized = normalize_user_settings(settings);
+    let path = user_settings_path()?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+    }
+
+    let content = serde_json::to_string_pretty(&normalized)
+        .map_err(|error| format!("Impossible de serialiser les settings utilisateur: {error}"))?;
+
+    fs::write(&path, format!("{content}\n"))
+        .map_err(|error| format!("Impossible d'ecrire {}: {error}", path.display()))?;
+
+    Ok(normalized)
+}
+
 #[tauri::command]
 fn read_default_project_snapshot() -> Result<ProjectSnapshot, String> {
-    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("..")
-        .join("BlendUpTest");
+        .join("..");
+    let candidates = [
+        repository_root.join("BlendUp_projet_Test"),
+        repository_root.join("BlendUpTest"),
+    ];
+    let project_root = candidates
+        .into_iter()
+        .find(|candidate| candidate.join(".blendup").join("project.json").exists())
+        .ok_or_else(|| "Projet test introuvable.".to_string())?;
 
     read_project_snapshot(project_root.to_string_lossy().to_string())
 }
@@ -170,6 +277,126 @@ fn detect_blender(blender_path: Option<String>) -> BlenderDetectionResult {
                     .to_string(),
         },
     }
+}
+
+#[tauri::command]
+fn detect_local_tools(
+    blender_path: Option<String>,
+    unity_path: Option<String>,
+    pure_ref_path: Option<String>,
+) -> LocalToolsSnapshot {
+    LocalToolsSnapshot {
+        blender: detect_tool(
+            "Blender",
+            blender_path.as_deref(),
+            find_blender_executable(blender_path.as_deref()),
+        ),
+        unity: detect_tool(
+            "Unity",
+            unity_path.as_deref(),
+            find_unity_executable(unity_path.as_deref()),
+        ),
+        pure_ref: detect_tool(
+            "PureRef",
+            pure_ref_path.as_deref(),
+            find_pure_ref_executable(pure_ref_path.as_deref()),
+        ),
+    }
+}
+
+#[tauri::command]
+fn create_project(options: CreateProjectOptions) -> Result<CreateProjectResult, String> {
+    let project_name = options.project_name.trim();
+    let project_root_value = options.project_root.trim();
+
+    if project_name.is_empty() {
+        return Err("Donne un nom au projet.".to_string());
+    }
+
+    if project_root_value.is_empty() {
+        return Err("Choisis un dossier racine pour le projet.".to_string());
+    }
+
+    let project_root = PathBuf::from(project_root_value);
+
+    if project_root.exists() && !project_root.is_dir() {
+        return Err(format!(
+            "{} existe deja mais ce n'est pas un dossier.",
+            project_root.display()
+        ));
+    }
+
+    let project_file = project_root.join(".blendup").join("project.json");
+
+    if project_file.exists() {
+        return Err(format!(
+            "Un projet BlendUp existe deja dans {}.",
+            project_root.display()
+        ));
+    }
+
+    fs::create_dir_all(&project_root)
+        .map_err(|error| format!("Impossible de creer {}: {error}", project_root.display()))?;
+
+    for directory in default_project_directories(options.create_unity_folders) {
+        let path = project_root.join(directory);
+        fs::create_dir_all(&path)
+            .map_err(|error| format!("Impossible de creer {}: {error}", path.display()))?;
+    }
+
+    write_json_file(&project_file, &default_project_config(project_name))?;
+    write_json_file(
+        &project_root
+            .join(".blendup")
+            .join("presets")
+            .join("asset-types.json"),
+        &default_asset_type_presets(),
+    )?;
+    write_json_file(
+        &project_root
+            .join(".blendup")
+            .join("naming")
+            .join("asset-naming.json"),
+        &default_asset_naming_rules(),
+    )?;
+    write_json_file(
+        &project_root
+            .join(".blendup")
+            .join("naming")
+            .join("branch-naming.json"),
+        &default_branch_naming_rules(),
+    )?;
+    write_json_file(
+        &project_root
+            .join(".blendup")
+            .join("migrations")
+            .join("applied.json"),
+        &json!({
+            "schemaVersion": 1,
+            "kind": "applied_migrations",
+            "items": []
+        }),
+    )?;
+    write_text_file(
+        &project_root
+            .join(".blendup")
+            .join("logs")
+            .join("activity.jsonl"),
+        "",
+    )?;
+
+    if options.create_gitignore {
+        let gitignore_path = project_root.join(".gitignore");
+
+        if !gitignore_path.exists() {
+            write_text_file(&gitignore_path, default_gitignore_content())?;
+        }
+    }
+
+    Ok(CreateProjectResult {
+        project_root: project_root.to_string_lossy().to_string(),
+        message: format!("{project_name} est pret."),
+    })
 }
 
 #[tauri::command]
@@ -266,6 +493,33 @@ fn export_asset_to_fbx(
         output_path: Some(fbx_export_path.to_string_lossy().to_string()),
         blender_path: Some(blender_executable.to_string_lossy().to_string()),
         log,
+    })
+}
+
+#[tauri::command]
+fn take_open_request(project_root: String) -> Option<OpenRequest> {
+    // Requete ecrite par l'add-on Blender ("ouvrir la fiche dans BlendUp").
+    // On la lit puis on la supprime pour qu'elle ne soit traitee qu'une fois.
+    let request_path = PathBuf::from(&project_root)
+        .join(".blendup")
+        .join("temp")
+        .join("open-request.json");
+
+    if !request_path.exists() {
+        return None;
+    }
+
+    let value = read_json_file(&request_path).ok()?;
+    let asset_id = json_string(&value, &["assetId"])?.to_string();
+    let requested_at = json_string(&value, &["requestedAt"])
+        .unwrap_or("")
+        .to_string();
+
+    let _ = fs::remove_file(&request_path);
+
+    Some(OpenRequest {
+        asset_id,
+        requested_at,
     })
 }
 
@@ -570,6 +824,272 @@ fn write_json_file(path: &Path, value: &Value) -> Result<(), String> {
         .map_err(|error| format!("Impossible d'ecrire {}: {error}", path.display()))
 }
 
+fn write_text_file(path: &Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+    }
+
+    fs::write(path, content)
+        .map_err(|error| format!("Impossible d'ecrire {}: {error}", path.display()))
+}
+
+fn default_project_directories(create_unity_folders: bool) -> Vec<&'static str> {
+    let mut directories = vec![
+        ".blendup/assets",
+        ".blendup/tasks",
+        ".blendup/refs",
+        ".blendup/presets",
+        ".blendup/naming",
+        ".blendup/locks",
+        ".blendup/logs",
+        ".blendup/migrations",
+        "Art/Blender/Props",
+        "Art/Blender/Environment",
+        "Art/Blender/Templates",
+        "Art/References/Global",
+        "Art/References/Props",
+        "Art/Textures",
+        "Art/UI",
+    ];
+
+    if create_unity_folders {
+        directories.extend([
+            "Unity/Assets/Models",
+            "Unity/Assets/Prefabs",
+            "Unity/Assets/Materials",
+            "Unity/Assets/BlendUp",
+            "Unity/Packages",
+            "Unity/ProjectSettings",
+        ]);
+    }
+
+    directories
+}
+
+fn default_project_config(project_name: &str) -> Value {
+    json!({
+        "schemaVersion": 1,
+        "kind": "project",
+        "projectId": format!("project_{}", project_slug(project_name)),
+        "name": project_name,
+        "paths": {
+            "artRoot": "Art",
+            "blenderRoot": "Art/Blender",
+            "referencesRoot": "Art/References",
+            "texturesRoot": "Art/Textures",
+            "uiRoot": "Art/UI",
+            "unityRoot": "Unity",
+            "unityAssetsRoot": "Unity/Assets",
+            "unityModelsRoot": "Unity/Assets/Models",
+            "unityPrefabsRoot": "Unity/Assets/Prefabs",
+            "unityMaterialsRoot": "Unity/Assets/Materials"
+        },
+        "targets": {
+            "blenderMinimumVersion": "4.0",
+            "unityMinimumVersion": "6000.0.77f1"
+        },
+        "features": {
+            "git": true,
+            "gitLfs": true,
+            "clickUp": false,
+            "pureRef": true
+        },
+        "defaultView": "artist"
+    })
+}
+
+fn default_asset_type_presets() -> Value {
+    json!({
+        "schemaVersion": 1,
+        "kind": "asset_type_presets",
+        "items": [
+            {
+                "id": "static_mesh",
+                "displayName": "Static Mesh",
+                "prefix": "PROP",
+                "defaultExportProfile": "static_mesh_default",
+                "defaultQualityBudget": "static_mesh_default"
+            },
+            {
+                "id": "prop",
+                "displayName": "Prop",
+                "prefix": "PROP",
+                "defaultExportProfile": "static_mesh_default",
+                "defaultQualityBudget": "prop_default"
+            },
+            {
+                "id": "environment_piece",
+                "displayName": "Environment Piece",
+                "prefix": "ENV",
+                "defaultExportProfile": "environment_piece_default",
+                "defaultQualityBudget": "environment_piece_default"
+            },
+            {
+                "id": "material",
+                "displayName": "Material",
+                "prefix": "MAT",
+                "defaultExportProfile": null,
+                "defaultQualityBudget": "material_default"
+            },
+            {
+                "id": "texture",
+                "displayName": "Texture",
+                "prefix": "TEX",
+                "defaultExportProfile": null,
+                "defaultQualityBudget": "texture_default"
+            },
+            {
+                "id": "ui_image",
+                "displayName": "UI Image",
+                "prefix": "UI",
+                "defaultExportProfile": null,
+                "defaultQualityBudget": "ui_image_default"
+            }
+        ]
+    })
+}
+
+fn default_asset_naming_rules() -> Value {
+    json!({
+        "schemaVersion": 1,
+        "kind": "asset_naming_rules",
+        "pattern": "{prefix}_{name}_{index}",
+        "prefixes": ["PROP", "ENV", "CHR", "MAT", "TEX", "UI", "FX"],
+        "blenderSuffixes": ["_MESH", "_COL", "_LOD0", "_LOD1", "_ARM", "_RIG", "_EMPTY", "_SOCKET"],
+        "forbiddenNameFragments": ["final", "new", "copy", "test"]
+    })
+}
+
+fn default_branch_naming_rules() -> Value {
+    json!({
+        "schemaVersion": 1,
+        "kind": "branch_naming_rules",
+        "patterns": {
+            "asset": "asset/{assetName}-{workType}",
+            "task": "task/{taskCode}-{slug}",
+            "fix": "fix/{assetId}-{slug}",
+            "review": "review/{assetName}-validation"
+        },
+        "examples": [
+            "asset/PROP_Barrel_01-modeling",
+            "asset/CHR_Knight_01-rig",
+            "task/BU-124-door-interactable",
+            "fix/asset_7a42-unity-import",
+            "review/PROP_Barrel_01-validation"
+        ]
+    })
+}
+
+fn default_gitignore_content() -> &'static str {
+    "# Unity generated folders\nUnity/Library/\nUnity/Temp/\nUnity/Obj/\nUnity/Build/\nUnity/Builds/\nUnity/Logs/\nUnity/UserSettings/\n\n# Unity generated files\nUnity/*.csproj\nUnity/*.sln\nUnity/*.slnx\nUnity/*.user\nUnity/*.pidb\nUnity/*.booproj\nUnity/*.svd\nUnity/*.pdb\nUnity/*.mdb\nUnity/sysinfo.txt\n\n# OS / editor files\n.DS_Store\nThumbs.db\ndesktop.ini\n.vscode/\n\n# BlendUp local-only generated cache, if created later\n.blendup/cache/\n.blendup/tmp/\n.blendup/temp/\n"
+}
+
+fn project_slug(value: &str) -> String {
+    let mut slug = String::new();
+
+    for character in value.chars() {
+        if character.is_ascii_alphanumeric() {
+            slug.push(character.to_ascii_lowercase());
+        } else if !slug.ends_with('_') {
+            slug.push('_');
+        }
+    }
+
+    let trimmed = slug.trim_matches('_');
+
+    if trimmed.is_empty() {
+        "project".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn user_settings_path() -> Result<PathBuf, String> {
+    if let Some(app_data) = env::var_os("APPDATA") {
+        return Ok(PathBuf::from(app_data)
+            .join("BlendUp")
+            .join("user-settings.json"));
+    }
+
+    if let Some(config_home) = env::var_os("XDG_CONFIG_HOME") {
+        return Ok(PathBuf::from(config_home)
+            .join("BlendUp")
+            .join("user-settings.json"));
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        return Ok(PathBuf::from(home)
+            .join(".config")
+            .join("BlendUp")
+            .join("user-settings.json"));
+    }
+
+    Err("Impossible de determiner le dossier de configuration utilisateur.".to_string())
+}
+
+fn normalize_user_settings(settings: UserSettings) -> UserSettings {
+    let mut recent_projects = Vec::new();
+
+    for project in settings.recent_projects {
+        let trimmed = project.trim();
+
+        if trimmed.is_empty() || recent_projects.iter().any(|known| known == trimmed) {
+            continue;
+        }
+
+        recent_projects.push(trimmed.to_string());
+
+        if recent_projects.len() == 8 {
+            break;
+        }
+    }
+
+    let last_project_root = settings
+        .last_project_root
+        .and_then(|value| non_empty_string(&value));
+
+    let recent_projects = match &last_project_root {
+        Some(last_project)
+            if recent_projects
+                .iter()
+                .all(|project| project != last_project) =>
+        {
+            let mut next = vec![last_project.clone()];
+            next.extend(recent_projects);
+            next.truncate(8);
+            next
+        }
+        _ => recent_projects,
+    };
+
+    UserSettings {
+        schema_version: 1,
+        kind: "user_settings".to_string(),
+        last_project_root,
+        recent_projects,
+        blender_path: settings
+            .blender_path
+            .and_then(|value| non_empty_string(&value)),
+        unity_path: settings
+            .unity_path
+            .and_then(|value| non_empty_string(&value)),
+        pure_ref_path: settings
+            .pure_ref_path
+            .and_then(|value| non_empty_string(&value)),
+    }
+}
+
+fn non_empty_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 fn find_asset_file(project_root: &Path, asset_id: &str) -> Result<(PathBuf, Value), String> {
     let assets_dir = project_root.join(".blendup").join("assets");
     let entries = fs::read_dir(&assets_dir)
@@ -716,6 +1236,32 @@ fn command_is_available(command: &str) -> bool {
     Command::new(command).arg("--version").output().is_ok()
 }
 
+fn detect_tool(
+    label: &str,
+    explicit_path: Option<&str>,
+    detected_path: Option<PathBuf>,
+) -> ToolDetection {
+    match detected_path {
+        Some(path) => ToolDetection {
+            found: true,
+            path: Some(path.to_string_lossy().to_string()),
+            message: format!("{label} detecte."),
+        },
+        None => {
+            let detail = explicit_path.and_then(non_empty_string).map_or_else(
+                || "Aucun chemin local valide detecte.".to_string(),
+                |path| format!("Chemin introuvable: {path}"),
+            );
+
+            ToolDetection {
+                found: false,
+                path: None,
+                message: format!("{label} non detecte. {detail}"),
+            }
+        }
+    }
+}
+
 fn common_blender_locations() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
@@ -741,6 +1287,88 @@ fn common_blender_locations() -> Vec<PathBuf> {
     candidates
 }
 
+fn find_unity_executable(explicit_path: Option<&str>) -> Option<PathBuf> {
+    if let Some(path) = explicit_path.and_then(non_empty_path) {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    common_unity_locations()
+        .into_iter()
+        .find(|candidate| candidate.exists())
+}
+
+fn common_unity_locations() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    for variable in ["ProgramFiles", "ProgramW6432"] {
+        if let Some(base) = env::var_os(variable) {
+            let hub_editors = PathBuf::from(&base)
+                .join("Unity")
+                .join("Hub")
+                .join("Editor");
+
+            if let Ok(entries) = fs::read_dir(&hub_editors) {
+                for entry in entries.flatten() {
+                    candidates.push(entry.path().join("Editor").join("Unity.exe"));
+                }
+            }
+
+            candidates.push(
+                PathBuf::from(base)
+                    .join("Unity")
+                    .join("Editor")
+                    .join("Unity.exe"),
+            );
+        }
+    }
+
+    candidates.extend([
+        PathBuf::from("/usr/bin/unity-editor"),
+        PathBuf::from("/usr/local/bin/unity-editor"),
+        PathBuf::from("/opt/unity/Editor/Unity"),
+    ]);
+
+    candidates
+}
+
+fn find_pure_ref_executable(explicit_path: Option<&str>) -> Option<PathBuf> {
+    if let Some(path) = explicit_path.and_then(non_empty_path) {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    common_pure_ref_locations()
+        .into_iter()
+        .find(|candidate| candidate.exists())
+}
+
+fn common_pure_ref_locations() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    for variable in [
+        "ProgramFiles",
+        "ProgramW6432",
+        "ProgramFiles(x86)",
+        "LOCALAPPDATA",
+    ] {
+        if let Some(base) = env::var_os(variable) {
+            candidates.push(PathBuf::from(&base).join("PureRef").join("PureRef.exe"));
+            candidates.push(PathBuf::from(&base).join("PureRef").join("PureRef-2.0.exe"));
+        }
+    }
+
+    candidates.extend([
+        PathBuf::from("/usr/bin/pureref"),
+        PathBuf::from("/usr/local/bin/pureref"),
+        PathBuf::from("/opt/PureRef/PureRef"),
+    ]);
+
+    candidates
+}
+
 fn command_log(stdout: &[u8], stderr: &[u8]) -> String {
     let mut log = String::new();
     log.push_str(&String::from_utf8_lossy(stdout));
@@ -749,33 +1377,26 @@ fn command_log(stdout: &[u8], stderr: &[u8]) -> String {
         if !log.is_empty() {
             log.push('\n');
         }
-
         log.push_str(&String::from_utf8_lossy(stderr));
     }
 
-    let max_chars = 5000;
-
-    if log.chars().count() > max_chars {
-        log.chars()
-            .rev()
-            .take(max_chars)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect()
-    } else {
-        log
-    }
+    log.trim().to_string()
 }
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            read_user_settings,
+            save_user_settings,
             read_default_project_snapshot,
             read_project_snapshot,
+            create_project,
             detect_blender,
-            export_asset_to_fbx
+            detect_local_tools,
+            export_asset_to_fbx,
+            take_open_request
         ])
         .run(tauri::generate_context!())
-        .expect("error while running BlendUp");
+        .expect("error while running tauri application");
 }

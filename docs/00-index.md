@@ -8,7 +8,7 @@ Ce dossier sert de base de travail pour definir BlendUp et suivre la production.
 - `preproduction/02-definition-v1.md` : definition detaillee de la V1 et limites volontaires.
 - `preproduction/03-decisions-validees.md` : decisions deja prises pendant la phase de cadrage.
 - `preproduction/04-questions-ouvertes.md` : points a trancher avant ou pendant le debut de production.
-- `preproduction/05-projet-test.md` : role et structure du projet exemple `BlendUpTest`.
+- `preproduction/05-projet-test.md` : role et structure du projet exemple `BlendUp_projet_Test`.
 
 ## Specifications
 

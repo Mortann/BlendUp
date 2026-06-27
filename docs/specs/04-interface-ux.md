@@ -115,6 +115,34 @@ Sections optionnelles V1 :
 - Activity
 - Git
 
+## Accueil Sans Projet
+
+Quand aucun projet n'est charge, BlendUp doit afficher un ecran d'accueil sobre.
+
+Actions V1 :
+
+- ouvrir un projet via selecteur de dossier natif ;
+- ouvrir un projet par chemin si besoin ;
+- rouvrir un projet recent ;
+- ouvrir le projet test pendant la production ;
+- reserver l'action creer un projet pour l'assistant de creation.
+
+L'application ne doit pas charger automatiquement un snapshot de demo comme si c'etait un vrai projet. Le snapshot reste seulement un secours de developpement quand Tauri n'est pas disponible.
+
+## Dashboard Projet
+
+Quand un projet est ouvert, la premiere vue doit etre un dashboard projet.
+
+Le dashboard doit rester utile et compact :
+
+- resume assets/problems/tasks/Unity ;
+- prochain probleme important ;
+- prochaine tache ouverte ;
+- disponibilite des outils locaux ;
+- liens rapides vers Problems, Tasks, Settings ou l'asset concerne.
+
+Le logo BlendUp en haut a gauche ramene au dashboard du projet ouvert.
+
 ## Page Assets
 
 Objectif : trouver et comprendre rapidement les assets.
@@ -391,6 +419,28 @@ Sections :
 - composants Unity autorises ;
 - Git/Git LFS ;
 - roles et permissions douces.
+
+## Settings Locaux Machine
+
+Les chemins propres a une machine ne doivent pas etre stockes dans `.blendup`.
+
+Settings locaux V1 :
+
+- dernier projet ouvert ;
+- projets recents ;
+- chemin local vers Blender ;
+- chemin local vers Unity ;
+- chemin local vers PureRef.
+
+Ces reglages sont stockes hors Git dans le dossier de configuration utilisateur de l'application.
+
+Dans l'interface, les chemins locaux doivent etre dans `Settings`, pas dans la barre principale.
+
+BlendUp doit aussi aider l'utilisateur a limiter la configuration manuelle :
+
+- detection automatique de Blender, Unity et PureRef quand possible ;
+- validation visible des chemins renseignes ;
+- bouton de detection manuelle dans `Settings`.
 
 ## Permissions Douces
 

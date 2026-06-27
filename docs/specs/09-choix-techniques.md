@@ -143,6 +143,28 @@ Recommandation V1 :
 - ne pas les mettre dans Git ;
 - garder tous les reglages d'equipe dans `.blendup`.
 
+Implementation actuelle :
+
+- fichier local Windows : `%APPDATA%/BlendUp/user-settings.json` ;
+- fallback Linux : `$XDG_CONFIG_HOME/BlendUp/user-settings.json` ou `$HOME/.config/BlendUp/user-settings.json` ;
+- champs initiaux : dernier projet, projets recents, chemin Blender, chemin Unity, chemin PureRef ;
+- fallback navigateur de developpement : `localStorage`.
+
+Le dernier projet ouvert est recharge au demarrage si le chemin existe encore. Si le projet ne peut pas etre charge, BlendUp affiche l'accueil avec un message d'erreur.
+
+Selection de dossier :
+
+- plugin Tauri utilise : `@tauri-apps/plugin-dialog` / `tauri-plugin-dialog` ;
+- permission Tauri : `dialog:allow-open`.
+
+Detection outils locaux :
+
+- Blender : chemin explicite, variable `BLENDUP_BLENDER_PATH`, commande `blender`, dossiers `Blender Foundation` ;
+- Unity : chemin explicite, installations Unity Hub connues ;
+- PureRef : chemin explicite, emplacements d'installation courants.
+
+Unity et PureRef ne sont pas lances pour la detection afin d'eviter d'ouvrir des applications lourdes en arriere-plan.
+
 ## Donnees
 
 Format recommande :
