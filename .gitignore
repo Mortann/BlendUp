@@ -24,7 +24,7 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
-.BlendUpTest/
+BlendUpTest/
 
 # BlendUp generated local caches
 **/.blendup/cache/
