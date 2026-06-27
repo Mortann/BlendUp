@@ -177,42 +177,38 @@ Pour la V1, la communication peut rester simple :
 
 Un serveur local ou websocket pourra etre envisage plus tard si l'experience utilisateur l'exige.
 
-## Choix Techniques A Etudier Plus Tard
+## Choix Techniques V1 Actuels
 
-La preproduction ne fixe pas encore la stack. Les options probables :
+Les choix techniques de la V1 sont maintenant valides et le premier scaffold existe dans le depot.
 
 ### Application Desktop
 
-Possibilites :
+- Tauri 2 ;
+- TypeScript ;
+- React ;
+- Vite ;
+- backend Rust minimal via commandes Tauri.
 
-- Tauri + frontend web ;
-- Electron + frontend web ;
-- application native C#/.NET ;
-- application Python Qt.
-
-Criteres :
-
-- facilite de creation UI ;
-- acces fichiers local ;
-- integration Git ;
-- lancement Blender/Unity ;
-- packaging Windows ;
-- maintenance long terme.
+Le premier backend lit les fichiers `.blendup`, calcule des problems simples, lit l'etat Git en lecture seule et lance un export FBX via Blender quand l'application tourne en natif.
 
 ### Add-on Blender
 
-Probable :
+Direction V1 :
 
 - Python Blender API.
 
+L'add-on dedie n'est pas encore implemente. Le premier export FBX passe pour l'instant par un script Python Blender temporaire lance par le backend Tauri.
+
 ### Package Unity
 
-Probable :
+Direction V1 :
 
 - C# Editor scripts ;
 - package Unity local ;
 - AssetPostprocessor ;
 - PrefabUtility.
+
+Le package Unity dedie n'est pas encore implemente.
 
 ## Contraintes Importantes
 

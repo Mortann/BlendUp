@@ -1,6 +1,6 @@
-# Index De Preproduction
+# Index De Documentation
 
-Ce dossier sert de base de travail pour definir BlendUp avant le lancement de la production.
+Ce dossier sert de base de travail pour definir BlendUp et suivre la production.
 
 ## Documents principaux
 
@@ -30,6 +30,7 @@ Ce dossier sert de base de travail pour definir BlendUp avant le lancement de la
 ## Production
 
 - `production/01-journal.md` : suivi des etapes de production.
+- `production/02-installation-verification.md` : prerequis, installation locale et commandes de verification.
 
 ## Ligne directrice
 

@@ -24,29 +24,8 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
-
-# Unity generated folders in test projects
-**/Unity/Library/
-**/Unity/Temp/
-**/Unity/Obj/
-**/Unity/Build/
-**/Unity/Builds/
-**/Unity/Logs/
-**/Unity/UserSettings/
-
-# Unity generated files
-**/Unity/*.csproj
-**/Unity/*.sln
-**/Unity/*.slnx
-**/Unity/*.user
-**/Unity/*.pidb
-**/Unity/*.booproj
-**/Unity/*.svd
-**/Unity/*.pdb
-**/Unity/*.mdb
-**/Unity/sysinfo.txt
+.BlendUpTest/
 
 # BlendUp generated local caches
 **/.blendup/cache/
 **/.blendup/tmp/
-
