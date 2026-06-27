@@ -1,11 +1,19 @@
 {
-  "schemaVersion": 1,
-  "kind": "asset",
-  "id": "asset_env_rock_01",
+  "createdAt": "2026-06-24T00:00:00Z",
   "displayName": "ENV_Rock_01",
-  "type": "environment_piece",
-  "status": "in_progress",
-  "productionMode": "production",
+  "export": {
+    "autoExport": true,
+    "importInUnity": true,
+    "lastExportAt": "2026-06-25T18:16:40.830Z",
+    "lastExportStatus": "success",
+    "profileId": "environment_piece_default"
+  },
+  "id": "asset_env_rock_01",
+  "kind": "asset",
+  "notes": {
+    "artist": "Asset environnement de test. Contient un material dans le fichier Blender.",
+    "developer": "Doit permettre de tester export FBX, prefab simple, material et warning collider recommande."
+  },
   "owners": {
     "artist": null,
     "developer": null,
@@ -14,43 +22,35 @@
   "paths": {
     "blenderSource": "Art/Blender/Environment/ENV_Rock_01.blend",
     "fbxExport": "Unity/Assets/Models/Environment/ENV_Rock_01.fbx",
-    "unityPrefab": "Unity/Assets/Prefabs/Environment/ENV_Rock_01.prefab",
-    "thumbnail": ".blendup/thumbnails/asset_env_rock_01.png"
+    "thumbnail": ".blendup/thumbnails/asset_env_rock_01.png",
+    "unityPrefab": "Unity/Assets/Prefabs/Environment/ENV_Rock_01.prefab"
   },
-  "export": {
-    "profileId": "environment_piece_default",
-    "autoExport": true,
-    "importInUnity": true,
-    "lastExportAt": null,
-    "lastExportStatus": "never_exported"
-  },
-  "unity": {
-    "importStatus": "not_imported",
-    "lastImportAt": null,
-    "components": [],
-    "expectedComponents": [
-      {
-        "name": "StaticCollider",
-        "requirement": "recommended",
-        "confirmedRemoved": false
-      }
-    ],
-    "warnings": []
-  },
+  "productionMode": "production",
+  "references": [],
+  "schemaVersion": 1,
+  "status": "exported",
   "tags": [
     "environment",
     "rock",
     "test"
   ],
-  "references": [],
   "tasks": [
     "task_export_first_assets"
   ],
-  "variants": [],
-  "notes": {
-    "artist": "Asset environnement de test. Contient un material dans le fichier Blender.",
-    "developer": "Doit permettre de tester export FBX, prefab simple, material et warning collider recommande."
+  "type": "environment_piece",
+  "unity": {
+    "components": [],
+    "expectedComponents": [
+      {
+        "confirmedRemoved": false,
+        "name": "StaticCollider",
+        "requirement": "recommended"
+      }
+    ],
+    "importStatus": "not_imported",
+    "lastImportAt": null,
+    "warnings": []
   },
-  "createdAt": "2026-06-24T00:00:00Z",
-  "updatedAt": "2026-06-24T00:00:00Z"
+  "updatedAt": "2026-06-25T18:16:40.830Z",
+  "variants": []
 }

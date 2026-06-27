@@ -1,11 +1,19 @@
 {
-  "schemaVersion": 1,
-  "kind": "asset",
-  "id": "asset_prop_cubecrate_01",
+  "createdAt": "2026-06-24T00:00:00Z",
   "displayName": "PROP_CubeCrate_01",
-  "type": "prop",
-  "status": "in_progress",
-  "productionMode": "production",
+  "export": {
+    "autoExport": true,
+    "importInUnity": true,
+    "lastExportAt": "2026-06-25T18:16:59.389Z",
+    "lastExportStatus": "error",
+    "profileId": "static_mesh_default"
+  },
+  "id": "asset_prop_cubecrate_01",
+  "kind": "asset",
+  "notes": {
+    "artist": "Premier asset prop de test.",
+    "developer": "Doit permettre de tester export FBX, prefab simple et collider recommande."
+  },
   "owners": {
     "artist": null,
     "developer": null,
@@ -14,43 +22,35 @@
   "paths": {
     "blenderSource": "Art/Blender/Props/PROP_CubeCrate_01.blend",
     "fbxExport": "Unity/Assets/Models/Props/PROP_CubeCrate_01.fbx",
-    "unityPrefab": "Unity/Assets/Prefabs/Props/PROP_CubeCrate_01.prefab",
-    "thumbnail": ".blendup/thumbnails/asset_prop_cubecrate_01.png"
+    "thumbnail": ".blendup/thumbnails/asset_prop_cubecrate_01.png",
+    "unityPrefab": "Unity/Assets/Prefabs/Props/PROP_CubeCrate_01.prefab"
   },
-  "export": {
-    "profileId": "static_mesh_default",
-    "autoExport": true,
-    "importInUnity": true,
-    "lastExportAt": null,
-    "lastExportStatus": "never_exported"
-  },
-  "unity": {
-    "importStatus": "not_imported",
-    "lastImportAt": null,
-    "components": [],
-    "expectedComponents": [
-      {
-        "name": "StaticCollider",
-        "requirement": "recommended",
-        "confirmedRemoved": false
-      }
-    ],
-    "warnings": []
-  },
+  "productionMode": "production",
+  "references": [],
+  "schemaVersion": 1,
+  "status": "in_progress",
   "tags": [
     "prop",
     "test"
   ],
-  "references": [],
   "tasks": [
     "task_export_first_assets",
     "task_define_collider_rules"
   ],
-  "variants": [],
-  "notes": {
-    "artist": "Premier asset prop de test.",
-    "developer": "Doit permettre de tester export FBX, prefab simple et collider recommande."
+  "type": "prop",
+  "unity": {
+    "components": [],
+    "expectedComponents": [
+      {
+        "confirmedRemoved": false,
+        "name": "StaticCollider",
+        "requirement": "recommended"
+      }
+    ],
+    "importStatus": "not_imported",
+    "lastImportAt": null,
+    "warnings": []
   },
-  "createdAt": "2026-06-24T00:00:00Z",
-  "updatedAt": "2026-06-24T00:00:00Z"
+  "updatedAt": "2026-06-25T18:16:59.389Z",
+  "variants": []
 }
