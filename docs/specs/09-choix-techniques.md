@@ -38,6 +38,13 @@ Frontend possible :
 - state management simple au debut ;
 - composants UI sobres.
 
+Organisation frontend actuelle :
+
+- `apps/desktop/src/App.tsx` reste un composant d'assemblage court ;
+- `apps/desktop/src/app/useBlendUpController.ts` porte l'etat et les actions principales ;
+- `apps/desktop/src/app/` contient les types, filtres, metriques et composants UI partages ;
+- `apps/desktop/src/views/` contient les vues `Dashboard`, `Assets`, `References`, `Problems`, `Tasks`, `Git`, `Settings` et `WelcomePage`.
+
 Backend possible :
 
 - Rust via Tauri commands ;

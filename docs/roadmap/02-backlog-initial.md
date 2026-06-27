@@ -48,6 +48,7 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 - [x] Afficher vue artiste.
 - [x] Afficher vue dev.
 - [x] Afficher Problems.
+- [x] Afficher References.
 - [x] Afficher Project Settings.
 
 ## Phase 3 - Nomenclature Et Validation
@@ -107,6 +108,7 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 
 ## Phase 7 - References Et Taches
 
+- [x] Afficher page References.
 - [ ] Lier dossier references.
 - [ ] Lier images.
 - [ ] Lier fichier PureRef.

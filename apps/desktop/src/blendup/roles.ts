@@ -29,7 +29,7 @@ export interface RoleCapabilities {
 }
 
 const ARTIST_CAPABILITIES: RoleCapabilities = {
-  accent: "#1d9e75",
+  accent: "#143a73",
   primaryTool: "Blender",
   orientationLabel: "Oriente Blender",
   canExport: true,
@@ -44,7 +44,7 @@ const ARTIST_CAPABILITIES: RoleCapabilities = {
 };
 
 const DEVELOPER_CAPABILITIES: RoleCapabilities = {
-  accent: "#378add",
+  accent: "#2f6fdd",
   primaryTool: "Unity",
   orientationLabel: "Oriente Unity",
   canExport: false,

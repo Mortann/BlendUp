@@ -141,15 +141,19 @@ L'application ne doit pas charger automatiquement un snapshot de demo comme si c
 
 Quand un projet est ouvert, la premiere vue doit etre un dashboard projet.
 
-Le dashboard doit rester utile et compact :
+Le dashboard doit rester utile et compact. Il ne doit pas afficher les outils locaux : ces informations restent dans `Settings`.
 
 - resume assets/problems/tasks/Unity ;
 - prochain probleme important ;
 - prochaine tache ouverte ;
-- disponibilite des outils locaux ;
 - liens rapides vers Problems, Tasks, Settings ou l'asset concerne.
 
 Le logo BlendUp en haut a gauche ramene au dashboard du projet ouvert.
+
+Differenciation actuelle :
+
+- vue artiste : dashboard clair sur fond d'application noir, taches a faire, derniers assets travailles, acces References/Assets, Git et Problems en suivi secondaire ;
+- vue dev : dashboard sombre sur fond d'application noir, Problems, Tasks et Git en priorite, Assets/References en retrait.
 
 ## Page Assets
 
@@ -414,6 +418,13 @@ Important :
 - BlendUp organise ;
 - PureRef reste l'outil visuel.
 
+Implementation actuelle :
+
+- page `References` disponible dans la navigation ;
+- en vue artiste, elle est prioritaire et utilise une surface claire ;
+- en vue dev, elle reste accessible mais secondaire ;
+- affichage des dossiers detectes depuis les chemins references et des references liees aux assets.
+
 ## Project Settings
 
 Sections :
@@ -485,7 +496,8 @@ Limite V1 : deux roles seulement (artiste/dev). Les roles lead/admin des "permis
 
 Les deux vues ne different pas seulement par l'emphase : elles ont un contenu et un theme distincts.
 
-- Vue artiste : fiche `ArtistAssetDetail`, epuree, orientee Blender, peu de details techniques (source Blender, references, notes artiste, problemes a corriger). Accent teal.
-- Vue dev : fiche `DevAssetDetail`, dense, orientee Unity, beaucoup de details et d'options (import/prefab, composants attendus + presents, warnings Unity, chemins bruts, details d'export, equipe, notes). Accent bleu.
+- Vue artiste : surface claire sur shell noir, navigation Assets/References prioritaire, bibliotheque par dossiers, details affiches seulement apres selection, fiche epuree orientee Blender.
+- Vue dev : surface sombre sur shell noir, navigation Problems/Tasks/Git prioritaire, Assets/References en retrait, fiche dense orientee Unity.
+- Couleurs principales : noir, blanc, bleu nuit. Les accents verts/teal ne sont plus utilises.
 
 Les capacites par role sont centralisees dans `apps/desktop/src/blendup/roles.ts` (couleur d'accent, orientation, flags d'affichage, actions autorisees). L'export FBX est reserve a la vue artiste.

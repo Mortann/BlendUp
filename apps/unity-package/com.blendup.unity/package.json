@@ -1,0 +1,11 @@
+{
+  "name": "com.blendup.unity",
+  "version": "0.1.0",
+  "displayName": "BlendUp Unity",
+  "description": "Pont Unity <-> BlendUp : detecte les FBX exportes, cree/met a jour des prefabs simples et remonte l'etat d'import dans les fiches .blendup.",
+  "unity": "6000.0",
+  "author": { "name": "BlendUp" },
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  }
+}

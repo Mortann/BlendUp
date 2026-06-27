@@ -517,7 +517,7 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - Deux fiches asset distinctes :
   - `ArtistAssetDetail` : epuree, orientee Blender, peu de technique (source Blender, references, notes artiste, a corriger) ;
   - `DevAssetDetail` : dense, orientee Unity (import/prefab, composants attendus + presents, warnings Unity, chemins bruts, details d'export, equipe, notes dev+artiste, problems, plus d'actions).
-- Difference visuelle : classe `role-*` + variable CSS `--role-accent` (teal artiste / bleu dev), badge d'orientation, bandeau d'accent en haut de fiche, densite differente, chemins en monospace cote dev.
+- Difference visuelle : classe `role-*` + variable CSS `--role-accent`, badge d'orientation, bandeau d'accent en haut de fiche, densite differente, chemins en monospace cote dev.
 - L'export FBX reste reserve a la vue artiste.
 
 ### Verification
@@ -528,7 +528,9 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 ### Notes
 
-- Les actions dev (rebuild prefa
+- Les actions dev (rebuild prefab, definir composants, ouvrir Unity, besoin correction art) sont presentes mais desactivees ("a venir").
+- Le theme a ensuite ete harmonise en noir/blanc/bleu nuit lors de la refonte UI.
+
 ## 2026-06-27 - Restauration App.tsx Complet Et Open-Request
 
 ### Contexte
@@ -559,13 +561,43 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 - Tester l'ouverture de fiche depuis Blender de bout en bout dans l'app native.
 - Continuer le pipeline Unity (package minimal : FBX -> prefab).
-l'ouverture d'un projet.
+
+## 2026-06-27 - Refonte UI Et Decoupage Frontend
+
+### Fait
+
+- Refactor de `App.tsx` : passage d'un fichier monolithique a un composant d'assemblage court.
+- Ajout de `apps/desktop/src/app/useBlendUpController.ts` pour centraliser l'etat, les actions projet, l'export, les settings locaux, l'open-request et la detection outils.
+- Ajout de modules partages dans `apps/desktop/src/app/` :
+  - types d'application ;
+  - filtres ;
+  - metriques ;
+  - composants UI communs ;
+  - shell de workspace.
+- Deplacement des vues dans `apps/desktop/src/views/`.
+- Ajout d'une vraie vue `References`.
+- Refonte visuelle :
+  - shell global noir ;
+  - vue artiste avec surface claire ;
+  - vue dev avec surface sombre ;
+  - palette noir/blanc/bleu nuit ;
+  - abandon des accents verts/teal.
+- Dashboard adapte au role :
+  - artiste : taches, derniers assets travailles, References/Assets, Git en suivi secondaire ;
+  - dev : Problems, Tasks, Git en priorite, Assets/References en retrait.
+- Page Assets revue :
+  - navigation par dossiers ;
+  - details masques tant qu'aucun asset n'est selectionne ;
+  - cartes plus visuelles en artiste ;
+  - liste compacte en dev.
+- Les outils locaux ne sont plus affiches dans le dashboard ; ils restent dans `Settings`.
 
 ### Verification
 
 - `npm run typecheck` : OK.
+- `npm run build` : OK.
 
 ### Notes
 
-- `BlendUp_projet_Test` reste un sous-module modifie dans le working tree ; il n'a pas ete modifie pendant cette restauration.
-- Les actions dev restent visibles mais desactivees tant que les integrations Unity ne sont pas implementees.
+- Verification visuelle via navigateur integre tentee, mais le plugin navigateur a echoue sur une erreur interne de chemin. Le serveur Vite local reste disponible pour inspection manuelle.
+- `apps/unity-package/` et le sous-module `BlendUp_projet_Test` etaient deja presents/modifies dans le workspace et n'ont pas ete touches.
