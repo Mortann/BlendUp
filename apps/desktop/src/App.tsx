@@ -167,6 +167,46 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const projectRoot = project?.projectRoot;
+
+    if (!projectRoot) {
+      return;
+    }
+
+    // Surveille les requetes d'ouverture ecrites par l'add-on Blender dans
+    // .blendup/temp/open-request.json et ouvre la fiche demandee en direct.
+    let cancelled = false;
+
+    const intervalId = window.setInterval(async () => {
+      const request = await takeOpenRequest(projectRoot);
+
+      if (cancelled || !request) {
+        return;
+      }
+
+      const asset = project?.assets.find((item) => item.id === request.assetId);
+
+      if (!asset) {
+        return;
+      }
+
+      setSelectedAssetId(asset.id);
+      setActiveView("assets");
+      setOperationMessage({
+        tone: "info",
+        title: "Ouverture demandee depuis Blender",
+        detail: `Fiche affichee : ${asset.displayName}`
+      });
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.projectRoot]);
+
   const persistUserSettings = async (nextSettings: UserSettings) => {
     const savedSettings = await saveUserSettings(nextSettings);
     setUserSettings(savedSettings);
@@ -1324,7 +1364,7 @@ function TasksView({ onOpenAsset, snapshot }: TasksViewProps) {
         <TaskSummaryCard label="A faire" status="todo" tasks={snapshot.tasks} />
         <TaskSummaryCard label="En cours" status="in_progress" tasks={snapshot.tasks} />
         <TaskSummaryCard label="Review" status="review" tasks={snapshot.tasks} />
-        <TaskSummaryCard label="Bloque" status="blocked" tasks={snapshot.tasks} />
+           <TaskSummaryCard label="Bloque" status="blocked" tasks={snapshot.tasks} />
       </div>
 
       <div className="problem-toolbar">
@@ -2174,20 +2214,6 @@ function sourceLabel(source: BlendUpProblem["source"]): string {
   return labels[source];
 }
 
-function problemSummary(snapshot: ProjectSnapshot): string {
-  const blockingProblems = snapshot.problems.filter(
-    (problem) => problem.severity === "critical" || problem.severity === "error"
-  ).length;
-
-  return blockingProblems > 0 ? `${blockingProblems} bloquant(s)` : "Rien de bloquant";
-}
-
-function taskSummary(snapshot: ProjectSnapshot): string {
-  const openTasks = snapshot.tasks.filter((task) => task.status !== "done").length;
-
-  return openTasks > 0 ? `${openTasks} ouverte(s)` : "Tout est ferme";
-}
-
 function viewTitle(view: ActiveView): string {
   const labels: Record<ActiveView, string> = {
     assets: "Assets",
@@ -2199,6 +2225,29 @@ function viewTitle(view: ActiveView): string {
   };
 
   return labels[view];
+}
+
+function problemSummary(snapshot: ProjectSnapshot): string {
+  if (snapshot.problems.length === 0) {
+    return "Aucun probleme";
+  }
+
+  const critical = snapshot.problems.filter((problem) => problem.severity === "critical").length;
+  const errors = snapshot.problems.filter((problem) => problem.severity === "error").length;
+  const warnings = snapshot.problems.filter((problem) => problem.severity === "warning").length;
+
+  return `${critical} critique(s), ${errors} erreur(s), ${warnings} warning(s)`;
+}
+
+function taskSummary(snapshot: ProjectSnapshot): string {
+  if (snapshot.tasks.length === 0) {
+    return "Aucune tache";
+  }
+
+  const todo = snapshot.tasks.filter((task) => task.status === "todo").length;
+  const inProgress = snapshot.tasks.filter((task) => task.status === "in_progress").length;
+
+  return `${todo} a faire, ${inProgress} en cours`;
 }
 
 export default App;

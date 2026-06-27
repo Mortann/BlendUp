@@ -528,38 +528,38 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 ### Notes
 
-- Les actions dev (rebuild prefab, definir composants, ouvrir Unity, besoin correction art) sont presentes mais desactivees ("a venir").
-- Build complet (`vite`) et `cargo check` a relancer cote Windows.
-- Prochaine action : consommer `.blendup/temp/open-request.json` pour ouvrir une fiche.
-- Demarrer le package Unity minimal (import FBX -> prefab) pour fermer la boucle.
-
-## 2026-06-27 - Restauration Accueil, Dashboard, Settings Et Creation
+- Les actions dev (rebuild prefa
+## 2026-06-27 - Restauration App.tsx Complet Et Open-Request
 
 ### Contexte
 
-- Apres l'incident Git, le backend de creation de projet, settings locaux et detection outils etait encore present.
-- `App.tsx` avait perdu les ecrans d'accueil sans projet, Dashboard, Settings et l'assistant de creation.
-- Entre temps, le socle des vues Artiste/Dev avait ete ajoute et devait etre conserve.
+- L'utilisateur a recupere une version complete d'`App.tsx` (UI complete : accueil, Dashboard, Settings, creation de projet) deja fusionnee avec le socle de roles artiste/dev et l'amorce open-request.
+- Le fichier recupere etait tronque en fin (coupe au milieu de `TasksView`).
 
 ### Fait
 
-- Fusion de l'ancien flux projet avec les vues Artiste/Dev.
-- Restauration de l'accueil quand aucun projet n'est charge.
-- Restauration de l'ouverture de projet via selecteur de dossier natif, chemin manuel, projets recents et projet test.
-- Restauration du dashboard comme premiere page d'un projet ouvert.
-- Le logo BlendUp renvoie au dashboard du projet ouvert.
-- Restauration de `Settings` pour :
-  - ouvrir/fermer un projet ;
-  - enregistrer les chemins Blender, Unity et PureRef ;
-  - detecter les outils locaux ;
-  - rouvrir un projet recent.
-- Restauration de l'assistant de creation de projet :
-  - nom ;
-  - dossier racine ;
-  - dossiers Unity optionnels ;
-  - `.gitignore` optionnel ;
-  - ouverture automatique du projet cree sur le dashboard.
-- Rebranchement de la consommation ponctuelle de `.blendup/temp/open-request.json` lors de l'ouverture d'un projet.
+- Reconstruction de la fin manquante d'`App.tsx` (reste de `TasksView` + composants : `TaskSummaryCard`, `TaskDetail`, `GitView`, `ProblemsView`, `SegmentedControl`, `ProblemDetail`, `AssetRow`, `AssetProblems`, `ArtistAssetDetail`, `DevAssetDetail`, etc.).
+- Re-definition de deux helpers du dashboard perdus (`problemSummary`, `taskSummary`).
+- Completion de la fonctionnalite "ouvrir la fiche dans BlendUp" :
+  - consommation d'une requete en attente a l'ouverture d'un projet (deja present) ;
+  - ajout du **polling** continu (`takeOpenRequest` toutes les 1,5 s) pour ouvrir la fiche en direct quand l'add-on Blender ecrit `.blendup/temp/open-request.json` pendant que l'app est ouverte.
+
+### Boucle open-request complete
+
+1. Add-on Blender ecrit `.blendup/temp/open-request.json`.
+2. Backend `take_open_request` lit puis supprime la requete.
+3. Frontend : consomme au chargement + polling -> selectionne l'asset et bascule sur la vue Assets.
+
+### Verification
+
+- `npm run typecheck` : OK.
+- Build complet (`vite`) et `cargo check` a relancer cote Windows.
+
+### Prochaine Etape
+
+- Tester l'ouverture de fiche depuis Blender de bout en bout dans l'app native.
+- Continuer le pipeline Unity (package minimal : FBX -> prefab).
+l'ouverture d'un projet.
 
 ### Verification
 
