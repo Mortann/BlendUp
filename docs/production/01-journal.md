@@ -315,3 +315,54 @@
 - Ajouter un selecteur de dossier natif.
 - Tester l'export FBX avec Blender local.
 - Commencer une premiere integration Unity/prefab.
+
+## 2026-06-27 - Reprise Du Depot Et Verification Locale
+
+### Fait
+
+- Lecture du README et de toute la documentation `docs/`.
+- Verification de la coherence entre la documentation, l'application desktop et le projet test.
+- Installation des dependances npm.
+- Installation de Rust via rustup.
+- Installation du Windows SDK necessaire au linker MSVC.
+- Verification du projet test `BlendUpTest/` :
+  - `.blendup/project.json` present ;
+  - deux fiches assets presentes ;
+  - deux taches internes presentes ;
+  - projet Unity en version `6000.3.5f2`.
+- Mise a jour du README pour refleter l'etat reel du depot.
+- Ajout de `docs/production/02-installation-verification.md`.
+- Mise a jour de l'index documentation, de l'architecture generale et du backlog initial.
+
+### Verification
+
+- `npm install` : OK, 0 vulnerabilite.
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `cargo check` dans `apps/desktop/src-tauri` : OK.
+- `tauri info` : OK avec Rust/Cargo detectes.
+- Serveur Vite local `http://127.0.0.1:5173/` : status 200.
+
+### Environnement Detecte
+
+- Node : `24.14.0`.
+- npm : `11.9.0`.
+- Tauri CLI : `2.11.3`.
+- rustc : `1.96.0`.
+- cargo : `1.96.0`.
+- rustup : `1.29.0`.
+- Windows SDK installe pour le linker : `10.0.18362.0`.
+- WebView2 : OK.
+- MSVC : Visual Studio Community 2022.
+
+### Notes
+
+- Le terminal Codex courant ne recharge pas automatiquement le `PATH` apres installation de Rust. Ajouter temporairement `C:\Users\morit\.cargo\bin` au `PATH` ou ouvrir un nouveau terminal.
+- Avant installation du Windows SDK, `cargo check` trouvait `link.exe` mais echouait sur `kernel32.lib`.
+- Le serveur Vite a ete lance pour verification, puis arrete apres le test.
+
+### Prochaine Etape
+
+- Ajouter un selecteur de dossier natif.
+- Tester l'export FBX avec un vrai chemin Blender local.
+- Continuer vers une premiere integration Unity/prefab.

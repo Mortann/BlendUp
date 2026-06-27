@@ -18,30 +18,30 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 
 ## Phase 1 - Donnees Et Projet
 
-- [ ] Creer `.blendup/project.json`.
-- [ ] Creer modele asset.
-- [ ] Creer modele task interne.
+- [x] Creer `.blendup/project.json`.
+- [x] Creer modele asset.
+- [x] Creer modele task interne.
 - [ ] Creer modele reference.
 - [ ] Creer modele lock.
-- [ ] Creer activity log.
-- [ ] Creer schemaVersion.
-- [ ] Creer systeme de lecture/ecriture.
+- [x] Creer activity log.
+- [x] Creer schemaVersion.
+- [x] Creer systeme de lecture/ecriture.
 - [ ] Creer premiere migration vide.
 
 ## Phase 2 - Application BlendUp
 
-- [ ] Ouvrir projet.
+- [x] Ouvrir projet.
 - [ ] Creer projet.
-- [ ] Configurer chemins.
-- [ ] Lister assets.
+- [x] Configurer chemins.
+- [x] Lister assets.
 - [ ] Creer asset.
 - [ ] Editer asset.
-- [ ] Rechercher assets.
+- [x] Rechercher assets.
 - [ ] Filtrer assets.
-- [ ] Afficher fiche asset.
+- [x] Afficher fiche asset.
 - [ ] Afficher vue artiste.
 - [ ] Afficher vue dev.
-- [ ] Afficher Problems.
+- [x] Afficher Problems.
 - [ ] Afficher Project Settings.
 
 ## Phase 3 - Nomenclature Et Validation
@@ -88,9 +88,9 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 
 ## Phase 6 - Git Et LFS
 
-- [ ] Detecter depot Git.
-- [ ] Afficher branche actuelle.
-- [ ] Afficher fichiers modifies.
+- [x] Detecter depot Git.
+- [x] Afficher branche actuelle.
+- [x] Afficher fichiers modifies.
 - [ ] Proposer creation branche.
 - [ ] Generer nom branche.
 - [ ] Detecter Git LFS.

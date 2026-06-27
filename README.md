@@ -36,11 +36,53 @@ Point d'entree recommande :
 - `docs/preproduction/02-definition-v1.md`
 - `docs/specs/01-architecture-generale.md`
 - `docs/specs/02-modele-donnees.md`
+- `docs/production/02-installation-verification.md`
 
 ## Etat actuel
 
-Ce depot contient pour l'instant la preproduction du projet. Le code applicatif, l'add-on Blender et le package Unity ne sont pas encore implementes.
+Ce depot contient :
+
+- la documentation de preproduction et de production ;
+- une application desktop Tauri + React + TypeScript dans `apps/desktop` ;
+- un backend Tauri/Rust minimal capable de lire un projet `.blendup` ;
+- un projet test `BlendUpTest/` avec Unity, deux fiches assets et deux taches internes ;
+- une premiere interface avec vues `Assets`, `Problems`, `Tasks` et `Git` lecture seule ;
+- une premiere action d'export FBX via Blender depuis l'application native.
+
+L'add-on Blender dedie et le package Unity dedie ne sont pas encore implementes.
+
+## Installation Et Verification Rapide
+
+Prerequis Windows :
+
+- Node.js et npm ;
+- Rust via rustup ;
+- Visual Studio 2022 avec outils C++ ;
+- Windows SDK avec les librairies C, dont `kernel32.lib` ;
+- WebView2.
+
+Commandes principales :
+
+```powershell
+npm install
+npm run typecheck
+npm run build
+npm run dev
+```
+
+Pour verifier le backend Tauri/Rust :
+
+```powershell
+cd apps/desktop/src-tauri
+cargo check
+```
+
+Si `cargo` n'est pas encore visible dans le terminal apres installation de Rust, ouvrir un nouveau terminal ou ajouter temporairement `C:\Users\morit\.cargo\bin` au `PATH`.
+
+Le detail de la remise en route est documente dans `docs/production/02-installation-verification.md`.
 
 ## Principe De Maintenance
 
-La documentation de preproduction doit rester a jour pendant toute la production. Quand une decision change, quand le scope evolue, ou quand une implementation revele une contrainte, les fichiers `docs/` doivent etre ajustes au meme titre que le code.
+La documentation doit rester a jour pendant toute la production. Quand une decision change, quand le scope evolue, ou quand une implementation revele une contrainte, les fichiers `docs/` doivent etre ajustes au meme titre que le code.
+
+Regle de travail pour la suite : toute modification fonctionnelle, technique ou de scope doit mettre a jour la documentation correspondante avant d'etre consideree terminee.
