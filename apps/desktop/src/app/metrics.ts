@@ -16,10 +16,12 @@ export function viewTitle(view: string): string {
     assets: "Assets",
     dashboard: "Dashboard",
     git: "Git",
+    nomenclature: "Nomenclature",
     problems: "Problems",
     references: "References",
     settings: "Settings",
-    tasks: "Tasks"
+    tasks: "Tasks",
+    team: "Equipe"
   };
 
   return labels[view] ?? view;

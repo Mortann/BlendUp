@@ -133,6 +133,17 @@ export async function detectLocalTools(options: {
   }
 }
 
+export async function openProjectPath(projectRoot: string, relativePath?: string): Promise<void> {
+  if (!relativePath?.trim()) {
+    throw new Error("Aucun chemin de fichier n'est associe a cet element.");
+  }
+
+  await invoke("open_project_path", {
+    projectRoot,
+    relativePath: relativePath.trim()
+  });
+}
+
 export function rememberProjectInSettings(settings: UserSettings, projectRoot: string): UserSettings {
   const trimmedProjectRoot = projectRoot.trim();
   const recentProjects = [

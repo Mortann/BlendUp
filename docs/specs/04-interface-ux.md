@@ -148,7 +148,7 @@ Le dashboard doit rester utile et compact. Il ne doit pas afficher les outils lo
 - prochaine tache ouverte ;
 - liens rapides vers Problems, Tasks, Settings ou l'asset concerne.
 
-Le logo BlendUp en haut a gauche ramene au dashboard du projet ouvert.
+Dans le workspace ouvert, le logo seul en haut a droite ferme le projet courant et ramene a l'accueil de l'application. La navigation interne vers le dashboard passe par la barre laterale.
 
 Differenciation actuelle :
 
@@ -162,6 +162,7 @@ Objectif : trouver et comprendre rapidement les assets.
 Elements :
 
 - liste ou grille compacte ;
+- navigation par dossiers type explorateur ;
 - thumbnail ;
 - nom ;
 - type ;
@@ -183,6 +184,15 @@ Filtres :
 - import Unity ;
 - verrouillage ;
 - tache liee.
+
+Implementation actuelle :
+
+- la barre laterale peut se replier pour laisser plus de place a la page projet ;
+- en vue artiste, les dossiers assets sont affiches comme une bibliotheque navigable ;
+- les details artiste s'ouvrent dans un panneau flottant au-dessus de la bibliotheque, pas dans une colonne permanente ;
+- la vue asset propose recherche, tri et modes grille/liste ;
+- le bouton `Exporter FBX` n'est pas affiche dans la fiche artiste : l'export quotidien doit venir du workflow Blender ;
+- `Ouvrir dans Blender` appelle une commande native qui ouvre le fichier `.blend` associe via l'application par defaut du systeme.
 
 Recherche :
 
@@ -226,7 +236,7 @@ Actions principales :
 
 - ouvrir dans Blender ;
 - ouvrir dans Unity ;
-- exporter ;
+- exporter depuis le workflow adapte au role ;
 - export test ;
 - verrouiller/deverrouiller ;
 - creer branche ;
@@ -378,6 +388,13 @@ Colonnes possibles :
 - responsable ;
 - action proposee.
 
+Implementation actuelle :
+
+- la page est organisee en colonnes par gravite (`critical`, `error`, `warning`, `info`) pour eviter une liste infinie ;
+- les problemes graves sont visuellement prioritaires ;
+- les filtres par gravite/source et la recherche restent disponibles ;
+- un panneau de detail reste visible a cote du tableau.
+
 Types :
 
 - `missing_file`
@@ -398,6 +415,15 @@ Afficher :
 - assets lies ;
 - proprietaire ;
 - statut.
+
+Implementation actuelle :
+
+- affichage en tableau de production type kanban ;
+- colonnes `A faire`, `En cours`, `Review`, `Termine`, `Bloque` ;
+- ajout, edition, suppression et deplacement de taches au niveau interface ;
+- sous-taches simples ;
+- assignation a une personne par champ libre ;
+- les changements de taches dans l'interface sont encore locaux cote frontend tant que les commandes d'ecriture `.blendup/tasks` ne sont pas ajoutees.
 
 Ne pas integrer ClickUp en V1. Les taches restent internes.
 
@@ -423,7 +449,38 @@ Implementation actuelle :
 - page `References` disponible dans la navigation ;
 - en vue artiste, elle est prioritaire et utilise une surface claire ;
 - en vue dev, elle reste accessible mais secondaire ;
-- affichage des dossiers detectes depuis les chemins references et des references liees aux assets.
+- affichage des dossiers detectes depuis les chemins references et des references liees aux assets ;
+- ajout local de references avec theme et asset optionnel ;
+- recherche et tri par dossier, asset ou theme ;
+- l'ouverture automatique des boards PureRef lies a un asset reste l'etape suivante cote integration.
+
+## Nomenclature
+
+La nomenclature doit etre accessible sans passer par les settings locaux.
+
+Implementation actuelle :
+
+- page `Nomenclature` dediee ;
+- vue artiste centree sur prefixes assets, suffixes Blender, exemples et fragments interdits ;
+- vue dev avec les chemins projet et exemples de branches Git en plus ;
+- les donnees affichees reprennent les conventions V1 generees dans `.blendup/naming`.
+
+## Equipe Et Comptes Simples
+
+La V1 utilise des comptes locaux tres simples, sans mot de passe.
+
+Objectif :
+
+- permettre a chaque personne de choisir son identite ;
+- associer des roles artiste/dev ;
+- preparer l'historique par personne sans ajouter de systeme de securite lourd.
+
+Implementation actuelle :
+
+- page `Equipe` dediee ;
+- un owner local peut ajouter, supprimer et modifier les roles des comptes ;
+- l'identite active est stockee localement par projet dans `localStorage` ;
+- ces comptes ne sont pas encore versionnes dans `.blendup` et ne remplacent pas une vraie authentification.
 
 ## Project Settings
 
@@ -431,7 +488,6 @@ Sections :
 
 - chemins projet ;
 - integrations ;
-- nomenclature ;
 - templates ;
 - types d'assets ;
 - budgets qualite ;
@@ -482,13 +538,14 @@ Ces permissions doivent etre presentees comme des garde-fous, pas comme de la se
 
 ## Etat D'Implementation - Vues Artiste/Dev
 
-Implemente (V1, 2026-06-27) :
+Implemente (V1, 2026-06-27/28) :
 
-- bascule artiste/dev dans la barre laterale ;
+- bascule artiste/dev dans la barre laterale avec controle compact ;
+- barre laterale repliable ;
 - role gere par `apps/desktop/src/blendup/roles.ts` (type `Role`, capacites par role) ;
 - defaut du role depuis `project.defaultView` ; role actif persiste localement (hors Git) ;
 - fiche asset adaptee au role : ordre des sections et emphase des notes ;
-- garde-fous doux sur les actions : l'export FBX est reserve a la vue artiste.
+- garde-fous doux sur les actions : l'export FBX n'est plus l'action principale de la fiche artiste, et l'ouverture Blender passe par le fichier `.blend`.
 
 Limite V1 : deux roles seulement (artiste/dev). Les roles lead/admin des "permissions douces" ne sont pas implementes pour l'instant.
 
@@ -496,7 +553,7 @@ Limite V1 : deux roles seulement (artiste/dev). Les roles lead/admin des "permis
 
 Les deux vues ne different pas seulement par l'emphase : elles ont un contenu et un theme distincts.
 
-- Vue artiste : surface claire sur shell noir, navigation Assets/References prioritaire, bibliotheque par dossiers, details affiches seulement apres selection, fiche epuree orientee Blender.
+- Vue artiste : surface claire adoucie sur shell noir, navigation Assets/References prioritaire, bibliotheque par dossiers, details en panneau flottant, fiche epuree orientee Blender.
 - Vue dev : surface sombre sur shell noir, navigation Problems/Tasks/Git prioritaire, Assets/References en retrait, fiche dense orientee Unity.
 - Couleurs principales : noir, blanc, bleu nuit. Les accents verts/teal ne sont plus utilises.
 

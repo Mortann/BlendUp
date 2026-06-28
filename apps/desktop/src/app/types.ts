@@ -1,6 +1,15 @@
 import type { BlendUpProblem, TaskPriority, TaskStatus } from "../blendup/types";
 
-export type ActiveView = "assets" | "dashboard" | "git" | "problems" | "references" | "settings" | "tasks";
+export type ActiveView =
+  | "assets"
+  | "dashboard"
+  | "git"
+  | "nomenclature"
+  | "problems"
+  | "references"
+  | "settings"
+  | "tasks"
+  | "team";
 
 export type OperationMessage = {
   detail?: string;

@@ -601,3 +601,41 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 - Verification visuelle via navigateur integre tentee, mais le plugin navigateur a echoue sur une erreur interne de chemin. Le serveur Vite local reste disponible pour inspection manuelle.
 - `apps/unity-package/` et le sous-module `BlendUp_projet_Test` etaient deja presents/modifies dans le workspace et n'ont pas ete touches.
+
+## 2026-06-28 - Passe UX Workspace, Assets, Taches Et Equipe
+
+### Fait
+
+- Suppression du bandeau technique haut du workspace pour donner plus de place a la page centrale.
+- Ajout d'une barre laterale repliable : navigation complete en mode ouvert, icones seules en mode replie.
+- Remplacement du controle Artiste/Dev par une bascule plus visuelle.
+- Le logo seul en haut a droite ferme le projet et renvoie a l'accueil de l'application.
+- Vue artiste adoucie : surface claire moins violente, contrastes corriges.
+- Page Assets retravaillee :
+  - navigation par dossiers type explorateur ;
+  - tri et modes d'affichage ;
+  - detail artiste dans un panneau flottant ;
+  - suppression du bouton `Exporter FBX` de la fiche artiste ;
+  - historique minimal visible dans la fiche asset ;
+  - bouton `Ouvrir dans Blender` branche sur une commande native.
+- Ajout de la commande Tauri `open_project_path` pour ouvrir un fichier projet via l'application par defaut du systeme.
+- Page `Nomenclature` ajoutee avec lecture artiste/dev.
+- Page `Equipe` ajoutee avec comptes locaux simples, owner, choix d'identite et roles artiste/dev.
+- Vue Tasks remplacee par un tableau type kanban avec ajout, edition, suppression, deplacement, sous-taches et assignation locale.
+- Vue References enrichie : recherche, tri, ajout local, theme et association optionnelle a un asset.
+- Vue Problems reorganisee en colonnes par gravite pour eviter une liste infinie.
+- Vue Git differenciee :
+  - artiste : etat simple et actions comprehensibles ;
+  - dev : branche, statut, fichiers et actions a brancher ensuite.
+
+### Verification
+
+- `npm run typecheck --workspace @blendup/desktop` : OK.
+- `cargo fmt` dans `apps/desktop/src-tauri` : OK.
+- `cargo check` dans `apps/desktop/src-tauri` : OK.
+
+### Notes
+
+- Les comptes, ajouts de references et editions de taches sont actuellement locaux cote frontend. Les commandes d'ecriture `.blendup` restent a implementer pour rendre ces changements persistants et versionnables.
+- `Ouvrir dans Blender` ouvre le fichier `.blend` via l'application par defaut du systeme ; il faut donc que les fichiers `.blend` soient associes a Blender sur la machine.
+- L'ouverture automatique des references liees avec PureRef reste a brancher.

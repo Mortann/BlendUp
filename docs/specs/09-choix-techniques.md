@@ -43,7 +43,7 @@ Organisation frontend actuelle :
 - `apps/desktop/src/App.tsx` reste un composant d'assemblage court ;
 - `apps/desktop/src/app/useBlendUpController.ts` porte l'etat et les actions principales ;
 - `apps/desktop/src/app/` contient les types, filtres, metriques et composants UI partages ;
-- `apps/desktop/src/views/` contient les vues `Dashboard`, `Assets`, `References`, `Problems`, `Tasks`, `Git`, `Settings` et `WelcomePage`.
+- `apps/desktop/src/views/` contient les vues `Dashboard`, `Assets`, `References`, `Problems`, `Tasks`, `Git`, `Nomenclature`, `Equipe`, `Settings` et `WelcomePage`.
 
 Backend possible :
 
@@ -180,6 +180,19 @@ Detection outils locaux :
 - PureRef : chemin explicite, emplacements d'installation courants.
 
 Unity et PureRef ne sont pas lances pour la detection afin d'eviter d'ouvrir des applications lourdes en arriere-plan.
+
+Ouverture de fichiers projet :
+
+- commande Tauri : `open_project_path` ;
+- entree : dossier projet + chemin relatif stocke dans une fiche asset ;
+- verification que le fichier existe et reste dans le dossier projet ;
+- ouverture via l'application par defaut du systeme (`cmd /C start` sur Windows, `open` sur macOS, `xdg-open` sur Linux).
+
+Comptes locaux V1 :
+
+- les comptes simples de la page `Equipe` sont stockes localement par projet via `localStorage` ;
+- ils servent a choisir une identite et des roles artiste/dev, pas a securiser l'application ;
+- une migration future pourra deplacer les membres d'equipe dans `.blendup` si l'equipe veut versionner cette information.
 
 ## Donnees
 

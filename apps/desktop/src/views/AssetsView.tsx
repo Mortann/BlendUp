@@ -1,4 +1,19 @@
-import { AlertTriangle, Boxes, CheckCircle2, FileSearch, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUpDown,
+  Boxes,
+  CheckCircle2,
+  ExternalLink,
+  FileSearch,
+  Folder,
+  Grid2X2,
+  History,
+  List,
+  Pencil,
+  Search,
+  Trash2,
+  X
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Role, RoleCapabilities } from "../blendup/roles";
 import type { BlendUpAsset, BlendUpProblem } from "../blendup/types";
@@ -11,11 +26,15 @@ import {
   severityLabel
 } from "../ui/format";
 
+type AssetSortMode = "name" | "recent" | "status";
+type AssetDisplayMode = "grid" | "list" | "compact";
+
 export function AssetsView({
   capabilities,
   exportingAssetId,
   filteredAssets,
   onExportAsset,
+  onOpenInBlender,
   problems,
   query,
   role,
@@ -28,6 +47,7 @@ export function AssetsView({
   exportingAssetId: string | null;
   filteredAssets: BlendUpAsset[];
   onExportAsset: (assetId: string) => void;
+  onOpenInBlender: (assetId: string) => void;
   problems: BlendUpProblem[];
   query: string;
   role: Role;
@@ -37,21 +57,40 @@ export function AssetsView({
   setSelectedAssetId: (assetId: string) => void;
 }) {
   const [folderFilter, setFolderFilter] = useState("all");
+  const [sortMode, setSortMode] = useState<AssetSortMode>("recent");
+  const [displayMode, setDisplayMode] = useState<AssetDisplayMode>("grid");
   const folders = useMemo(() => {
     return Array.from(new Set(filteredAssets.map(assetFolder))).sort((left, right) => left.localeCompare(right));
   }, [filteredAssets]);
+  const folderCounts = useMemo(() => {
+    return folders.map((folder) => ({
+      folder,
+      count: filteredAssets.filter((asset) => assetFolder(asset) === folder).length
+    }));
+  }, [filteredAssets, folders]);
   const visibleAssets = useMemo(() => {
-    return folderFilter === "all"
-      ? filteredAssets
-      : filteredAssets.filter((asset) => assetFolder(asset) === folderFilter);
-  }, [filteredAssets, folderFilter]);
+    const assets =
+      folderFilter === "all" ? filteredAssets : filteredAssets.filter((asset) => assetFolder(asset) === folderFilter);
+
+    return [...assets].sort((left, right) => {
+      if (sortMode === "recent") {
+        return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+      }
+
+      if (sortMode === "status") {
+        return left.status.localeCompare(right.status) || left.displayName.localeCompare(right.displayName);
+      }
+
+      return left.displayName.localeCompare(right.displayName);
+    });
+  }, [filteredAssets, folderFilter, sortMode]);
 
   return (
     <section className={`assets-page role-page assets-page--${role}`} aria-label="Assets">
       <div className="asset-library-header">
         <div>
           <span className="eyebrow">{role === "artist" ? "Bibliotheque artiste" : "Inventaire technique"}</span>
-          <h2>{role === "artist" ? "Assets par dossier" : "Assets en retrait"}</h2>
+          <h2>{role === "artist" ? "Assets" : "Assets projet"}</h2>
         </div>
         <label className="search-box">
           <Search size={16} />
@@ -64,29 +103,78 @@ export function AssetsView({
         </label>
       </div>
 
-      <div className="folder-rail" aria-label="Dossiers assets">
-        <button className={folderFilter === "all" ? "active" : ""} onClick={() => setFolderFilter("all")} type="button">
-          Tous
-        </button>
-        {folders.map((folder) => (
+      <div className="asset-tools-row">
+        <div className="folder-rail" aria-label="Dossiers assets">
+          <button className={folderFilter === "all" ? "active" : ""} onClick={() => setFolderFilter("all")} type="button">
+            Tous
+          </button>
+          {folders.map((folder) => (
+            <button
+              className={folderFilter === folder ? "active" : ""}
+              key={folder}
+              onClick={() => setFolderFilter(folder)}
+              type="button"
+            >
+              {folder}
+            </button>
+          ))}
+        </div>
+        <div className="asset-view-controls">
+          <label className="select-control">
+            <ArrowUpDown size={15} />
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value as AssetSortMode)}>
+              <option value="recent">Recents</option>
+              <option value="name">Nom</option>
+              <option value="status">Statut</option>
+            </select>
+          </label>
           <button
-            className={folderFilter === folder ? "active" : ""}
-            key={folder}
-            onClick={() => setFolderFilter(folder)}
+            className={displayMode === "grid" ? "compact-action active" : "compact-action"}
+            onClick={() => setDisplayMode("grid")}
+            title="Grille"
             type="button"
           >
-            {folder}
+            <Grid2X2 size={16} />
           </button>
-        ))}
+          <button
+            className={displayMode === "list" ? "compact-action active" : "compact-action"}
+            onClick={() => setDisplayMode("list")}
+            title="Liste"
+            type="button"
+          >
+            <List size={16} />
+          </button>
+        </div>
       </div>
 
-      <div className={`asset-workspace ${selectedAsset ? "with-detail" : ""}`}>
-        <section className={role === "artist" ? "asset-card-grid" : "asset-table-list"} aria-label="Liste assets">
+      {role === "artist" && folderFilter === "all" ? (
+        <section className="folder-browser" aria-label="Dossiers rapides">
+          {folderCounts.map((item) => (
+            <button key={item.folder} onClick={() => setFolderFilter(item.folder)} type="button">
+              <Folder size={22} />
+              <strong>{lastFolderName(item.folder)}</strong>
+              <span>{item.folder}</span>
+              <small>{item.count} asset(s)</small>
+            </button>
+          ))}
+        </section>
+      ) : null}
+
+      <div className={`asset-workspace ${role === "artist" ? "artist-workspace" : ""}`}>
+        <section
+          className={
+            role === "artist"
+              ? `asset-card-grid display-${displayMode}`
+              : `asset-table-list display-${displayMode}`
+          }
+          aria-label="Liste assets"
+        >
           {visibleAssets.length > 0 ? (
             visibleAssets.map((asset) =>
               role === "artist" ? (
                 <ArtistAssetCard
                   asset={asset}
+                  displayMode={displayMode}
                   isSelected={asset.id === selectedAsset?.id}
                   key={asset.id}
                   onSelect={() => setSelectedAssetId(asset.id)}
@@ -107,53 +195,55 @@ export function AssetsView({
           )}
         </section>
 
-        {selectedAsset ? (
-          role === "developer" ? (
-            <DevAssetDetail
-              asset={selectedAsset}
-              capabilities={capabilities}
-              isExporting={exportingAssetId === selectedAsset.id}
-              onExportAsset={onExportAsset}
-              problems={selectedProblems}
-            />
-          ) : (
-            <ArtistAssetDetail
-              asset={selectedAsset}
-              capabilities={capabilities}
-              isExporting={exportingAssetId === selectedAsset.id}
-              onExportAsset={onExportAsset}
-              problems={selectedProblems}
-            />
-          )
-        ) : (
-          <aside className="asset-detail-placeholder">
-            <Boxes size={30} />
-            <strong>Selectionne un asset</strong>
-            <span>Les details restent caches tant que tu ne choisis rien.</span>
-          </aside>
-        )}
+        {role === "developer" && selectedAsset ? (
+          <DevAssetDetail
+            asset={selectedAsset}
+            capabilities={capabilities}
+            isExporting={exportingAssetId === selectedAsset.id}
+            onExportAsset={onExportAsset}
+            problems={selectedProblems}
+          />
+        ) : null}
       </div>
+
+      {role === "artist" && selectedAsset ? (
+        <div className="asset-overlay" role="dialog" aria-modal="true" aria-label="Detail asset artiste">
+          <ArtistAssetDetail
+            asset={selectedAsset}
+            capabilities={capabilities}
+            onClose={() => setSelectedAssetId("")}
+            onOpenInBlender={() => onOpenInBlender(selectedAsset.id)}
+            problems={selectedProblems}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function ArtistAssetCard({
   asset,
+  displayMode,
   isSelected,
   onSelect,
   problemCount
 }: {
   asset: BlendUpAsset;
+  displayMode: AssetDisplayMode;
   isSelected: boolean;
   onSelect: () => void;
   problemCount: number;
 }) {
   return (
-    <button className={`artist-asset-card ${isSelected ? "selected" : ""}`} onClick={onSelect} type="button">
+    <button
+      className={`artist-asset-card ${displayMode} ${isSelected ? "selected" : ""}`}
+      onClick={onSelect}
+      type="button"
+    >
       <span className="asset-folder-label">{assetFolder(asset)}</span>
       <strong>{asset.displayName}</strong>
       <small>{formatAssetType(asset.type)}</small>
-      <div>
+      <div className="asset-card-footer">
         <StatusPill label={formatStatus(asset.status)} tone="blue" />
         {problemCount > 0 ? <span className="mini-warning">{problemCount}</span> : null}
       </div>
@@ -190,13 +280,15 @@ function AssetProblems({
   capabilities,
   isExporting,
   onExportAsset,
-  problems
+  problems,
+  showActions = true
 }: {
   asset: BlendUpAsset;
   capabilities: RoleCapabilities;
   isExporting: boolean;
   onExportAsset: (assetId: string) => void;
   problems: BlendUpProblem[];
+  showActions?: boolean;
 }) {
   if (problems.length === 0) {
     return <EmptyState icon={<CheckCircle2 size={24} />} label="Aucun probleme pour cet asset" />;
@@ -213,7 +305,7 @@ function AssetProblems({
               {severityLabel(problem.severity)} - {problem.detail}
             </span>
           </div>
-          {problem.actionLabel ? (
+          {showActions && problem.actionLabel ? (
             <ProblemActionButton
               asset={asset}
               exportAllowed={capabilities.canExport}
@@ -231,20 +323,24 @@ function AssetProblems({
 function ArtistAssetDetail({
   asset,
   capabilities,
-  isExporting,
-  onExportAsset,
+  onClose,
+  onOpenInBlender,
   problems
 }: {
   asset: BlendUpAsset;
   capabilities: RoleCapabilities;
-  isExporting: boolean;
-  onExportAsset: (assetId: string) => void;
+  onClose: () => void;
+  onOpenInBlender: () => void;
   problems: BlendUpProblem[];
 }) {
   const exported = asset.export.lastExportStatus === "success";
 
   return (
-    <aside className="asset-focus-panel artist-detail-panel" aria-label="Detail asset artiste">
+    <aside className="asset-focus-panel artist-detail-panel floating" aria-label="Detail asset artiste">
+      <button className="icon-button close-button" onClick={onClose} title="Fermer" type="button">
+        <X size={18} />
+      </button>
+
       <div className="detail-header">
         <div className="detail-thumbnail large">
           <Boxes size={34} />
@@ -258,15 +354,21 @@ function ArtistAssetDetail({
 
       <div className="status-strip">
         <StatusPill label={formatStatus(asset.status)} tone="blue" />
-        <StatusPill label={exported ? "Exporte" : "A exporter"} tone={exported ? "green" : "orange"} />
+        <StatusPill label={exported ? "Exporte" : "A exporter depuis Blender"} tone={exported ? "green" : "orange"} />
       </div>
 
       <div className="asset-action-bar">
-        <button disabled={isExporting} onClick={() => onExportAsset(asset.id)} type="button">
-          {isExporting ? "Export en cours" : "Exporter FBX"}
-        </button>
-        <button className="secondary" disabled title="A venir" type="button">
+        <button disabled={!asset.paths.blenderSource} onClick={onOpenInBlender} type="button">
+          <ExternalLink size={16} />
           Ouvrir dans Blender
+        </button>
+        <button className="secondary" type="button">
+          <Pencil size={16} />
+          Modifier
+        </button>
+        <button className="secondary danger" type="button">
+          <Trash2 size={16} />
+          Supprimer
         </button>
       </div>
 
@@ -276,12 +378,27 @@ function ArtistAssetDetail({
           <p className="soft-text">{asset.notes.artist || "Aucune note artiste."}</p>
         </section>
         <section className="section-block">
-          <h3>References</h3>
+          <h3>References liees</h3>
           <p className="soft-text">
             {asset.references.length > 0
-              ? `${asset.references.length} reference(s) liee(s).`
+              ? `${asset.references.length} reference(s) liee(s). PureRef pourra les ouvrir depuis ici.`
               : "Aucune reference liee pour le moment."}
           </p>
+        </section>
+        <section className="section-block">
+          <h3>Historique</h3>
+          <div className="history-list">
+            <div>
+              <History size={15} />
+              <span>Derniere modification</span>
+              <strong>{asset.updatedAt}</strong>
+            </div>
+            <div>
+              <History size={15} />
+              <span>Dernier export</span>
+              <strong>{asset.export.lastExportAt ?? "Jamais"}</strong>
+            </div>
+          </div>
         </section>
         <details className="detail-disclosure">
           <summary>Details fichier</summary>
@@ -293,9 +410,10 @@ function ArtistAssetDetail({
           <AssetProblems
             asset={asset}
             capabilities={capabilities}
-            isExporting={isExporting}
-            onExportAsset={onExportAsset}
+            isExporting={false}
+            onExportAsset={() => undefined}
             problems={problems}
+            showActions={false}
           />
         </section>
       </div>
@@ -343,12 +461,12 @@ function DevAssetDetail({
             Exporter FBX
           </button>
         ) : (
-          <span className="action-hint">Export en vue Artiste</span>
+          <span className="action-hint">Export depuis Blender / vue Artiste</span>
         )}
-        <button className="secondary" disabled title="A venir" type="button">
+        <button className="secondary" type="button">
           Rebuild prefab
         </button>
-        <button className="secondary" disabled title="A venir" type="button">
+        <button className="secondary" type="button">
           Definir composants
         </button>
       </div>
@@ -397,6 +515,22 @@ function DevAssetDetail({
         </section>
 
         <section className="section-block">
+          <h3>Historique</h3>
+          <div className="history-list">
+            <div>
+              <History size={15} />
+              <span>Modifie</span>
+              <strong>{asset.updatedAt}</strong>
+            </div>
+            <div>
+              <History size={15} />
+              <span>Export</span>
+              <strong>{asset.export.lastExportAt ?? "Jamais"}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="section-block">
           <h3>Problems</h3>
           <AssetProblems
             asset={asset}
@@ -441,4 +575,8 @@ function ProblemActionButton({
       {isExporting && canExport ? "Export" : problem.actionLabel}
     </button>
   );
+}
+
+function lastFolderName(folder: string) {
+  return folder.split("/").filter(Boolean).at(-1) ?? folder;
 }

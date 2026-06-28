@@ -7,6 +7,13 @@ import type { SeverityFilter, SourceFilter } from "../app/types";
 import { DetailMeta, EmptyState, SegmentedControl } from "../app/ui";
 import { formatAssetType, formatStatus, severityLabel } from "../ui/format";
 
+const severityColumns: { label: string; severity: BlendUpProblem["severity"] }[] = [
+  { label: "Critiques", severity: "critical" },
+  { label: "Erreurs", severity: "error" },
+  { label: "Warnings", severity: "warning" },
+  { label: "Infos", severity: "info" }
+];
+
 export function ProblemsView({
   exportAllowed,
   exportingAssetId,
@@ -44,12 +51,11 @@ export function ProblemsView({
   const selectedAsset = selectedProblem?.assetId ? assetsById.get(selectedProblem.assetId) : undefined;
 
   return (
-    <section className="problems-page role-page" aria-label="Problems">
+    <section className="problems-page role-page" aria-label="Problemes">
       <div className="problem-summary-grid">
-        <ProblemSummaryCard label="Critiques" severity="critical" snapshot={snapshot} />
-        <ProblemSummaryCard label="Erreurs" severity="error" snapshot={snapshot} />
-        <ProblemSummaryCard label="Warnings" severity="warning" snapshot={snapshot} />
-        <ProblemSummaryCard label="Infos" severity="info" snapshot={snapshot} />
+        {severityColumns.map((column) => (
+          <ProblemSummaryCard key={column.severity} label={column.label} severity={column.severity} snapshot={snapshot} />
+        ))}
       </div>
 
       <div className="problem-toolbar">
@@ -71,33 +77,42 @@ export function ProblemsView({
         <SegmentedControl ariaLabel="Filtrer par source" options={sourceFilters} value={sourceFilter} onChange={setSourceFilter} />
       </div>
 
-      <div className="problem-layout">
-        <section className="problem-table" aria-label="Liste des problems">
-          {filteredProblems.length > 0 ? (
-            filteredProblems.map((problem) => {
-              const asset = problem.assetId ? assetsById.get(problem.assetId) : undefined;
+      <div className="problem-board-layout">
+        <section className="problem-board" aria-label="Problemes par gravite">
+          {severityColumns.map((column) => {
+            const problems = filteredProblems.filter((problem) => problem.severity === column.severity);
 
-              return (
-                <button
-                  className={`problem-table-row ${problem.severity} ${
-                    problem.id === selectedProblem?.id ? "selected" : ""
-                  }`}
-                  key={problem.id}
-                  onClick={() => setSelectedProblemId(problem.id)}
-                  type="button"
-                >
-                  <span className={`severity-dot ${problem.severity}`} />
-                  <div className="problem-row-main">
-                    <strong>{problem.title}</strong>
-                    <span>{asset?.displayName ?? "Projet"}</span>
-                  </div>
-                  <span className="problem-source">{sourceLabel(problem.source)}</span>
-                </button>
-              );
-            })
-          ) : (
-            <EmptyState icon={<CheckCircle2 size={28} />} label="Aucun probleme avec ces filtres" />
-          )}
+            return (
+              <div className={`problem-column ${column.severity}`} key={column.severity}>
+                <div className="problem-column-header">
+                  <strong>{column.label}</strong>
+                  <span>{problems.length}</span>
+                </div>
+                <div className="problem-card-list">
+                  {problems.length > 0 ? (
+                    problems.map((problem) => {
+                      const asset = problem.assetId ? assetsById.get(problem.assetId) : undefined;
+
+                      return (
+                        <button
+                          className={`problem-card ${problem.id === selectedProblem?.id ? "selected" : ""}`}
+                          key={problem.id}
+                          onClick={() => setSelectedProblemId(problem.id)}
+                          type="button"
+                        >
+                          <span className={`severity-dot ${problem.severity}`} />
+                          <strong>{problem.title}</strong>
+                          <small>{asset?.displayName ?? "Projet"} - {sourceLabel(problem.source)}</small>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <EmptyState icon={<CheckCircle2 size={22} />} label="Rien ici" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </section>
 
         <ProblemDetail
@@ -158,7 +173,7 @@ function ProblemDetail({
   }
 
   return (
-    <aside className="problem-detail-panel" aria-label="Detail problem">
+    <aside className={`problem-detail-panel severity-${problem.severity}`} aria-label="Detail probleme">
       <div className="problem-detail-heading">
         <span className={`severity-dot ${problem.severity}`} />
         <div>

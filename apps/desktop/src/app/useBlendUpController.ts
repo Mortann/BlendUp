@@ -15,6 +15,7 @@ import {
   loadDefaultProjectSnapshot,
   loadProjectSnapshot,
   loadUserSettings,
+  openProjectPath,
   rememberProjectInSettings,
   saveUserSettings,
   selectProjectDirectory,
@@ -451,6 +452,34 @@ export function useBlendUpController() {
     }
   };
 
+  const openAssetInBlender = async (assetId: string) => {
+    const asset = project?.assets.find((item) => item.id === assetId);
+
+    if (!project?.projectRoot || !asset) {
+      setOperationMessage({
+        tone: "error",
+        title: "Ouverture impossible",
+        detail: "Aucun projet ou asset charge."
+      });
+      return;
+    }
+
+    try {
+      await openProjectPath(project.projectRoot, asset.paths.blenderSource);
+      setOperationMessage({
+        tone: "success",
+        title: "Fichier Blender ouvert",
+        detail: asset.paths.blenderSource ?? asset.displayName
+      });
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Ouverture Blender impossible",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
   return {
     activeView,
     blenderPathInput,
@@ -469,6 +498,7 @@ export function useBlendUpController() {
     isDetectingTools,
     isLoadingProject,
     openAsset,
+    openAssetInBlender,
     openDefaultProject,
     openProject,
     operationMessage,

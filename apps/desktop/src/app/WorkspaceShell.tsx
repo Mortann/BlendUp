@@ -1,20 +1,26 @@
 import {
   AlertTriangle,
+  BadgeCheck,
   Boxes,
-  ClipboardList,
+  Code2,
+  GalleryHorizontal,
   GitBranch,
   Home,
-  Layers3,
-  Settings
+  KanbanSquare,
+  ListTree,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  Sparkles,
+  UsersRound
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import { useState } from "react";
 import type { Role } from "../blendup/roles";
-import { roleLabel } from "../blendup/roles";
 import type { ProjectSnapshot } from "../blendup/types";
-import { roleFilters } from "./filters";
 import { viewTitle } from "./metrics";
 import type { ActiveView, OperationMessage } from "./types";
-import { OperationBanner, SegmentedControl } from "./ui";
+import { OperationBanner } from "./ui";
 
 type NavItem = {
   icon: ReactNode;
@@ -28,10 +34,12 @@ function navigationForRole(role: Role): NavItem[] {
     assets: { icon: <Boxes size={18} />, key: "assets", label: "Assets" },
     dashboard: { icon: <Home size={18} />, key: "dashboard", label: "Dashboard" },
     git: { icon: <GitBranch size={18} />, key: "git", label: "Git" },
-    problems: { icon: <AlertTriangle size={18} />, key: "problems", label: "Problems" },
-    references: { icon: <Layers3 size={18} />, key: "references", label: "References" },
+    nomenclature: { icon: <ListTree size={18} />, key: "nomenclature", label: "Nomenclature" },
+    problems: { icon: <AlertTriangle size={18} />, key: "problems", label: "Problemes" },
+    references: { icon: <GalleryHorizontal size={18} />, key: "references", label: "References" },
     settings: { icon: <Settings size={18} />, key: "settings", label: "Settings" },
-    tasks: { icon: <ClipboardList size={18} />, key: "tasks", label: "Tasks" }
+    tasks: { icon: <KanbanSquare size={18} />, key: "tasks", label: "Taches" },
+    team: { icon: <UsersRound size={18} />, key: "team", label: "Equipe" }
   };
 
   if (role === "developer") {
@@ -40,6 +48,8 @@ function navigationForRole(role: Role): NavItem[] {
       items.problems,
       items.tasks,
       items.git,
+      items.nomenclature,
+      items.team,
       { ...items.assets, tone: "muted" },
       { ...items.references, tone: "muted" },
       items.settings
@@ -51,6 +61,8 @@ function navigationForRole(role: Role): NavItem[] {
     items.assets,
     items.references,
     items.tasks,
+    items.nomenclature,
+    items.team,
     { ...items.problems, tone: "muted" },
     { ...items.git, tone: "muted" },
     items.settings
@@ -61,6 +73,7 @@ export function WorkspaceShell({
   activeView,
   children,
   onCloseMessage,
+  onCloseProject,
   operationMessage,
   project,
   role,
@@ -71,6 +84,7 @@ export function WorkspaceShell({
   activeView: ActiveView;
   children: ReactNode;
   onCloseMessage: () => void;
+  onCloseProject: () => void;
   operationMessage: OperationMessage | null;
   project: ProjectSnapshot;
   role: Role;
@@ -78,34 +92,55 @@ export function WorkspaceShell({
   setRole: (role: Role) => void;
   shellStyle: CSSProperties;
 }) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const navItems = navigationForRole(role);
 
   return (
-    <main className={`app-shell role-${role}`} style={shellStyle}>
+    <main className={`app-shell role-${role} ${isCollapsed ? "sidebar-collapsed" : ""}`} style={shellStyle}>
       <aside className="sidebar" aria-label="Navigation principale">
-        <button className="brand brand-button" onClick={() => setActiveView("dashboard")} type="button">
-          <div className="brand-mark">BU</div>
-          <div>
-            <strong>BlendUp</strong>
-            <span>{project.project.name}</span>
-          </div>
+        <button
+          aria-label={isCollapsed ? "Deplier la navigation" : "Replier la navigation"}
+          className="sidebar-collapse"
+          onClick={() => setIsCollapsed((current) => !current)}
+          title={isCollapsed ? "Deplier" : "Replier"}
+          type="button"
+        >
+          {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
         </button>
 
-        <div className="role-switch">
-          <span className="eyebrow">Vue</span>
-          <SegmentedControl ariaLabel="Choisir la vue" options={roleFilters} value={role} onChange={setRole} />
+        <div className="role-toggle" aria-label="Choisir la vue">
+          <button
+            className={role === "artist" ? "active" : ""}
+            onClick={() => setRole("artist")}
+            title="Vue Artiste"
+            type="button"
+          >
+            <Sparkles size={17} />
+            <span>Artiste</span>
+          </button>
+          <button
+            className={role === "developer" ? "active" : ""}
+            onClick={() => setRole("developer")}
+            title="Vue Dev"
+            type="button"
+          >
+            <Code2 size={17} />
+            <span>Dev</span>
+          </button>
         </div>
 
         <nav className="nav-list">
           {navItems.map((item) => (
             <button
+              aria-label={item.label}
               className={`nav-item ${item.tone ?? ""} ${activeView === item.key ? "active" : ""}`}
               key={item.key}
               onClick={() => setActiveView(item.key)}
+              title={item.label}
               type="button"
             >
-              {item.icon}
-              {item.label}
+              <span className="nav-icon-shell">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
               {item.key === "problems" && project.problems.length > 0 ? (
                 <span className="nav-badge">{project.problems.length}</span>
               ) : null}
@@ -117,18 +152,17 @@ export function WorkspaceShell({
         </nav>
       </aside>
 
-      <section className="workspace">
-        <header className="topbar">
-          <div>
-            <span className="eyebrow">Vue {roleLabel(role)}</span>
-            <h1>{viewTitle(activeView)}</h1>
-          </div>
-          <div className="topbar-meta">
-            <span title={project.projectRoot}>{project.projectRoot ?? "Snapshot local"}</span>
-            <span>Blender {project.project.targets.blenderMinimumVersion}+</span>
-            <span>Unity {project.project.targets.unityTestVersion ?? project.project.targets.unityMinimumVersion}</span>
-          </div>
-        </header>
+      <section className="workspace" aria-label={viewTitle(activeView)}>
+        <button
+          aria-label="Fermer le projet et revenir a l'accueil"
+          className="project-logo-button"
+          onClick={onCloseProject}
+          title={`Fermer ${project.project.name}`}
+          type="button"
+        >
+          <BadgeCheck size={18} />
+          <span>BU</span>
+        </button>
 
         {operationMessage ? <OperationBanner message={operationMessage} onClose={onCloseMessage} /> : null}
         {children}

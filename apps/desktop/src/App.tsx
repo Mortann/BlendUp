@@ -4,10 +4,12 @@ import { WorkspaceShell } from "./app/WorkspaceShell";
 import { AssetsView } from "./views/AssetsView";
 import { DashboardView } from "./views/DashboardView";
 import { GitView } from "./views/GitView";
+import { NomenclatureView } from "./views/NomenclatureView";
 import { ProblemsView } from "./views/ProblemsView";
 import { ReferencesView } from "./views/ReferencesView";
 import { SettingsView } from "./views/SettingsView";
 import { TasksView } from "./views/TasksView";
+import { TeamView } from "./views/TeamView";
 import { WelcomePage } from "./views/WelcomePage";
 
 function App() {
@@ -49,6 +51,7 @@ function App() {
     <WorkspaceShell
       activeView={app.activeView}
       onCloseMessage={() => app.setOperationMessage(null)}
+      onCloseProject={app.forgetLastProject}
       operationMessage={app.operationMessage}
       project={app.project}
       role={app.role}
@@ -73,6 +76,7 @@ function App() {
           exportingAssetId={app.exportingAssetId}
           filteredAssets={app.filteredAssets}
           onExportAsset={app.handleExportAsset}
+          onOpenInBlender={app.openAssetInBlender}
           problems={app.project.problems}
           query={app.query}
           role={app.role}
@@ -83,6 +87,8 @@ function App() {
         />
       ) : app.activeView === "references" ? (
         <ReferencesView onOpenAsset={app.openAsset} role={app.role} snapshot={app.project} />
+      ) : app.activeView === "nomenclature" ? (
+        <NomenclatureView role={app.role} snapshot={app.project} />
       ) : app.activeView === "problems" ? (
         <ProblemsView
           exportAllowed={app.capabilities.canExport}
@@ -93,6 +99,8 @@ function App() {
         />
       ) : app.activeView === "tasks" ? (
         <TasksView onOpenAsset={app.openAsset} snapshot={app.project} />
+      ) : app.activeView === "team" ? (
+        <TeamView project={app.project} setRole={app.setRole} />
       ) : app.activeView === "settings" ? (
         <SettingsView
           blenderPathInput={app.blenderPathInput}
@@ -116,7 +124,7 @@ function App() {
           unityPathInput={app.unityPathInput}
         />
       ) : (
-        <GitView snapshot={app.project} />
+        <GitView role={app.role} snapshot={app.project} />
       )}
     </WorkspaceShell>
   );

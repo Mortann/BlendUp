@@ -497,6 +497,32 @@ fn export_asset_to_fbx(
 }
 
 #[tauri::command]
+fn open_project_path(project_root: String, relative_path: String) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root)
+        .canonicalize()
+        .map_err(|error| format!("Projet introuvable: {error}"))?;
+    let relative_path = relative_path.trim();
+
+    if relative_path.is_empty() {
+        return Err("Aucun chemin de fichier n'est associe a cet element.".to_string());
+    }
+
+    let target_path = project_root.join(relative_path);
+    let target_path = target_path.canonicalize().map_err(|error| {
+        format!(
+            "Impossible de trouver {}: {error}",
+            project_root.join(relative_path).display()
+        )
+    })?;
+
+    if !target_path.starts_with(&project_root) {
+        return Err("Le fichier demande est en dehors du projet BlendUp.".to_string());
+    }
+
+    open_with_system(&target_path)
+}
+
+#[tauri::command]
 fn take_open_request(project_root: String) -> Option<OpenRequest> {
     // Requete ecrite par l'add-on Blender ("ouvrir la fiche dans BlendUp").
     // On la lit puis on la supprime pour qu'elle ne soit traitee qu'une fois.
@@ -521,6 +547,37 @@ fn take_open_request(project_root: String) -> Option<OpenRequest> {
         asset_id,
         requested_at,
     })
+}
+
+fn open_with_system(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .arg("/C")
+            .arg("start")
+            .arg("")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))?;
+    }
+
+    Ok(())
 }
 
 fn read_assets(project_root: &Path) -> (Vec<Value>, Vec<BlendUpProblem>) {
@@ -1395,6 +1452,7 @@ fn main() {
             detect_blender,
             detect_local_tools,
             export_asset_to_fbx,
+            open_project_path,
             take_open_request
         ])
         .run(tauri::generate_context!())
