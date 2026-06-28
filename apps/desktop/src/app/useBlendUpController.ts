@@ -7,7 +7,7 @@ import {
   loadStoredRole,
   storeRole
 } from "../blendup/roles";
-import type { LocalToolsSnapshot, ProjectSnapshot, UserSettings } from "../blendup/types";
+import type { AssetStatus, LocalToolsSnapshot, ProjectSnapshot, UserSettings } from "../blendup/types";
 import { exportAssetToFbx } from "../blendup/actions";
 import {
   createProject,
@@ -19,7 +19,8 @@ import {
   rememberProjectInSettings,
   saveUserSettings,
   selectProjectDirectory,
-  takeOpenRequest
+  takeOpenRequest,
+  updateAssetStatus
 } from "../blendup/projectLoader";
 import type { ActiveView, OperationMessage } from "./types";
 
@@ -480,6 +481,42 @@ export function useBlendUpController() {
     }
   };
 
+  const changeAssetStatus = async (assetId: string, status: AssetStatus, actor: string) => {
+    if (!project?.projectRoot) {
+      setOperationMessage({
+        tone: "error",
+        title: "Statut non modifie",
+        detail: "Le projet courant n'a pas de dossier source charge."
+      });
+      return;
+    }
+
+    try {
+      await updateAssetStatus({
+        actor,
+        assetId,
+        projectRoot: project.projectRoot,
+        status,
+        updatedAt: new Date().toISOString()
+      });
+      const refreshedProject = await loadProjectSnapshot(project.projectRoot);
+
+      setProject(refreshedProject);
+      setSelectedAssetId(assetId);
+      setOperationMessage({
+        tone: "success",
+        title: "Statut asset mis a jour",
+        detail: refreshedProject.assets.find((asset) => asset.id === assetId)?.displayName ?? assetId
+      });
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Statut non modifie",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
   return {
     activeView,
     blenderPathInput,
@@ -531,6 +568,7 @@ export function useBlendUpController() {
     unityPathInput,
     userSettings,
     chooseCreateProjectDirectory,
-    chooseProjectDirectory
+    chooseProjectDirectory,
+    changeAssetStatus
   };
 }

@@ -523,6 +523,44 @@ fn open_project_path(project_root: String, relative_path: String) -> Result<(), 
 }
 
 #[tauri::command]
+fn update_asset_status(
+    project_root: String,
+    asset_id: String,
+    status: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    if !is_artist_status(&status) {
+        return Err(format!("Statut artiste non reconnu: {status}"));
+    }
+
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let previous_status = json_string(&asset, &["status"])
+        .unwrap_or("unknown")
+        .to_string();
+    let display_name = json_string(&asset, &["displayName"])
+        .unwrap_or(&asset_id)
+        .to_string();
+
+    asset["status"] = Value::String(status.clone());
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.status_changed",
+            "assetId": asset_id,
+            "message": format!("{display_name}: {previous_status} -> {status}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
 fn take_open_request(project_root: String) -> Option<OpenRequest> {
     // Requete ecrite par l'add-on Blender ("ouvrir la fiche dans BlendUp").
     // On la lit puis on la supprime pour qu'elle ne soit traitee qu'une fois.
@@ -891,6 +929,30 @@ fn write_text_file(path: &Path, content: &str) -> Result<(), String> {
         .map_err(|error| format!("Impossible d'ecrire {}: {error}", path.display()))
 }
 
+fn append_activity(project_root: &Path, entry: Value) -> Result<(), String> {
+    let path = project_root
+        .join(".blendup")
+        .join("logs")
+        .join("activity.jsonl");
+    let content = serde_json::to_string(&entry)
+        .map_err(|error| format!("Impossible de serialiser l'activite: {error}"))?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+    }
+
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))?;
+
+    writeln!(file, "{content}")
+        .map_err(|error| format!("Impossible d'ecrire {}: {error}", path.display()))
+}
+
 fn default_project_directories(create_unity_folders: bool) -> Vec<&'static str> {
     let mut directories = vec![
         ".blendup/assets",
@@ -1197,13 +1259,16 @@ fn update_asset_export_status(
         Value::String(status.to_string()),
     );
 
-    if status == "success" {
-        asset["status"] = Value::String("exported".to_string());
-    }
-
     asset["updatedAt"] = Value::String(exported_at.to_string());
 
     write_json_file(asset_file, asset)
+}
+
+fn is_artist_status(status: &str) -> bool {
+    matches!(
+        status,
+        "todo" | "in_progress" | "review" | "needs_art_fix" | "validated"
+    )
 }
 
 fn json_string<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
@@ -1453,6 +1518,7 @@ fn main() {
             detect_local_tools,
             export_asset_to_fbx,
             open_project_path,
+            update_asset_status,
             take_open_request
         ])
         .run(tauri::generate_context!())

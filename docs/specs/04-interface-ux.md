@@ -148,7 +148,7 @@ Le dashboard doit rester utile et compact. Il ne doit pas afficher les outils lo
 - prochaine tache ouverte ;
 - liens rapides vers Problems, Tasks, Settings ou l'asset concerne.
 
-Dans le workspace ouvert, le logo seul en haut a droite ferme le projet courant et ramene a l'accueil de l'application. La navigation interne vers le dashboard passe par la barre laterale.
+Dans le workspace ouvert, le logo BlendUp est en haut a gauche dans la barre laterale. Il sert de controle principal pour replier/deplier la navigation. Quand la navigation est ouverte, un clic sur une section navigue puis replie la barre laterale ; quand elle est repliee, un clic sur une icone navigue puis redeplie la barre. L'action de retour a l'accueil reste disponible par un bouton discret `Accueil`.
 
 Differenciation actuelle :
 
@@ -472,13 +472,15 @@ La V1 utilise des comptes locaux tres simples, sans mot de passe.
 Objectif :
 
 - permettre a chaque personne de choisir son identite ;
-- associer des roles artiste/dev ;
+- associer des roles independants ;
 - preparer l'historique par personne sans ajouter de systeme de securite lourd.
 
 Implementation actuelle :
 
 - page `Equipe` dediee ;
+- roles disponibles : artiste, dev, directeur artistique ;
 - un owner local peut ajouter, supprimer et modifier les roles des comptes ;
+- l'owner represente le createur du projet et ne peut pas transferer ce role pour l'instant ;
 - l'identite active est stockee localement par projet dans `localStorage` ;
 - ces comptes ne sont pas encore versionnes dans `.blendup` et ne remplacent pas une vraie authentification.
 
@@ -541,7 +543,8 @@ Ces permissions doivent etre presentees comme des garde-fous, pas comme de la se
 Implemente (V1, 2026-06-27/28) :
 
 - bascule artiste/dev dans la barre laterale avec controle compact ;
-- barre laterale repliable ;
+- barre laterale repliable automatiquement apres navigation, avec redeploiement au clic suivant ;
+- logo BlendUp en haut a gauche comme controle de repli/depli ;
 - role gere par `apps/desktop/src/blendup/roles.ts` (type `Role`, capacites par role) ;
 - defaut du role depuis `project.defaultView` ; role actif persiste localement (hors Git) ;
 - fiche asset adaptee au role : ordre des sections et emphase des notes ;

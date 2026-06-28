@@ -8,8 +8,10 @@ export type AssetType =
   | "character";
 
 export type AssetStatus =
+  | "todo"
   | "draft"
   | "in_progress"
+  | "review"
   | "ready_for_export"
   | "exported"
   | "unity_imported"

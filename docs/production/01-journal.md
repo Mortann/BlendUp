@@ -639,3 +639,20 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - Les comptes, ajouts de references et editions de taches sont actuellement locaux cote frontend. Les commandes d'ecriture `.blendup` restent a implementer pour rendre ces changements persistants et versionnables.
 - `Ouvrir dans Blender` ouvre le fichier `.blend` via l'application par defaut du systeme ; il faut donc que les fichiers `.blend` soient associes a Blender sur la machine.
 - L'ouverture automatique des references liees avec PureRef reste a brancher.
+
+## 2026-06-28 - Ajustements Navigation Et Roles Equipe
+
+### Fait
+
+- Le logo BlendUp est maintenant place en haut a gauche de la barre laterale et remplace le bouton de repli.
+- La barre laterale se replie automatiquement apres un clic de navigation quand elle est ouverte.
+- Quand la barre laterale est repliee, cliquer une icone navigue puis redeplie la barre.
+- Ajout d'une transition de largeur pour rendre ce comportement moins abrupt.
+- Le bouton de retour a l'accueil devient un bouton texte discret `Accueil`, sans dupliquer le logo.
+- Ajout du role local `Directeur artistique` (`art_director`) dans la page `Equipe`.
+- Les roles d'equipe sont independants : un membre peut etre artiste, dev et/ou directeur artistique.
+- Le role `Owner` est fixe sur le compte local `owner` et ne peut plus etre transfere depuis l'interface.
+
+### Notes
+
+- Le role `Directeur artistique` prepare la validation des assets artiste. Il ne modifie pas encore les droits de changement de statut asset tant que la refonte Assets artiste n'est pas finalisee.

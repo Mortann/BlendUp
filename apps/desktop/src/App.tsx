@@ -76,6 +76,7 @@ function App() {
           exportingAssetId={app.exportingAssetId}
           filteredAssets={app.filteredAssets}
           onExportAsset={app.handleExportAsset}
+          onChangeAssetStatus={app.changeAssetStatus}
           onOpenInBlender={app.openAssetInBlender}
           problems={app.project.problems}
           query={app.query}
@@ -84,6 +85,7 @@ function App() {
           selectedProblems={app.selectedProblems}
           setQuery={app.setQuery}
           setSelectedAssetId={app.setSelectedAssetId}
+          snapshot={app.project}
         />
       ) : app.activeView === "references" ? (
         <ReferencesView onOpenAsset={app.openAsset} role={app.role} snapshot={app.project} />

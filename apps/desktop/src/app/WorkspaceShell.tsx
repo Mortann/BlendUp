@@ -8,8 +8,6 @@ import {
   Home,
   KanbanSquare,
   ListTree,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings,
   Sparkles,
   UsersRound
@@ -94,18 +92,23 @@ export function WorkspaceShell({
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const navItems = navigationForRole(role);
+  const handleNavigate = (view: ActiveView) => {
+    setActiveView(view);
+    setIsCollapsed((current) => !current);
+  };
 
   return (
     <main className={`app-shell role-${role} ${isCollapsed ? "sidebar-collapsed" : ""}`} style={shellStyle}>
       <aside className="sidebar" aria-label="Navigation principale">
         <button
           aria-label={isCollapsed ? "Deplier la navigation" : "Replier la navigation"}
-          className="sidebar-collapse"
+          className="sidebar-brand-toggle"
           onClick={() => setIsCollapsed((current) => !current)}
-          title={isCollapsed ? "Deplier" : "Replier"}
+          title={isCollapsed ? "Deplier la navigation" : "Replier la navigation"}
           type="button"
         >
-          {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          <span className="brand-mark mini">BU</span>
+          <span className="brand-wordmark">BlendUp</span>
         </button>
 
         <div className="role-toggle" aria-label="Choisir la vue">
@@ -135,7 +138,7 @@ export function WorkspaceShell({
               aria-label={item.label}
               className={`nav-item ${item.tone ?? ""} ${activeView === item.key ? "active" : ""}`}
               key={item.key}
-              onClick={() => setActiveView(item.key)}
+              onClick={() => handleNavigate(item.key)}
               title={item.label}
               type="button"
             >
@@ -155,13 +158,13 @@ export function WorkspaceShell({
       <section className="workspace" aria-label={viewTitle(activeView)}>
         <button
           aria-label="Fermer le projet et revenir a l'accueil"
-          className="project-logo-button"
+          className="project-home-button"
           onClick={onCloseProject}
           title={`Fermer ${project.project.name}`}
           type="button"
         >
-          <BadgeCheck size={18} />
-          <span>BU</span>
+          <BadgeCheck size={17} />
+          <span>Accueil</span>
         </button>
 
         {operationMessage ? <OperationBanner message={operationMessage} onClose={onCloseMessage} /> : null}

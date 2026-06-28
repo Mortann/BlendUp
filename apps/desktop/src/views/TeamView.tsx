@@ -1,4 +1,4 @@
-import { CheckCircle2, Code2, Plus, Sparkles, Trash2, UserCog, UsersRound } from "lucide-react";
+import { CheckCircle2, Code2, Palette, Plus, ShieldCheck, Sparkles, Trash2, UserCog, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Role } from "../blendup/roles";
 import type { ProjectSnapshot } from "../blendup/types";
@@ -8,7 +8,8 @@ import {
   loadTeamMembers,
   saveActiveMemberId,
   saveTeamMembers,
-  type TeamMember
+  type TeamMember,
+  type TeamRole
 } from "../app/people";
 
 export function TeamView({
@@ -60,7 +61,9 @@ export function TeamView({
         <div>
           <span className="eyebrow">Equipe locale</span>
           <h2>Comptes simples</h2>
-          <p className="soft-text">Chaque personne choisit qui elle est. L'owner gere les noms et les roles.</p>
+          <p className="soft-text">
+            Chaque personne choisit qui elle est. L'owner reste le createur du projet et gere les roles.
+          </p>
         </div>
         <div className="active-member-card">
           <UserCog size={20} />
@@ -84,7 +87,7 @@ export function TeamView({
                 key={member.id}
                 onClick={() => {
                   setActiveMemberId(member.id);
-                  setRole(member.roles[0] ?? "artist");
+                  setRole(viewRoleFromMember(member));
                 }}
                 type="button"
               >
@@ -127,14 +130,6 @@ export function TeamView({
                 key={member.id}
                 member={member}
                 onDelete={() => setMembers((current) => current.filter((item) => item.id !== member.id || item.isOwner))}
-                onToggleOwner={() =>
-                  setMembers((current) =>
-                    current.map((item) => ({
-                      ...item,
-                      isOwner: item.id === member.id
-                    }))
-                  )
-                }
                 onToggleRole={(role) =>
                   setMembers((current) =>
                     current.map((item) => {
@@ -143,7 +138,9 @@ export function TeamView({
                       }
 
                       const hasRole = item.roles.includes(role);
-                      const nextRoles = hasRole ? item.roles.filter((itemRole) => itemRole !== role) : [...item.roles, role];
+                      const nextRoles = hasRole
+                        ? item.roles.filter((itemRole) => itemRole !== role)
+                        : [...item.roles, role];
 
                       return {
                         ...item,
@@ -165,14 +162,12 @@ function MemberRow({
   canManage,
   member,
   onDelete,
-  onToggleOwner,
   onToggleRole
 }: {
   canManage: boolean;
   member: TeamMember;
   onDelete: () => void;
-  onToggleOwner: () => void;
-  onToggleRole: (role: Role) => void;
+  onToggleRole: (role: TeamRole) => void;
 }) {
   return (
     <div className="member-row">
@@ -198,7 +193,17 @@ function MemberRow({
         <Code2 size={15} />
         Dev
       </button>
-      <button disabled={!canManage || member.isOwner} onClick={onToggleOwner} type="button">
+      <button
+        className={member.roles.includes("art_director") ? "active" : ""}
+        disabled={!canManage}
+        onClick={() => onToggleRole("art_director")}
+        type="button"
+      >
+        <Palette size={15} />
+        DA
+      </button>
+      <button className={member.isOwner ? "owner-lock active" : "owner-lock"} disabled type="button">
+        <ShieldCheck size={15} />
         Owner
       </button>
       <button disabled={!canManage || member.isOwner} onClick={onDelete} type="button">
@@ -206,4 +211,12 @@ function MemberRow({
       </button>
     </div>
   );
+}
+
+function viewRoleFromMember(member: TeamMember): Role {
+  if (member.roles.includes("developer") && !member.roles.includes("artist")) {
+    return "developer";
+  }
+
+  return "artist";
 }

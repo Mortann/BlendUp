@@ -1,9 +1,11 @@
 import type { Role } from "../blendup/roles";
 
+export type TeamRole = Role | "art_director";
+
 export type TeamMember = {
   id: string;
   name: string;
-  roles: Role[];
+  roles: TeamRole[];
   isOwner: boolean;
 };
 
@@ -60,8 +62,8 @@ function defaultTeamMembers(): TeamMember[] {
   return [
     {
       id: "owner",
-      name: "Owner",
-      roles: ["artist", "developer"],
+      name: "Createur du projet",
+      roles: ["artist", "developer", "art_director"],
       isOwner: true
     }
   ];
@@ -74,7 +76,9 @@ function normalizeMember(member: Partial<TeamMember>): TeamMember | null {
     return null;
   }
 
-  const roles = (member.roles ?? []).filter((role): role is Role => role === "artist" || role === "developer");
+  const roles = (member.roles ?? []).filter(
+    (role): role is TeamRole => role === "artist" || role === "developer" || role === "art_director"
+  );
 
   return {
     id: member.id?.trim() || createMemberId(name),
@@ -85,12 +89,22 @@ function normalizeMember(member: Partial<TeamMember>): TeamMember | null {
 }
 
 function ensureOwner(members: TeamMember[]) {
-  if (members.some((member) => member.isOwner)) {
-    return members;
-  }
+  const ownerId = members.find((member) => member.id === "owner")?.id ?? members[0]?.id;
 
-  return members.map((member, index) => ({
-    ...member,
-    isOwner: index === 0
-  }));
+  return members.map((member) => {
+    if (member.id === ownerId) {
+      const ownerRoles: TeamRole[] = Array.from(new Set<TeamRole>([...member.roles, "artist", "developer", "art_director"]));
+
+      return {
+        ...member,
+        isOwner: true,
+        roles: ownerRoles
+      };
+    }
+
+    return {
+      ...member,
+      isOwner: false
+    };
+  });
 }

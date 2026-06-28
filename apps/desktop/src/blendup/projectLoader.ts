@@ -1,5 +1,13 @@
 import { blendUpTestSnapshot } from "../fixtures/blendUpTest";
-import type { CreateProjectOptions, CreateProjectResult, LocalToolsSnapshot, OpenRequest, ProjectSnapshot, UserSettings } from "./types";
+import type {
+  AssetStatus,
+  CreateProjectOptions,
+  CreateProjectResult,
+  LocalToolsSnapshot,
+  OpenRequest,
+  ProjectSnapshot,
+  UserSettings
+} from "./types";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -141,6 +149,22 @@ export async function openProjectPath(projectRoot: string, relativePath?: string
   await invoke("open_project_path", {
     projectRoot,
     relativePath: relativePath.trim()
+  });
+}
+
+export async function updateAssetStatus(options: {
+  actor: string;
+  assetId: string;
+  projectRoot: string;
+  status: AssetStatus;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("update_asset_status", {
+    actor: options.actor,
+    assetId: options.assetId,
+    projectRoot: options.projectRoot,
+    status: options.status,
+    updatedAt: options.updatedAt
   });
 }
 

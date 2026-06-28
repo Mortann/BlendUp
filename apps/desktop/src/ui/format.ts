@@ -16,14 +16,16 @@ export function formatAssetType(type: AssetType): string {
 
 export function formatStatus(status: AssetStatus): string {
   const labels: Record<AssetStatus, string> = {
+    todo: "A faire",
     draft: "Draft",
-    in_progress: "In Progress",
+    in_progress: "En cours",
+    review: "A valider",
     ready_for_export: "Ready",
     exported: "Exported",
     unity_imported: "Unity Imported",
-    needs_art_fix: "Art Fix",
+    needs_art_fix: "A retravailler",
     needs_dev_fix: "Dev Fix",
-    validated: "Validated",
+    validated: "Valide",
     archived: "Archived"
   };
 

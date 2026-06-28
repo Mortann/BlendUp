@@ -2,22 +2,27 @@ import {
   AlertTriangle,
   ArrowUpDown,
   Boxes,
+  Check,
   CheckCircle2,
+  ChevronRight,
   ExternalLink,
   FileSearch,
   Folder,
   Grid2X2,
   History,
+  ImageIcon,
   List,
   Pencil,
   Search,
+  Star,
   Trash2,
   X
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Role, RoleCapabilities } from "../blendup/roles";
-import type { BlendUpAsset, BlendUpProblem } from "../blendup/types";
+import type { AssetStatus, BlendUpAsset, BlendUpProblem, ProjectSnapshot } from "../blendup/types";
 import { assetFolder } from "../app/metrics";
+import { loadActiveMemberId, loadTeamMembers, type TeamMember } from "../app/people";
 import { DetailMeta, EmptyState, Owner, PathLine, StatusPill } from "../app/ui";
 import {
   formatAssetType,
@@ -28,11 +33,21 @@ import {
 
 type AssetSortMode = "name" | "recent" | "status";
 type AssetDisplayMode = "grid" | "list" | "compact";
+type AssetQuickFilter = "all" | "favorites" | "review" | "needs_art_fix";
+
+const artistStatuses: { label: string; status: AssetStatus }[] = [
+  { label: "A faire", status: "todo" },
+  { label: "En cours", status: "in_progress" },
+  { label: "A valider", status: "review" },
+  { label: "A retravailler", status: "needs_art_fix" },
+  { label: "Valide", status: "validated" }
+];
 
 export function AssetsView({
   capabilities,
   exportingAssetId,
   filteredAssets,
+  onChangeAssetStatus,
   onExportAsset,
   onOpenInBlender,
   problems,
@@ -41,11 +56,13 @@ export function AssetsView({
   selectedAsset,
   selectedProblems,
   setQuery,
-  setSelectedAssetId
+  setSelectedAssetId,
+  snapshot
 }: {
   capabilities: RoleCapabilities;
   exportingAssetId: string | null;
   filteredAssets: BlendUpAsset[];
+  onChangeAssetStatus: (assetId: string, status: AssetStatus, actor: string) => void;
   onExportAsset: (assetId: string) => void;
   onOpenInBlender: (assetId: string) => void;
   problems: BlendUpProblem[];
@@ -55,22 +72,42 @@ export function AssetsView({
   selectedProblems: BlendUpProblem[];
   setQuery: (query: string) => void;
   setSelectedAssetId: (assetId: string) => void;
+  snapshot: ProjectSnapshot;
 }) {
   const [folderFilter, setFolderFilter] = useState("all");
   const [sortMode, setSortMode] = useState<AssetSortMode>("recent");
   const [displayMode, setDisplayMode] = useState<AssetDisplayMode>("grid");
+  const projectId = snapshot.project.projectId;
+  const defaultExplorerPath = normalizeFolderPath(snapshot.project.paths.blenderRoot);
+  const [currentPath, setCurrentPath] = useState(() => loadAssetExplorerPath(projectId) ?? defaultExplorerPath);
+  const [quickFilter, setQuickFilter] = useState<AssetQuickFilter>("all");
+  const [favoriteAssetIds, setFavoriteAssetIds] = useState<string[]>(() => loadAssetFavorites(projectId));
+  const activeMember = useMemo(() => getActiveMember(projectId), [projectId]);
+
+  useEffect(() => {
+    setCurrentPath(loadAssetExplorerPath(projectId) ?? defaultExplorerPath);
+    setFavoriteAssetIds(loadAssetFavorites(projectId));
+    setQuickFilter("all");
+  }, [defaultExplorerPath, projectId]);
+
+  useEffect(() => {
+    saveAssetExplorerPath(projectId, currentPath);
+  }, [currentPath, projectId]);
+
+  useEffect(() => {
+    saveAssetFavorites(projectId, favoriteAssetIds);
+  }, [favoriteAssetIds, projectId]);
+
   const folders = useMemo(() => {
     return Array.from(new Set(filteredAssets.map(assetFolder))).sort((left, right) => left.localeCompare(right));
   }, [filteredAssets]);
-  const folderCounts = useMemo(() => {
-    return folders.map((folder) => ({
-      folder,
-      count: filteredAssets.filter((asset) => assetFolder(asset) === folder).length
-    }));
-  }, [filteredAssets, folders]);
   const visibleAssets = useMemo(() => {
     const assets =
-      folderFilter === "all" ? filteredAssets : filteredAssets.filter((asset) => assetFolder(asset) === folderFilter);
+      role === "artist"
+        ? filterArtistAssets(filteredAssets, currentPath, quickFilter, favoriteAssetIds)
+        : folderFilter === "all"
+          ? filteredAssets
+          : filteredAssets.filter((asset) => assetFolder(asset) === folderFilter);
 
     return [...assets].sort((left, right) => {
       if (sortMode === "recent") {
@@ -83,7 +120,20 @@ export function AssetsView({
 
       return left.displayName.localeCompare(right.displayName);
     });
-  }, [filteredAssets, folderFilter, sortMode]);
+  }, [currentPath, favoriteAssetIds, filteredAssets, folderFilter, quickFilter, role, sortMode]);
+  const childFolders = useMemo(
+    () => foldersForPath(filteredAssets, currentPath),
+    [currentPath, filteredAssets]
+  );
+  const currentFolderLabel = currentPath || "Assets";
+  const favoriteAssets = filteredAssets.filter((asset) => favoriteAssetIds.includes(asset.id));
+  const reviewCount = filteredAssets.filter((asset) => normalizeArtistStatus(asset.status) === "review").length;
+  const reworkCount = filteredAssets.filter((asset) => normalizeArtistStatus(asset.status) === "needs_art_fix").length;
+  const toggleFavorite = (assetId: string) => {
+    setFavoriteAssetIds((current) =>
+      current.includes(assetId) ? current.filter((id) => id !== assetId) : [assetId, ...current]
+    );
+  };
 
   return (
     <section className={`assets-page role-page assets-page--${role}`} aria-label="Assets">
@@ -103,6 +153,115 @@ export function AssetsView({
         </label>
       </div>
 
+      {role === "artist" ? (
+        <div className="artist-asset-explorer">
+          <aside className="asset-shortcuts-panel" aria-label="Acces rapides assets">
+            <div className="asset-shortcut-group">
+              <span className="eyebrow">General</span>
+              <button
+                className={quickFilter === "all" ? "active" : ""}
+                onClick={() => setQuickFilter("all")}
+                type="button"
+              >
+                <Folder size={16} />
+                <span>Dossier courant</span>
+              </button>
+              <button
+                className={quickFilter === "review" ? "active" : ""}
+                onClick={() => setQuickFilter("review")}
+                type="button"
+              >
+                <CheckCircle2 size={16} />
+                <span>A valider</span>
+                <strong>{reviewCount}</strong>
+              </button>
+              <button
+                className={quickFilter === "needs_art_fix" ? "active" : ""}
+                onClick={() => setQuickFilter("needs_art_fix")}
+                type="button"
+              >
+                <AlertTriangle size={16} />
+                <span>A retravailler</span>
+                <strong>{reworkCount}</strong>
+              </button>
+            </div>
+            <div className="asset-shortcut-group">
+              <span className="eyebrow">Favoris</span>
+              <button
+                className={quickFilter === "favorites" ? "active" : ""}
+                onClick={() => setQuickFilter("favorites")}
+                type="button"
+              >
+                <Star size={16} />
+                <span>Tous les favoris</span>
+                <strong>{favoriteAssets.length}</strong>
+              </button>
+              {favoriteAssets.slice(0, 5).map((asset) => (
+                <button key={asset.id} onClick={() => setSelectedAssetId(asset.id)} type="button">
+                  <AssetVisual asset={asset} small />
+                  <span>{asset.displayName}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <div className="asset-explorer-main">
+            <div className="asset-breadcrumb" aria-label="Emplacement asset">
+              {breadcrumbParts(currentPath).map((part, index, parts) => (
+                <button
+                  key={part.path || "root"}
+                  className={index === parts.length - 1 ? "active" : ""}
+                  onClick={() => {
+                    setCurrentPath(part.path);
+                    setQuickFilter("all");
+                  }}
+                  type="button"
+                >
+                  {part.label}
+                  {index < parts.length - 1 ? <ChevronRight size={14} /> : null}
+                </button>
+              ))}
+            </div>
+
+            <section className="folder-child-grid" aria-label="Dossiers enfants">
+              {quickFilter === "all"
+                ? childFolders.map((folder) => (
+                    <button
+                      className="folder-tile"
+                      key={folder.path}
+                      onClick={() => setCurrentPath(folder.path)}
+                      type="button"
+                    >
+                      <Folder size={24} />
+                      <strong>{folder.name}</strong>
+                      <span>{folder.assetCount} asset(s)</span>
+                    </button>
+                  ))
+                : null}
+            </section>
+
+            <section className={`asset-card-grid display-${displayMode}`} aria-label={`Assets ${currentFolderLabel}`}>
+              {visibleAssets.length > 0 ? (
+                visibleAssets.map((asset) => (
+                  <ArtistAssetCard
+                    asset={asset}
+                    displayMode={displayMode}
+                    isFavorite={favoriteAssetIds.includes(asset.id)}
+                    isSelected={asset.id === selectedAsset?.id}
+                    key={asset.id}
+                    onSelect={() => setSelectedAssetId(asset.id)}
+                    onToggleFavorite={() => toggleFavorite(asset.id)}
+                    problemCount={problems.filter((problem) => problem.assetId === asset.id).length}
+                  />
+                ))
+              ) : (
+                <EmptyState icon={<FileSearch size={28} />} label="Aucun asset ici" />
+              )}
+            </section>
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="asset-tools-row">
         <div className="folder-rail" aria-label="Dossiers assets">
           <button className={folderFilter === "all" ? "active" : ""} onClick={() => setFolderFilter("all")} type="button">
@@ -147,49 +306,18 @@ export function AssetsView({
         </div>
       </div>
 
-      {role === "artist" && folderFilter === "all" ? (
-        <section className="folder-browser" aria-label="Dossiers rapides">
-          {folderCounts.map((item) => (
-            <button key={item.folder} onClick={() => setFolderFilter(item.folder)} type="button">
-              <Folder size={22} />
-              <strong>{lastFolderName(item.folder)}</strong>
-              <span>{item.folder}</span>
-              <small>{item.count} asset(s)</small>
-            </button>
-          ))}
-        </section>
-      ) : null}
-
-      <div className={`asset-workspace ${role === "artist" ? "artist-workspace" : ""}`}>
-        <section
-          className={
-            role === "artist"
-              ? `asset-card-grid display-${displayMode}`
-              : `asset-table-list display-${displayMode}`
-          }
-          aria-label="Liste assets"
-        >
+      <div className="asset-workspace">
+        <section className={`asset-table-list display-${displayMode}`} aria-label="Liste assets">
           {visibleAssets.length > 0 ? (
-            visibleAssets.map((asset) =>
-              role === "artist" ? (
-                <ArtistAssetCard
-                  asset={asset}
-                  displayMode={displayMode}
-                  isSelected={asset.id === selectedAsset?.id}
-                  key={asset.id}
-                  onSelect={() => setSelectedAssetId(asset.id)}
-                  problemCount={problems.filter((problem) => problem.assetId === asset.id).length}
-                />
-              ) : (
-                <DeveloperAssetRow
-                  asset={asset}
-                  isSelected={asset.id === selectedAsset?.id}
-                  key={asset.id}
-                  onSelect={() => setSelectedAssetId(asset.id)}
-                  problemCount={problems.filter((problem) => problem.assetId === asset.id).length}
-                />
-              )
-            )
+            visibleAssets.map((asset) => (
+              <DeveloperAssetRow
+                asset={asset}
+                isSelected={asset.id === selectedAsset?.id}
+                key={asset.id}
+                onSelect={() => setSelectedAssetId(asset.id)}
+                problemCount={problems.filter((problem) => problem.assetId === asset.id).length}
+              />
+            ))
           ) : (
             <EmptyState icon={<FileSearch size={28} />} label="Aucun asset dans ce dossier" />
           )}
@@ -205,14 +333,20 @@ export function AssetsView({
           />
         ) : null}
       </div>
+        </>
+      )}
 
       {role === "artist" && selectedAsset ? (
         <div className="asset-overlay" role="dialog" aria-modal="true" aria-label="Detail asset artiste">
           <ArtistAssetDetail
+            activeMember={activeMember}
             asset={selectedAsset}
             capabilities={capabilities}
+            isFavorite={favoriteAssetIds.includes(selectedAsset.id)}
+            onChangeStatus={(status) => onChangeAssetStatus(selectedAsset.id, status, activeMember?.name ?? "BlendUp")}
             onClose={() => setSelectedAssetId("")}
             onOpenInBlender={() => onOpenInBlender(selectedAsset.id)}
+            onToggleFavorite={() => toggleFavorite(selectedAsset.id)}
             problems={selectedProblems}
           />
         </div>
@@ -224,30 +358,37 @@ export function AssetsView({
 function ArtistAssetCard({
   asset,
   displayMode,
+  isFavorite,
   isSelected,
   onSelect,
+  onToggleFavorite,
   problemCount
 }: {
   asset: BlendUpAsset;
   displayMode: AssetDisplayMode;
+  isFavorite: boolean;
   isSelected: boolean;
   onSelect: () => void;
+  onToggleFavorite: () => void;
   problemCount: number;
 }) {
   return (
-    <button
-      className={`artist-asset-card ${displayMode} ${isSelected ? "selected" : ""}`}
-      onClick={onSelect}
-      type="button"
-    >
-      <span className="asset-folder-label">{assetFolder(asset)}</span>
-      <strong>{asset.displayName}</strong>
-      <small>{formatAssetType(asset.type)}</small>
-      <div className="asset-card-footer">
-        <StatusPill label={formatStatus(asset.status)} tone="blue" />
-        {problemCount > 0 ? <span className="mini-warning">{problemCount}</span> : null}
-      </div>
-    </button>
+    <article className={`artist-asset-card ${displayMode} ${isSelected ? "selected" : ""}`}>
+      <button className="asset-favorite-button" onClick={onToggleFavorite} title="Favori" type="button">
+        <Star fill={isFavorite ? "currentColor" : "none"} size={16} />
+      </button>
+      <button className="artist-asset-card-main" onClick={onSelect} type="button">
+        <AssetVisual asset={asset} />
+        <span className="asset-folder-label">{assetDirectory(asset)}</span>
+        <strong>{asset.displayName}</strong>
+        <small>{formatAssetType(asset.type)}</small>
+        <div className="asset-card-footer">
+          <StatusPill label={formatStatus(normalizeArtistStatus(asset.status))} tone="blue" />
+          <span>{asset.owners.artist ?? "Non assigne"}</span>
+          {problemCount > 0 ? <span className="mini-warning">{problemCount}</span> : null}
+        </div>
+      </button>
+    </article>
   );
 }
 
@@ -321,19 +462,30 @@ function AssetProblems({
 }
 
 function ArtistAssetDetail({
+  activeMember,
   asset,
   capabilities,
+  isFavorite,
+  onChangeStatus,
   onClose,
   onOpenInBlender,
+  onToggleFavorite,
   problems
 }: {
+  activeMember?: TeamMember;
   asset: BlendUpAsset;
   capabilities: RoleCapabilities;
+  isFavorite: boolean;
+  onChangeStatus: (status: AssetStatus) => void;
   onClose: () => void;
   onOpenInBlender: () => void;
+  onToggleFavorite: () => void;
   problems: BlendUpProblem[];
 }) {
   const exported = asset.export.lastExportStatus === "success";
+  const artistStatus = normalizeArtistStatus(asset.status);
+  const isArtDirector = activeMember?.roles.includes("art_director") ?? false;
+  const canEditStatus = isArtDirector || isAssociatedMember(activeMember, asset);
 
   return (
     <aside className="asset-focus-panel artist-detail-panel floating" aria-label="Detail asset artiste">
@@ -353,14 +505,52 @@ function ArtistAssetDetail({
       </div>
 
       <div className="status-strip">
-        <StatusPill label={formatStatus(asset.status)} tone="blue" />
+        <StatusPill label={formatStatus(artistStatus)} tone="blue" />
         <StatusPill label={exported ? "Exporte" : "A exporter depuis Blender"} tone={exported ? "green" : "orange"} />
       </div>
+
+      <section className="asset-status-panel">
+        <div>
+          <span className="eyebrow">Etat artiste</span>
+          <p className="soft-text">
+            {isArtDirector
+              ? "Tu peux valider l'asset."
+              : canEditStatus
+                ? "Tu peux faire avancer l'asset jusqu'a la demande de validation."
+                : "Statut modifiable par les personnes associees a l'asset."}
+          </p>
+        </div>
+        <div className="asset-status-actions" aria-label="Changer le statut artiste">
+          {artistStatuses.map((option) => {
+            const disabled =
+              option.status === artistStatus ||
+              !canEditStatus ||
+              (option.status === "validated" && !isArtDirector);
+
+            return (
+              <button
+                className={option.status === artistStatus ? "active" : ""}
+                disabled={disabled}
+                key={option.status}
+                onClick={() => onChangeStatus(option.status)}
+                type="button"
+              >
+                {option.status === artistStatus ? <Check size={14} /> : null}
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <div className="asset-action-bar">
         <button disabled={!asset.paths.blenderSource} onClick={onOpenInBlender} type="button">
           <ExternalLink size={16} />
           Ouvrir dans Blender
+        </button>
+        <button className="secondary" onClick={onToggleFavorite} type="button">
+          <Star fill={isFavorite ? "currentColor" : "none"} size={16} />
+          Favori
         </button>
         <button className="secondary" type="button">
           <Pencil size={16} />
@@ -577,6 +767,186 @@ function ProblemActionButton({
   );
 }
 
-function lastFolderName(folder: string) {
-  return folder.split("/").filter(Boolean).at(-1) ?? folder;
+function AssetVisual({ asset, small = false }: { asset: BlendUpAsset; small?: boolean }) {
+  const thumbnail = asset.paths.thumbnail;
+
+  if (thumbnail && isRenderableThumbnail(thumbnail)) {
+    return (
+      <span className={`asset-visual ${small ? "small" : ""}`}>
+        <img alt="" src={thumbnail} />
+      </span>
+    );
+  }
+
+  return (
+    <span className={`asset-visual ${small ? "small" : ""} type-${asset.type}`}>
+      {asset.type === "texture" || asset.type === "ui_image" ? <ImageIcon size={small ? 14 : 28} /> : <Boxes size={small ? 14 : 28} />}
+    </span>
+  );
+}
+
+function breadcrumbParts(path: string) {
+  const parts = normalizeFolderPath(path).split("/").filter(Boolean);
+  const crumbs = [{ label: "Assets", path: "" }];
+  let current = "";
+
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    crumbs.push({ label: part, path: current });
+  }
+
+  return crumbs;
+}
+
+function foldersForPath(assets: BlendUpAsset[], path: string) {
+  const normalizedPath = normalizeFolderPath(path);
+  const folders = new Map<string, { name: string; path: string; assetCount: number }>();
+
+  for (const asset of assets) {
+    const directory = assetDirectory(asset);
+    const isInCurrentBranch =
+      normalizedPath === "" || directory === normalizedPath || directory.startsWith(`${normalizedPath}/`);
+
+    if (!isInCurrentBranch || directory === normalizedPath) {
+      continue;
+    }
+
+    const relative = normalizedPath === "" ? directory : directory.slice(normalizedPath.length + 1);
+    const childName = relative.split("/").filter(Boolean)[0];
+
+    if (!childName) {
+      continue;
+    }
+
+    const childPath = normalizedPath ? `${normalizedPath}/${childName}` : childName;
+    const existing = folders.get(childPath);
+
+    if (existing) {
+      existing.assetCount += 1;
+    } else {
+      folders.set(childPath, { name: childName, path: childPath, assetCount: 1 });
+    }
+  }
+
+  return Array.from(folders.values()).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function filterArtistAssets(
+  assets: BlendUpAsset[],
+  currentPath: string,
+  quickFilter: AssetQuickFilter,
+  favoriteAssetIds: string[]
+) {
+  if (quickFilter === "favorites") {
+    return assets.filter((asset) => favoriteAssetIds.includes(asset.id));
+  }
+
+  if (quickFilter === "review") {
+    return assets.filter((asset) => normalizeArtistStatus(asset.status) === "review");
+  }
+
+  if (quickFilter === "needs_art_fix") {
+    return assets.filter((asset) => normalizeArtistStatus(asset.status) === "needs_art_fix");
+  }
+
+  const normalizedPath = normalizeFolderPath(currentPath);
+
+  return assets.filter((asset) => assetDirectory(asset) === normalizedPath);
+}
+
+function assetDirectory(asset: BlendUpAsset) {
+  const preferredPath = asset.paths.blenderSource ?? asset.paths.fbxExport ?? asset.paths.unityPrefab ?? "";
+  const parts = normalizeFolderPath(preferredPath).split("/").filter(Boolean);
+
+  parts.pop();
+
+  return parts.join("/");
+}
+
+function normalizeArtistStatus(status: AssetStatus): AssetStatus {
+  if (artistStatuses.some((option) => option.status === status)) {
+    return status;
+  }
+
+  if (status === "needs_dev_fix") {
+    return "needs_art_fix";
+  }
+
+  if (status === "ready_for_export" || status === "exported" || status === "unity_imported") {
+    return "review";
+  }
+
+  if (status === "archived") {
+    return "validated";
+  }
+
+  return "todo";
+}
+
+function isAssociatedMember(member: TeamMember | undefined, asset: BlendUpAsset) {
+  if (!member) {
+    return false;
+  }
+
+  const owners = [asset.owners.artist, asset.owners.developer, asset.owners.reviewer].filter(Boolean);
+
+  if (owners.length === 0) {
+    return member.roles.includes("artist") || member.roles.includes("art_director");
+  }
+
+  return owners.includes(member.name);
+}
+
+function getActiveMember(projectId: string) {
+  const members = loadTeamMembers(projectId);
+  const activeMemberId = loadActiveMemberId(projectId);
+
+  return members.find((member) => member.id === activeMemberId) ?? members[0];
+}
+
+function normalizeFolderPath(path: string | undefined) {
+  return (path ?? "").replaceAll("\\", "/").split("/").filter(Boolean).join("/");
+}
+
+function isRenderableThumbnail(path: string) {
+  return path.startsWith("data:") || path.startsWith("http://") || path.startsWith("https://");
+}
+
+function loadAssetExplorerPath(projectId: string) {
+  try {
+    return window.localStorage.getItem(scopedPreferenceKey("asset-explorer-path", projectId));
+  } catch {
+    return null;
+  }
+}
+
+function saveAssetExplorerPath(projectId: string, path: string) {
+  try {
+    window.localStorage.setItem(scopedPreferenceKey("asset-explorer-path", projectId), path);
+  } catch {
+    // Preference locale non critique.
+  }
+}
+
+function loadAssetFavorites(projectId: string) {
+  try {
+    const value = window.localStorage.getItem(scopedPreferenceKey("asset-favorites", projectId));
+    const parsed = value ? JSON.parse(value) : [];
+
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAssetFavorites(projectId: string, assetIds: string[]) {
+  try {
+    window.localStorage.setItem(scopedPreferenceKey("asset-favorites", projectId), JSON.stringify(assetIds));
+  } catch {
+    // Preference locale non critique.
+  }
+}
+
+function scopedPreferenceKey(key: string, projectId: string) {
+  return `blendup:${projectId}:${key}`;
 }
