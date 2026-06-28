@@ -247,6 +247,17 @@ BlendUp est la **source de verite du nom** : renommer un asset renomme le dossie
 
 Une migration native idempotente (`migrate_assets_to_folders`) convertit les assets a plat existants vers ce modele au chargement du projet.
 
+Nom affiche vs nom technique :
+
+- le nom technique suit la nomenclature `{prefix}_{name}_{index}` (ex: `ENV_Rock_01`) et sert pour les dossiers/fichiers ;
+- BlendUp affiche le "coeur" (`Rock`) en enlevant le prefixe de type et le suffixe de variante ;
+- renommer edite le coeur, reconstruit le nom technique (prefixe + index conserves) et renomme dossier + `.blend` + fichiers Unity `.fbx`/`.prefab` (+ `.meta`) ;
+- deplacer un asset deplace aussi les fichiers Unity en repercutant le changement de categorie.
+
+Assignation : champ `assignees` (liste de personnes) en plus des `owners` par role. Affichage en avatars facon Trello.
+
+Creation native (`create_asset`) : cree le dossier + `references/` + `textures/`, copie les images choisies, ecrit la fiche, et genere le `.blend` via Blender en mode `-b --python` (si Blender est detecte). `create_folder` cree un simple dossier.
+
 Operations natives (cote Rust), avec BlendUp comme source de verite :
 
 - `rename_asset` : renomme dossier + `.blend` + MAJ chemins ;

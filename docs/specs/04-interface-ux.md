@@ -203,7 +203,13 @@ Implementation actuelle :
 - le bouton Parametres ouvre un panneau (mode d'affichage par defaut, taille des vignettes, tri par defaut, masquer les dossiers vides, afficher la partie Taches) ;
 - la fiche detail s'ouvre centree au milieu de la page (overlay) et permet d'assigner les membres de l'equipe (artiste / dev / reviewer) ;
 - la barre de notification s'affiche en surimpression (overlay) sans pousser la page ;
-- un asset represente un dossier (contenant le `.blend`, `references/`, `textures/`) et son nom est synchronise avec BlendUp comme source de verite.
+- un asset represente un dossier (contenant le `.blend`, `references/`, `textures/`) et son nom est synchronise avec BlendUp comme source de verite ;
+- l'interface affiche le nom court (coeur) ; le nom technique complet reste visible dans la fiche detail ;
+- le panneau de gauche presente Recent (dossiers d'assets ouverts dans Blender) / Etat (A faire, En cours, A valider, A retravailler, Valide avec compteurs) / Favoris, et le bouton Parametres colle en bas ;
+- creation complete d'assets et de dossiers via un bouton dedie (type, nom, notes, images de reference et de texture) ;
+- assignation de plusieurs personnes par asset, affichee en avatars (initiales + couleur) facon Trello ;
+- raccourcis clavier pour la navigation et les actions assets, tous remappables dans Parametres > Raccourcis clavier ;
+- les notifications disparaissent automatiquement apres quelques secondes.
 
 Recherche :
 

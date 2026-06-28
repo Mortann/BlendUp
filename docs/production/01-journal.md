@@ -707,3 +707,26 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - La migration deplace reellement les fichiers du projet au chargement ; idempotente (assets deja migres ignores).
 - Le renommage/deplacement de dossiers de categorie (Props, Environment) via clic droit n'est pas encore expose ; seul le deplacement par glisser-deposer l'est. Renommer/supprimer un dossier de categorie reste a faire.
 - Favoris, dossiers recents et parametres d'affichage restent des preferences locales (hors Git).
+
+
+## 2026-06-28 - Assets Artiste : Noms, Creation, Avatars, Raccourcis
+
+### Fait
+
+- Nom affiche court (coeur) vs nom technique complet : BlendUp affiche `Rock`, le disque garde `ENV_Rock_01`. Renommer/deplacer repercute sur le `.blend` ET les fichiers Unity `.fbx`/`.prefab` (+ `.meta`).
+- Creation complete : `create_asset` (dossier + references/ + textures/ + fiche + `.blend` via Blender headless + copie d'images de reference/texture + notes) et `create_folder`. UI : boutons Asset / Dossier + dialogues.
+- Assignation multi-personnes (`assignees`) affichee en avatars facon Trello, editable dans la fiche detail.
+- Panneau gauche revu : Recent = dossiers d'assets ouverts dans Blender ; section Etat (par statut) a la place de General/Taches ; bouton Parametres colle en bas.
+- Raccourcis clavier configurables (navigation + actions assets), remappables dans Parametres > Raccourcis clavier (persistance localStorage, module `app/shortcuts.ts`).
+- Notifications en overlay qui disparaissent automatiquement (4.5 s, 8 s pour les erreurs).
+
+### Verification
+
+- `npx tsc -b --noEmit` : OK.
+- Revue Rust (cargo absent du sandbox) par relecture + sous-agent : pas d'erreur bloquante. Nouvelle dependance `trash` deja presente.
+- `vite build` / `cargo check` a relancer en local.
+
+### Notes
+
+- La creation du `.blend` necessite Blender detecte (sinon l'asset est cree sans `.blend`, a generer depuis Blender).
+- Le deplacement des fichiers Unity repose sur la correspondance de segment de categorie (Models/<categorie>/) ; heuristique a affiner si l'arborescence Unity differe.
