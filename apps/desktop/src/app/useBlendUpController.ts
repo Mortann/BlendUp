@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { Role } from "../blendup/roles";
 import {
@@ -10,19 +10,37 @@ import {
 import type { AssetStatus, LocalToolsSnapshot, ProjectSnapshot, UserSettings } from "../blendup/types";
 import { exportAssetToFbx } from "../blendup/actions";
 import {
+  addAssetFiles,
+  createAsset,
+  createFolder,
   createProject,
+  deleteAsset,
   detectLocalTools,
   loadDefaultProjectSnapshot,
   loadProjectSnapshot,
   loadUserSettings,
+  migrateAssetsToFolders,
+  moveAsset,
+  moveFolder,
   openProjectPath,
   rememberProjectInSettings,
+  renameAsset,
   saveUserSettings,
   selectProjectDirectory,
+  setAssetAssignees,
+  setAssetOwners,
   takeOpenRequest,
   updateAssetStatus
 } from "../blendup/projectLoader";
 import type { ActiveView, OperationMessage } from "./types";
+import {
+  DEFAULT_SHORTCUTS,
+  loadShortcutBindings,
+  saveShortcutBindings,
+  useShortcuts,
+  type ShortcutAction,
+  type ShortcutBindings
+} from "./shortcuts";
 
 const initialUserSettings = await loadUserSettings();
 let initialProject: ProjectSnapshot | null = null;
@@ -149,6 +167,81 @@ export function useBlendUpController() {
       window.clearInterval(intervalId);
     };
   }, [project?.assets, project?.projectRoot]);
+
+  const migratedRoots = useRef(new Set<string>());
+
+  useEffect(() => {
+    const projectRoot = project?.projectRoot;
+
+    if (!projectRoot || migratedRoots.current.has(projectRoot)) {
+      return;
+    }
+
+    migratedRoots.current.add(projectRoot);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const migrated = await migrateAssetsToFolders(projectRoot);
+
+        if (cancelled || migrated <= 0) {
+          return;
+        }
+
+        const refreshedProject = await loadProjectSnapshot(projectRoot);
+
+        if (!cancelled) {
+          setProject(refreshedProject);
+          setOperationMessage({
+            tone: "info",
+            title: "Assets reorganises en dossiers",
+            detail: `${migrated} asset(s) migre(s) vers le nouveau modele.`
+          });
+        }
+      } catch (error) {
+        console.warn("Migration des assets impossible", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.projectRoot]);
+
+  useEffect(() => {
+    if (!operationMessage) {
+      return;
+    }
+
+    const delay = operationMessage.tone === "error" ? 8000 : 4500;
+    const timeoutId = window.setTimeout(() => setOperationMessage(null), delay);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [operationMessage]);
+
+  const [shortcutBindings, setShortcutBindings] = useState<ShortcutBindings>(() => loadShortcutBindings());
+
+  useEffect(() => {
+    saveShortcutBindings(shortcutBindings);
+  }, [shortcutBindings]);
+
+  const updateShortcut = (action: ShortcutAction, combo: string) => {
+    setShortcutBindings((current) => ({ ...current, [action]: combo }));
+  };
+
+  const resetShortcuts = () => setShortcutBindings({ ...DEFAULT_SHORTCUTS });
+
+  useShortcuts(shortcutBindings, {
+    "nav.dashboard": () => setActiveView("dashboard"),
+    "nav.assets": () => setActiveView("assets"),
+    "nav.references": () => setActiveView("references"),
+    "nav.tasks": () => setActiveView("tasks"),
+    "nav.nomenclature": () => setActiveView("nomenclature"),
+    "nav.team": () => setActiveView("team"),
+    "nav.problems": () => setActiveView("problems"),
+    "nav.git": () => setActiveView("git"),
+    "nav.settings": () => setActiveView("settings")
+  });
 
   const persistUserSettings = async (nextSettings: UserSettings) => {
     const savedSettings = await saveUserSettings(nextSettings);
@@ -481,7 +574,12 @@ export function useBlendUpController() {
     }
   };
 
-  const changeAssetStatus = async (assetId: string, status: AssetStatus, actor: string) => {
+  const changeAssetStatus = async (
+    assetId: string,
+    status: AssetStatus,
+    actor: string,
+    actorIsArtDirector: boolean
+  ) => {
     if (!project?.projectRoot) {
       setOperationMessage({
         tone: "error",
@@ -494,6 +592,7 @@ export function useBlendUpController() {
     try {
       await updateAssetStatus({
         actor,
+        actorIsArtDirector,
         assetId,
         projectRoot: project.projectRoot,
         status,
@@ -514,6 +613,240 @@ export function useBlendUpController() {
         title: "Statut non modifie",
         detail: error instanceof Error ? error.message : String(error)
       });
+    }
+  };
+
+  const runAssetMutation = async (
+    operation: () => Promise<void>,
+    successTitle: string,
+    successDetail: string,
+    errorTitle: string,
+    nextSelectedAssetId?: string
+  ) => {
+    if (!project?.projectRoot) {
+      setOperationMessage({
+        tone: "error",
+        title: errorTitle,
+        detail: "Le projet courant n'a pas de dossier source charge."
+      });
+      return;
+    }
+
+    try {
+      await operation();
+      const refreshedProject = await loadProjectSnapshot(project.projectRoot);
+      setProject(refreshedProject);
+
+      if (nextSelectedAssetId !== undefined) {
+        setSelectedAssetId(nextSelectedAssetId);
+      }
+
+      setOperationMessage({ tone: "success", title: successTitle, detail: successDetail });
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: errorTitle,
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
+  const handleRenameAsset = async (assetId: string, newName: string, actor: string) => {
+    const trimmed = newName.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    await runAssetMutation(
+      () =>
+        renameAsset({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          newName: trimmed,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Asset renomme",
+      trimmed,
+      "Renommage impossible",
+      assetId
+    );
+  };
+
+  const handleMoveAsset = async (assetId: string, targetDir: string, actor: string) => {
+    await runAssetMutation(
+      () =>
+        moveAsset({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          targetDir,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Asset deplace",
+      targetDir || "Racine",
+      "Deplacement impossible",
+      assetId
+    );
+  };
+
+  const handleMoveFolder = async (fromDir: string, targetDir: string, actor: string) => {
+    await runAssetMutation(
+      () =>
+        moveFolder({
+          projectRoot: project!.projectRoot!,
+          fromDir,
+          targetDir,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Dossier deplace",
+      targetDir || "Racine",
+      "Deplacement impossible"
+    );
+  };
+
+  const handleDeleteAsset = async (assetId: string, actor: string) => {
+    await runAssetMutation(
+      () =>
+        deleteAsset({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Asset supprime",
+      "Envoye a la corbeille",
+      "Suppression impossible",
+      ""
+    );
+  };
+
+  const handleSetAssetOwners = async (
+    assetId: string,
+    owners: { artist: string | null; developer: string | null; reviewer: string | null },
+    actor: string
+  ) => {
+    await runAssetMutation(
+      () =>
+        setAssetOwners({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          artist: owners.artist,
+          developer: owners.developer,
+          reviewer: owners.reviewer,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Assignation mise a jour",
+      "Equipe de l'asset modifiee",
+      "Assignation impossible",
+      assetId
+    );
+  };
+
+  const handleSetAssignees = async (assetId: string, assignees: string[], actor: string) => {
+    await runAssetMutation(
+      () =>
+        setAssetAssignees({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          assignees,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Assignation mise a jour",
+      `${assignees.length} personne(s) assignee(s)`,
+      "Assignation impossible",
+      assetId
+    );
+  };
+
+  const handleCreateFolder = async (parentDir: string, name: string, actor: string) => {
+    await runAssetMutation(
+      () => createFolder({ projectRoot: project!.projectRoot!, parentDir, name }),
+      "Dossier cree",
+      name,
+      "Creation impossible"
+    );
+  };
+
+  const handleAddAssetFiles = async (
+    assetId: string,
+    kind: "references" | "textures",
+    sources: string[],
+    actor: string
+  ) => {
+    if (sources.length === 0) {
+      return;
+    }
+
+    await runAssetMutation(
+      () =>
+        addAssetFiles({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          kind,
+          sources,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Fichiers ajoutes",
+      `${sources.length} fichier(s)`,
+      "Ajout impossible",
+      assetId
+    );
+  };
+
+  const handleCreateAsset = async (
+    input: {
+      parentDir: string;
+      name: string;
+      assetType: string;
+      notes: string;
+      referenceImages: string[];
+      textureImages: string[];
+    },
+    actor: string
+  ) => {
+    if (!project?.projectRoot) {
+      setOperationMessage({
+        tone: "error",
+        title: "Creation impossible",
+        detail: "Le projet courant n'a pas de dossier source charge."
+      });
+      return;
+    }
+
+    setIsLoadingProject(true);
+
+    try {
+      const message = await createAsset({
+        projectRoot: project.projectRoot,
+        parentDir: input.parentDir,
+        name: input.name,
+        assetType: input.assetType,
+        notes: input.notes,
+        referenceImages: input.referenceImages,
+        textureImages: input.textureImages,
+        fbxExport: null,
+        unityPrefab: null,
+        blenderPath: blenderPathInput.trim() || null,
+        actor,
+        createdAt: new Date().toISOString()
+      });
+      const refreshedProject = await loadProjectSnapshot(project.projectRoot);
+      setProject(refreshedProject);
+      setOperationMessage({ tone: "success", title: "Asset cree", detail: message });
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Creation impossible",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setIsLoadingProject(false);
     }
   };
 
@@ -563,6 +896,18 @@ export function useBlendUpController() {
     setRole,
     setSelectedAssetId,
     setUnityPathInput,
+    handleRenameAsset,
+    handleMoveAsset,
+    handleMoveFolder,
+    handleDeleteAsset,
+    handleSetAssetOwners,
+    handleSetAssignees,
+    handleCreateFolder,
+    handleAddAssetFiles,
+    handleCreateAsset,
+    shortcutBindings,
+    updateShortcut,
+    resetShortcuts,
     shellStyle,
     toolsSnapshot,
     unityPathInput,

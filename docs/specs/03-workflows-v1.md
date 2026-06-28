@@ -244,6 +244,14 @@ Etats possibles :
 - besoin correction dev ;
 - valide.
 
+En vue artiste, les etats sont reduits a : A faire, En cours, A valider, A retravailler, Valide.
+
+Validation :
+
+- les personnes associees a l'asset peuvent faire avancer l'etat jusqu'a `A valider` ;
+- seul le `Directeur artistique` peut passer un asset a `Valide` ou rouvrir un asset deja valide ;
+- ce verrou est double cote natif (commande `update_asset_status`) pour ne pas etre contournable depuis l'interface.
+
 Le systeme doit rester simple et configurable plus tard.
 
 ## Workflow 12 - Export Test

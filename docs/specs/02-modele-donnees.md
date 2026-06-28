@@ -223,6 +223,55 @@ Statuts proposes :
 
 Ces statuts doivent etre configurables plus tard, mais une liste simple suffit pour la V1.
 
+### Modele Dossier (Asset = Dossier)
+
+Depuis la passe Assets artiste, un asset n'est plus un simple fichier `.blend` mais un dossier qui le contient, avec ses ressources :
+
+```
+Art/Blender/Props/PROP_CubeCrate_01/
+  PROP_CubeCrate_01.blend
+  references/
+  textures/
+```
+
+Champs `paths` ajoutes :
+
+- `assetFolder` : dossier de l'asset (ex: `Art/Blender/Props/PROP_CubeCrate_01`) ;
+- `blenderSource` : `<assetFolder>/<nom>.blend` ;
+- `referencesDir` : `<assetFolder>/references` ;
+- `texturesDir` : `<assetFolder>/textures`.
+
+L'emplacement de l'asset dans l'explorateur est le **parent** de `assetFolder` (ex: `Art/Blender/Props`).
+
+BlendUp est la **source de verite du nom** : renommer un asset renomme le dossier et le fichier `.blend`, et met a jour les chemins Unity attendus (FBX/prefab, sans toucher aux fichiers Unity existants).
+
+Une migration native idempotente (`migrate_assets_to_folders`) convertit les assets a plat existants vers ce modele au chargement du projet.
+
+Operations natives (cote Rust), avec BlendUp comme source de verite :
+
+- `rename_asset` : renomme dossier + `.blend` + MAJ chemins ;
+- `move_asset` / `move_folder` : deplacent reellement les dossiers sur le disque ;
+- `delete_asset` : envoie le dossier de l'asset et sa fiche a la corbeille systeme ;
+- `set_asset_owners` : assignation des membres (artiste / dev / reviewer).
+
+### Etat Artiste (Vue Artiste)
+
+En vue artiste, l'etat affiche et modifiable est porte par le champ `status` lui-meme (pas de champ separe). La fiche artiste expose un sous-ensemble simplifie :
+
+- `todo` (A faire) ;
+- `in_progress` (En cours) ;
+- `review` (A valider) ;
+- `needs_art_fix` (A retravailler) ;
+- `validated` (Valide).
+
+Regles de changement d'etat :
+
+- les personnes associees a l'asset (artiste/dev proprietaire) peuvent faire avancer l'etat jusqu'a `review` (demande de validation) ;
+- seul le `Directeur artistique` (`art_director`) peut passer un asset a `validated` ;
+- un asset deja `validated` ne peut etre rouvert (changer d'etat) que par un `Directeur artistique`.
+
+Ce verrou est applique a deux niveaux : l'interface desactive les actions interdites, et la commande native `update_asset_status` rejette toute tentative de validation ou de reouverture par un acteur non `art_director` (verrou natif, non contournable depuis l'UI).
+
 ## Production Mode
 
 Valeurs :

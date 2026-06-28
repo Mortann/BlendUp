@@ -1,6 +1,15 @@
-import { FileSearch, FolderOpen, RotateCcw, Save, Wrench } from "lucide-react";
+import { FileSearch, FolderOpen, Keyboard, RotateCcw, Save, Wrench } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { LocalToolsSnapshot, ProjectSnapshot } from "../blendup/types";
 import { ToolStatus } from "../app/ui";
+import {
+  comboFromEvent,
+  formatCombo,
+  SHORTCUT_LABELS,
+  SHORTCUT_ORDER,
+  type ShortcutAction,
+  type ShortcutBindings
+} from "../app/shortcuts";
 
 export function SettingsView({
   blenderPathInput,
@@ -20,6 +29,9 @@ export function SettingsView({
   setProjectPathInput,
   setPureRefPathInput,
   setUnityPathInput,
+  shortcutBindings,
+  onUpdateShortcut,
+  onResetShortcuts,
   toolsSnapshot,
   unityPathInput
 }: {
@@ -40,9 +52,39 @@ export function SettingsView({
   setProjectPathInput: (projectRoot: string) => void;
   setPureRefPathInput: (pureRefPath: string) => void;
   setUnityPathInput: (unityPath: string) => void;
+  shortcutBindings: ShortcutBindings;
+  onUpdateShortcut: (action: ShortcutAction, combo: string) => void;
+  onResetShortcuts: () => void;
   toolsSnapshot: LocalToolsSnapshot | null;
   unityPathInput: string;
 }) {
+  const [capturing, setCapturing] = useState<ShortcutAction | null>(null);
+
+  useEffect(() => {
+    if (!capturing) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (event.key === "Escape") {
+        setCapturing(null);
+        return;
+      }
+
+      const combo = comboFromEvent(event);
+      if (combo) {
+        onUpdateShortcut(capturing, combo);
+        setCapturing(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [capturing, onUpdateShortcut]);
+
   return (
     <section className="settings-page role-page" aria-label="Settings">
       <div className="settings-layout">
@@ -146,6 +188,36 @@ export function SettingsView({
                 <span>Aucun projet recent</span>
               </div>
             )}
+          </div>
+        </section>
+
+        <section className="settings-panel wide">
+          <div className="settings-heading">
+            <span className="eyebrow">Raccourcis clavier</span>
+            <h2>Personnaliser</h2>
+          </div>
+          <div className="shortcut-list">
+            {SHORTCUT_ORDER.map((action) => (
+              <div className="shortcut-row" key={action}>
+                <span className="shortcut-label">
+                  <Keyboard size={15} />
+                  {SHORTCUT_LABELS[action]}
+                </span>
+                <button
+                  className={capturing === action ? "shortcut-combo capturing" : "shortcut-combo"}
+                  onClick={() => setCapturing(action)}
+                  type="button"
+                >
+                  {capturing === action ? "Appuyez sur une touche..." : formatCombo(shortcutBindings[action])}
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="settings-actions">
+            <button className="secondary" onClick={onResetShortcuts} type="button">
+              <RotateCcw size={16} />
+              Reinitialiser
+            </button>
           </div>
         </section>
       </div>

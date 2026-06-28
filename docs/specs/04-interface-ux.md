@@ -192,7 +192,18 @@ Implementation actuelle :
 - les details artiste s'ouvrent dans un panneau flottant au-dessus de la bibliotheque, pas dans une colonne permanente ;
 - la vue asset propose recherche, tri et modes grille/liste ;
 - le bouton `Exporter FBX` n'est pas affiche dans la fiche artiste : l'export quotidien doit venir du workflow Blender ;
-- `Ouvrir dans Blender` appelle une commande native qui ouvre le fichier `.blend` associe via l'application par defaut du systeme.
+- `Ouvrir dans Blender` appelle une commande native qui ouvre le fichier `.blend` associe via l'application par defaut du systeme ;
+- la navigation se fait en mode explorateur parent/enfant sur les vrais dossiers du projet, et l'emplacement courant est memorise (localStorage, par projet) entre les sessions ;
+- un panneau d'acces rapides a gauche regroupe favoris et collections (favoris, a valider, a retravailler) ; les favoris sont personnels a chaque utilisateur (locaux, par projet) ;
+- chaque asset affiche un visuel (thumbnail si disponible, sinon une carte generee par type) avec, dessous, son nom, son etat artiste et les personnes associees ;
+- l'etat artiste (A faire / En cours / A valider / A retravailler / Valide) se change depuis la fiche ; seul le `Directeur artistique` peut valider ou rouvrir un asset valide (verrou applique aussi cote natif) ;
+- clic droit sur un asset : renommer, ajouter/retirer des favoris, supprimer (corbeille) ; clic droit sur un dossier : ouvrir ;
+- glisser-deposer un asset ou un dossier vers un autre dossier le deplace reellement sur le disque ;
+- le panneau de gauche presente : Recent (5 derniers dossiers ouverts), General (tous les dossiers + A valider / A retravailler), Favoris, Taches (optionnel), et un bouton Parametres en bas ;
+- le bouton Parametres ouvre un panneau (mode d'affichage par defaut, taille des vignettes, tri par defaut, masquer les dossiers vides, afficher la partie Taches) ;
+- la fiche detail s'ouvre centree au milieu de la page (overlay) et permet d'assigner les membres de l'equipe (artiste / dev / reviewer) ;
+- la barre de notification s'affiche en surimpression (overlay) sans pousser la page ;
+- un asset represente un dossier (contenant le `.blend`, `references/`, `textures/`) et son nom est synchronise avec BlendUp comme source de verite.
 
 Recherche :
 

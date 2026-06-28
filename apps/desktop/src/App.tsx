@@ -77,6 +77,15 @@ function App() {
           filteredAssets={app.filteredAssets}
           onExportAsset={app.handleExportAsset}
           onChangeAssetStatus={app.changeAssetStatus}
+          onRenameAsset={app.handleRenameAsset}
+          onMoveAsset={app.handleMoveAsset}
+          onMoveFolder={app.handleMoveFolder}
+          onDeleteAsset={app.handleDeleteAsset}
+          onSetAssetOwners={app.handleSetAssetOwners}
+          onSetAssignees={app.handleSetAssignees}
+          onCreateAsset={app.handleCreateAsset}
+          onCreateFolder={app.handleCreateFolder}
+          shortcutBindings={app.shortcutBindings}
           onOpenInBlender={app.openAssetInBlender}
           problems={app.project.problems}
           query={app.query}
@@ -122,6 +131,9 @@ function App() {
           setProjectPathInput={app.setProjectPathInput}
           setPureRefPathInput={app.setPureRefPathInput}
           setUnityPathInput={app.setUnityPathInput}
+          shortcutBindings={app.shortcutBindings}
+          onUpdateShortcut={app.updateShortcut}
+          onResetShortcuts={app.resetShortcuts}
           toolsSnapshot={app.toolsSnapshot}
           unityPathInput={app.unityPathInput}
         />

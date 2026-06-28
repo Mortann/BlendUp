@@ -528,6 +528,7 @@ fn update_asset_status(
     asset_id: String,
     status: String,
     actor: String,
+    actor_is_art_director: bool,
     updated_at: String,
 ) -> Result<(), String> {
     if !is_artist_status(&status) {
@@ -539,6 +540,15 @@ fn update_asset_status(
     let previous_status = json_string(&asset, &["status"])
         .unwrap_or("unknown")
         .to_string();
+
+    // Verrou natif : seul le Directeur artistique peut valider un asset, et
+    // seul un DA peut modifier un asset deja valide (le rouvrir). Cette
+    // verification double celle de l'interface pour eviter tout contournement.
+    if !actor_is_art_director && (status == "validated" || previous_status == "validated") {
+        return Err(
+            "Seul le Directeur artistique peut valider ou rouvrir un asset valide.".to_string(),
+        );
+    }
     let display_name = json_string(&asset, &["displayName"])
         .unwrap_or(&asset_id)
         .to_string();
@@ -1505,6 +1515,786 @@ fn command_log(stdout: &[u8], stderr: &[u8]) -> String {
     log.trim().to_string()
 }
 
+// ===== Modele asset = dossier : helpers chemins =====
+
+fn norm_rel(p: &str) -> String {
+    p.replace('\\', "/")
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn parent_rel(rel: &str) -> String {
+    match rel.rfind('/') {
+        Some(index) => rel[..index].to_string(),
+        None => String::new(),
+    }
+}
+
+fn base_rel(rel: &str) -> String {
+    match rel.rfind('/') {
+        Some(index) => rel[index + 1..].to_string(),
+        None => rel.to_string(),
+    }
+}
+
+fn stem_rel(rel: &str) -> String {
+    let base = base_rel(rel);
+    match base.rfind('.') {
+        Some(index) if index > 0 => base[..index].to_string(),
+        _ => base,
+    }
+}
+
+fn join_rel(parent: &str, child: &str) -> String {
+    if parent.is_empty() {
+        child.to_string()
+    } else {
+        format!("{parent}/{child}")
+    }
+}
+
+fn rel_to_abs(project_root: &Path, rel: &str) -> PathBuf {
+    let mut path = project_root.to_path_buf();
+    for segment in rel.split('/').filter(|segment| !segment.is_empty()) {
+        path.push(segment);
+    }
+    path
+}
+
+fn move_file_if_exists(project_root: &Path, old_rel: &str, new_rel: &str) {
+    if old_rel == new_rel || old_rel.is_empty() || new_rel.is_empty() {
+        return;
+    }
+    let old_abs = rel_to_abs(project_root, old_rel);
+    let new_abs = rel_to_abs(project_root, new_rel);
+    if old_abs.exists() && !new_abs.exists() {
+        if let Some(parent) = new_abs.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::rename(&old_abs, &new_abs);
+        // Deplace aussi le fichier .meta Unity associe s'il existe.
+        let old_meta = rel_to_abs(project_root, &format!("{old_rel}.meta"));
+        let new_meta = rel_to_abs(project_root, &format!("{new_rel}.meta"));
+        if old_meta.exists() && !new_meta.exists() {
+            let _ = fs::rename(&old_meta, &new_meta);
+        }
+    }
+}
+
+fn set_paths_field(asset: &mut Value, key: &str, value: &str) {
+    if asset.get("paths").and_then(Value::as_object).is_none() {
+        asset["paths"] = json!({});
+    }
+    if let Some(paths) = asset.get_mut("paths").and_then(Value::as_object_mut) {
+        paths.insert(key.to_string(), Value::String(value.to_string()));
+    }
+}
+
+fn asset_folder_rel(asset: &Value) -> String {
+    if let Some(folder) = json_string(asset, &["paths", "assetFolder"]) {
+        let folder = norm_rel(folder);
+        if !folder.is_empty() {
+            return folder;
+        }
+    }
+    // Fallback : dossier parent du fichier blender (modele post-migration).
+    let blender = json_string(asset, &["paths", "blenderSource"]).unwrap_or("");
+    parent_rel(&norm_rel(blender))
+}
+
+fn is_safe_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    !trimmed.is_empty()
+        && !trimmed.contains('/')
+        && !trimmed.contains('\\')
+        && !trimmed.chars().any(|c| matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        && trimmed != "."
+        && trimmed != ".."
+}
+
+// ===== Commandes asset (dossier) =====
+
+#[tauri::command]
+fn migrate_assets_to_folders(project_root: String) -> Result<u32, String> {
+    let project_root = PathBuf::from(project_root);
+    let assets_dir = project_root.join(".blendup").join("assets");
+    let entries = match fs::read_dir(&assets_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(0),
+    };
+
+    let mut migrated = 0u32;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+
+        let mut asset = read_json_file(&path)?;
+
+        // Deja migre si un assetFolder non vide est present.
+        if json_string(&asset, &["paths", "assetFolder"])
+            .map(|folder| !folder.trim().is_empty())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        let blender = norm_rel(json_string(&asset, &["paths", "blenderSource"]).unwrap_or(""));
+        if blender.is_empty() {
+            continue;
+        }
+
+        let stem = stem_rel(&blender);
+        if stem.is_empty() {
+            continue;
+        }
+        let parent = parent_rel(&blender);
+        let folder_rel = join_rel(&parent, &stem);
+        let new_blender_rel = format!("{folder_rel}/{stem}.blend");
+
+        let folder_abs = rel_to_abs(&project_root, &folder_rel);
+        fs::create_dir_all(folder_abs.join("references"))
+            .map_err(|error| format!("Impossible de creer references: {error}"))?;
+        fs::create_dir_all(folder_abs.join("textures"))
+            .map_err(|error| format!("Impossible de creer textures: {error}"))?;
+
+        let old_abs = rel_to_abs(&project_root, &blender);
+        let new_abs = rel_to_abs(&project_root, &new_blender_rel);
+        if old_abs.exists() && old_abs != new_abs {
+            if let Some(parent_dir) = new_abs.parent() {
+                fs::create_dir_all(parent_dir)
+                    .map_err(|error| format!("Impossible de creer {}: {error}", parent_dir.display()))?;
+            }
+            fs::rename(&old_abs, &new_abs)
+                .map_err(|error| format!("Impossible de deplacer {}: {error}", old_abs.display()))?;
+        }
+
+        set_paths_field(&mut asset, "assetFolder", &folder_rel);
+        set_paths_field(&mut asset, "blenderSource", &new_blender_rel);
+        set_paths_field(&mut asset, "referencesDir", &format!("{folder_rel}/references"));
+        set_paths_field(&mut asset, "texturesDir", &format!("{folder_rel}/textures"));
+        write_json_file(&path, &asset)?;
+        migrated += 1;
+    }
+
+    Ok(migrated)
+}
+
+#[tauri::command]
+fn rename_asset(
+    project_root: String,
+    asset_id: String,
+    new_name: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    if !is_safe_name(&new_name) {
+        return Err("Nom d'asset invalide.".to_string());
+    }
+    let new_name = new_name.trim().to_string();
+
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let old_display = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
+
+    let old_folder = asset_folder_rel(&asset);
+    let parent = parent_rel(&old_folder);
+    let new_folder = join_rel(&parent, &new_name);
+
+    if new_folder != old_folder && !old_folder.is_empty() {
+        let old_abs = rel_to_abs(&project_root, &old_folder);
+        let new_abs = rel_to_abs(&project_root, &new_folder);
+        if new_abs.exists() {
+            return Err(format!("Un dossier {new_name} existe deja a cet emplacement."));
+        }
+        if old_abs.exists() {
+            fs::rename(&old_abs, &new_abs)
+                .map_err(|error| format!("Impossible de renommer le dossier: {error}"))?;
+        }
+    }
+
+    // Renommer le fichier blender a l'interieur du dossier.
+    let old_blender = norm_rel(json_string(&asset, &["paths", "blenderSource"]).unwrap_or(""));
+    let new_blender = format!("{new_folder}/{new_name}.blend");
+    if !old_blender.is_empty() {
+        // Apres le rename de dossier, l'ancien blend vit sous le nouveau dossier.
+        let moved_old_blender = if old_folder.is_empty() {
+            old_blender.clone()
+        } else {
+            old_blender.replacen(&old_folder, &new_folder, 1)
+        };
+        let moved_old_abs = rel_to_abs(&project_root, &moved_old_blender);
+        let new_blender_abs = rel_to_abs(&project_root, &new_blender);
+        if moved_old_abs.exists() && moved_old_abs != new_blender_abs {
+            fs::rename(&moved_old_abs, &new_blender_abs)
+                .map_err(|error| format!("Impossible de renommer le fichier blender: {error}"))?;
+        }
+    }
+
+    set_paths_field(&mut asset, "assetFolder", &new_folder);
+    set_paths_field(&mut asset, "blenderSource", &new_blender);
+    set_paths_field(&mut asset, "referencesDir", &format!("{new_folder}/references"));
+    set_paths_field(&mut asset, "texturesDir", &format!("{new_folder}/textures"));
+
+    // Renomme aussi les fichiers Unity (.fbx / .prefab) et leur .meta.
+    if let Some(fbx) = json_string(&asset, &["paths", "fbxExport"]) {
+        let fbx = norm_rel(fbx);
+        if !fbx.is_empty() {
+            let new_fbx = join_rel(&parent_rel(&fbx), &format!("{new_name}.fbx"));
+            move_file_if_exists(&project_root, &fbx, &new_fbx);
+            set_paths_field(&mut asset, "fbxExport", &new_fbx);
+        }
+    }
+    if let Some(prefab) = json_string(&asset, &["paths", "unityPrefab"]) {
+        let prefab = norm_rel(prefab);
+        if !prefab.is_empty() {
+            let new_prefab = join_rel(&parent_rel(&prefab), &format!("{new_name}.prefab"));
+            move_file_if_exists(&project_root, &prefab, &new_prefab);
+            set_paths_field(&mut asset, "unityPrefab", &new_prefab);
+        }
+    }
+
+    asset["displayName"] = Value::String(new_name.clone());
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.renamed",
+            "assetId": asset_id,
+            "message": format!("{old_display} -> {new_name}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn move_asset(
+    project_root: String,
+    asset_id: String,
+    target_dir: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let display_name = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
+
+    let old_folder = asset_folder_rel(&asset);
+    if old_folder.is_empty() {
+        return Err("Cet asset n'a pas de dossier a deplacer.".to_string());
+    }
+    let folder_name = base_rel(&old_folder);
+    let target_dir = norm_rel(&target_dir);
+    let new_folder = join_rel(&target_dir, &folder_name);
+
+    if new_folder == old_folder {
+        return Ok(());
+    }
+
+    let old_abs = rel_to_abs(&project_root, &old_folder);
+    let new_abs = rel_to_abs(&project_root, &new_folder);
+    if new_abs.exists() {
+        return Err(format!("Un dossier {folder_name} existe deja dans la destination."));
+    }
+    if let Some(parent_dir) = new_abs.parent() {
+        fs::create_dir_all(parent_dir)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent_dir.display()))?;
+    }
+    if old_abs.exists() {
+        fs::rename(&old_abs, &new_abs)
+            .map_err(|error| format!("Impossible de deplacer le dossier: {error}"))?;
+    }
+
+    let rewrite = |asset: &mut Value, key: &str| {
+        if let Some(current) = json_string(asset, &["paths", key]) {
+            let current = norm_rel(current);
+            if current == old_folder || current.starts_with(&format!("{old_folder}/")) {
+                let updated = current.replacen(&old_folder, &new_folder, 1);
+                set_paths_field(asset, key, &updated);
+            }
+        }
+    };
+    rewrite(&mut asset, "assetFolder");
+    rewrite(&mut asset, "blenderSource");
+    rewrite(&mut asset, "referencesDir");
+    rewrite(&mut asset, "texturesDir");
+
+    // Deplace aussi les fichiers Unity en remplacant le segment de categorie.
+    let old_cat = base_rel(&parent_rel(&old_folder));
+    let new_cat = base_rel(&target_dir);
+    if !old_cat.is_empty() && old_cat != new_cat {
+        let needle = format!("/{old_cat}/");
+        for key in ["fbxExport", "unityPrefab"] {
+            if let Some(path) = json_string(&asset, &["paths", key]) {
+                let path = norm_rel(path);
+                if let Some(pos) = path.rfind(&needle) {
+                    let new_path =
+                        format!("{}/{}/{}", &path[..pos], new_cat, &path[pos + needle.len()..]);
+                    move_file_if_exists(&project_root, &path, &new_path);
+                    set_paths_field(&mut asset, key, &new_path);
+                }
+            }
+        }
+    }
+
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.moved",
+            "assetId": asset_id,
+            "message": format!("{display_name}: {old_folder} -> {new_folder}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn move_folder(
+    project_root: String,
+    from_dir: String,
+    target_dir: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let from_dir = norm_rel(&from_dir);
+    let target_dir = norm_rel(&target_dir);
+
+    if from_dir.is_empty() {
+        return Err("Dossier source invalide.".to_string());
+    }
+    let folder_name = base_rel(&from_dir);
+    let new_dir = join_rel(&target_dir, &folder_name);
+
+    if new_dir == from_dir {
+        return Ok(());
+    }
+    if new_dir == from_dir || new_dir.starts_with(&format!("{from_dir}/")) {
+        return Err("Impossible de deplacer un dossier dans lui-meme.".to_string());
+    }
+
+    let old_abs = rel_to_abs(&project_root, &from_dir);
+    let new_abs = rel_to_abs(&project_root, &new_dir);
+    if new_abs.exists() {
+        return Err(format!("Un dossier {folder_name} existe deja dans la destination."));
+    }
+    if let Some(parent_dir) = new_abs.parent() {
+        fs::create_dir_all(parent_dir)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent_dir.display()))?;
+    }
+    if old_abs.exists() {
+        fs::rename(&old_abs, &new_abs)
+            .map_err(|error| format!("Impossible de deplacer le dossier: {error}"))?;
+    }
+
+    // Reecrire les chemins des assets situes sous le dossier deplace.
+    let assets_dir = project_root.join(".blendup").join("assets");
+    if let Ok(entries) = fs::read_dir(&assets_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let mut asset = read_json_file(&path)?;
+            let mut changed = false;
+            for key in ["assetFolder", "blenderSource", "referencesDir", "texturesDir"] {
+                if let Some(current) = json_string(&asset, &["paths", key]) {
+                    let current = norm_rel(current);
+                    if current == from_dir || current.starts_with(&format!("{from_dir}/")) {
+                        let updated = current.replacen(&from_dir, &new_dir, 1);
+                        set_paths_field(&mut asset, key, &updated);
+                        changed = true;
+                    }
+                }
+            }
+            if changed {
+                asset["updatedAt"] = Value::String(updated_at.clone());
+                write_json_file(&path, &asset)?;
+            }
+        }
+    }
+
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "folder.moved",
+            "message": format!("{from_dir} -> {new_dir}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_asset(
+    project_root: String,
+    asset_id: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, asset) = find_asset_file(&project_root, &asset_id)?;
+    let display_name = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
+    let folder = asset_folder_rel(&asset);
+
+    if !folder.is_empty() {
+        let folder_abs = rel_to_abs(&project_root, &folder);
+        if folder_abs.exists() {
+            trash::delete(&folder_abs)
+                .map_err(|error| format!("Impossible d'envoyer le dossier a la corbeille: {error}"))?;
+        }
+    }
+
+    if asset_file.exists() {
+        trash::delete(&asset_file)
+            .map_err(|error| format!("Impossible de supprimer la fiche asset: {error}"))?;
+    }
+
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.deleted",
+            "assetId": asset_id,
+            "message": format!("{display_name} supprime (corbeille)")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn set_asset_owners(
+    project_root: String,
+    asset_id: String,
+    artist: Option<String>,
+    developer: Option<String>,
+    reviewer: Option<String>,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let display_name = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
+
+    let to_value = |value: Option<String>| match value.and_then(|inner| non_empty_string(&inner)) {
+        Some(name) => Value::String(name),
+        None => Value::Null,
+    };
+
+    if asset.get("owners").and_then(Value::as_object).is_none() {
+        asset["owners"] = json!({});
+    }
+    if let Some(owners) = asset.get_mut("owners").and_then(Value::as_object_mut) {
+        owners.insert("artist".to_string(), to_value(artist));
+        owners.insert("developer".to_string(), to_value(developer));
+        owners.insert("reviewer".to_string(), to_value(reviewer));
+    }
+
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.owners_changed",
+            "assetId": asset_id,
+            "message": format!("Assignation mise a jour pour {display_name}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+const CREATE_BLEND_SCRIPT: &str = r#"
+import sys
+import bpy
+
+marker = "--"
+if marker not in sys.argv:
+    raise RuntimeError("BlendUp create: output path is missing.")
+
+output_path = sys.argv[sys.argv.index(marker) + 1]
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.wm.save_as_mainfile(filepath=output_path)
+"#;
+
+fn slug_id(name: &str) -> String {
+    let mut slug = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+        } else if !slug.ends_with('_') {
+            slug.push('_');
+        }
+    }
+    format!("asset_{}", slug.trim_matches('_'))
+}
+
+fn copy_files_into(dir_abs: &Path, sources: &[String]) {
+    for source in sources {
+        let source_path = PathBuf::from(source);
+        if let Some(file_name) = source_path.file_name() {
+            let _ = fs::copy(&source_path, dir_abs.join(file_name));
+        }
+    }
+}
+
+fn create_blend_file(blender_path: &str, blend_abs: &Path, project_root: &Path) -> Result<(), String> {
+    let script_path = project_root
+        .join(".blendup")
+        .join("temp")
+        .join("create_blend.py");
+    write_text_file(&script_path, CREATE_BLEND_SCRIPT)?;
+
+    if let Some(parent) = blend_abs.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    let output = Command::new(blender_path)
+        .arg("-b")
+        .arg("--python")
+        .arg(&script_path)
+        .arg("--")
+        .arg(blend_abs)
+        .output()
+        .map_err(|error| format!("Impossible de lancer Blender: {error}"))?;
+
+    if !output.status.success() {
+        return Err("Blender n'a pas pu creer le fichier .blend.".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn create_folder(project_root: String, parent_dir: String, name: String) -> Result<(), String> {
+    if !is_safe_name(&name) {
+        return Err("Nom de dossier invalide.".to_string());
+    }
+    let project_root = PathBuf::from(project_root);
+    let rel = join_rel(&norm_rel(&parent_dir), name.trim());
+    let abs = rel_to_abs(&project_root, &rel);
+    if abs.exists() {
+        return Err(format!("Le dossier {} existe deja.", name.trim()));
+    }
+    fs::create_dir_all(&abs).map_err(|error| format!("Impossible de creer {}: {error}", abs.display()))?;
+    Ok(())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn create_asset(
+    project_root: String,
+    parent_dir: String,
+    name: String,
+    asset_type: String,
+    notes: String,
+    reference_images: Vec<String>,
+    texture_images: Vec<String>,
+    fbx_export: Option<String>,
+    unity_prefab: Option<String>,
+    blender_path: Option<String>,
+    actor: String,
+    created_at: String,
+) -> Result<String, String> {
+    if !is_safe_name(&name) {
+        return Err("Nom d'asset invalide.".to_string());
+    }
+    let name = name.trim().to_string();
+    let project_root = PathBuf::from(project_root);
+    let parent = norm_rel(&parent_dir);
+    let folder_rel = join_rel(&parent, &name);
+    let folder_abs = rel_to_abs(&project_root, &folder_rel);
+    if folder_abs.exists() {
+        return Err(format!("Un dossier {name} existe deja a cet emplacement."));
+    }
+
+    let references_rel = format!("{folder_rel}/references");
+    let textures_rel = format!("{folder_rel}/textures");
+    fs::create_dir_all(rel_to_abs(&project_root, &references_rel))
+        .map_err(|error| format!("Impossible de creer references: {error}"))?;
+    fs::create_dir_all(rel_to_abs(&project_root, &textures_rel))
+        .map_err(|error| format!("Impossible de creer textures: {error}"))?;
+    copy_files_into(&rel_to_abs(&project_root, &references_rel), &reference_images);
+    copy_files_into(&rel_to_abs(&project_root, &textures_rel), &texture_images);
+
+    let blender_rel = format!("{folder_rel}/{name}.blend");
+    let mut message = format!("Asset {name} cree.");
+    match blender_path.as_ref().and_then(|path| non_empty_string(path)) {
+        Some(path) => {
+            let blend_abs = rel_to_abs(&project_root, &blender_rel);
+            if let Err(error) = create_blend_file(&path, &blend_abs, &project_root) {
+                message = format!("Asset {name} cree (sans .blend : {error}).");
+            }
+        }
+        None => {
+            message = format!("Asset {name} cree (ouvre-le dans Blender pour generer le .blend).");
+        }
+    }
+
+    let id = slug_id(&name);
+    let mut paths = json!({
+        "assetFolder": folder_rel,
+        "blenderSource": blender_rel,
+        "referencesDir": references_rel,
+        "texturesDir": textures_rel
+    });
+    if let Some(fbx) = fbx_export.and_then(|path| non_empty_string(&path)) {
+        paths["fbxExport"] = Value::String(norm_rel(&fbx));
+    }
+    if let Some(prefab) = unity_prefab.and_then(|path| non_empty_string(&path)) {
+        paths["unityPrefab"] = Value::String(norm_rel(&prefab));
+    }
+
+    let asset = json!({
+        "schemaVersion": 1,
+        "kind": "asset",
+        "id": id.clone(),
+        "displayName": name.clone(),
+        "type": asset_type,
+        "status": "todo",
+        "productionMode": "production",
+        "owners": { "artist": Value::Null, "developer": Value::Null, "reviewer": Value::Null },
+        "assignees": [],
+        "paths": paths,
+        "export": {
+            "profileId": Value::Null,
+            "autoExport": false,
+            "importInUnity": false,
+            "lastExportAt": Value::Null,
+            "lastExportStatus": "never_exported"
+        },
+        "unity": {
+            "importStatus": "not_imported",
+            "lastImportAt": Value::Null,
+            "components": [],
+            "expectedComponents": [],
+            "warnings": []
+        },
+        "tags": [],
+        "references": [],
+        "tasks": [],
+        "variants": [],
+        "notes": { "artist": notes, "developer": "" },
+        "createdAt": created_at,
+        "updatedAt": created_at
+    });
+
+    let asset_file = project_root
+        .join(".blendup")
+        .join("assets")
+        .join(format!("{id}.json"));
+    if asset_file.exists() {
+        return Err(format!("Une fiche asset {id} existe deja."));
+    }
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": created_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.created",
+            "assetId": id,
+            "message": format!("Asset {name} cree dans {parent}")
+        }),
+    )?;
+
+    Ok(message)
+}
+
+#[tauri::command]
+fn add_asset_files(
+    project_root: String,
+    asset_id: String,
+    kind: String,
+    sources: Vec<String>,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let key = if kind == "textures" {
+        "texturesDir"
+    } else {
+        "referencesDir"
+    };
+    let dir_rel = norm_rel(json_string(&asset, &["paths", key]).unwrap_or(""));
+    if dir_rel.is_empty() {
+        return Err("Dossier cible introuvable pour cet asset.".to_string());
+    }
+    let dir_abs = rel_to_abs(&project_root, &dir_rel);
+    fs::create_dir_all(&dir_abs)
+        .map_err(|error| format!("Impossible de creer {}: {error}", dir_abs.display()))?;
+    copy_files_into(&dir_abs, &sources);
+
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.files_added",
+            "assetId": asset_id,
+            "message": format!("{} fichier(s) ajoute(s) ({kind})", sources.len())
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn set_asset_assignees(
+    project_root: String,
+    asset_id: String,
+    assignees: Vec<String>,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let display_name = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
+
+    asset["assignees"] = Value::Array(
+        assignees
+            .iter()
+            .filter_map(|value| non_empty_string(value).map(Value::String))
+            .collect(),
+    );
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.assignees_changed",
+            "assetId": asset_id,
+            "message": format!("Assignes mis a jour pour {display_name}")
+        }),
+    )?;
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1519,6 +2309,16 @@ fn main() {
             export_asset_to_fbx,
             open_project_path,
             update_asset_status,
+            migrate_assets_to_folders,
+            rename_asset,
+            move_asset,
+            move_folder,
+            delete_asset,
+            set_asset_owners,
+            create_folder,
+            create_asset,
+            add_asset_files,
+            set_asset_assignees,
             take_open_request
         ])
         .run(tauri::generate_context!())

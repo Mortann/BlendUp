@@ -656,3 +656,54 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 ### Notes
 
 - Le role `Directeur artistique` prepare la validation des assets artiste. Il ne modifie pas encore les droits de changement de statut asset tant que la refonte Assets artiste n'est pas finalisee.
+
+
+## 2026-06-28 - Finalisation Assets Artiste
+
+### Fait
+
+- Page Assets artiste en mode explorateur parent/enfant sur les vrais dossiers du projet ; emplacement courant memorise par projet (localStorage).
+- Panneau d'acces rapides a gauche : favoris locaux (personnels, par projet) et collections (favoris, a valider, a retravailler).
+- Visuel par asset (thumbnail si dispo, sinon carte par type) avec nom, etat artiste et personnes associees.
+- L'etat artiste remplace le statut technique en vue artiste : A faire, En cours, A valider, A retravailler, Valide.
+- Droits de changement d'etat : les personnes associees avancent jusqu'a `A valider` ; seul le `Directeur artistique` peut valider.
+- Verrou natif ajoute dans la commande Tauri `update_asset_status` : refus de passer a `validated` (ou de rouvrir un asset deja `validated`) si l'acteur n'est pas `art_director`. Double la protection de l'UI.
+
+### Verification
+
+- `npx tsc -b --noEmit` (typecheck @blendup/desktop) : OK.
+- `vite build` et `cargo check` non rejouables dans l'environnement courant (binaires natifs installes sous Windows, cargo absent du sandbox Linux) ; a relancer en local.
+
+### Notes
+
+- Le compte `owner` conserve par defaut tous les roles (dont `art_director`) : le createur du projet peut donc valider tant qu'aucun autre DA n'est defini.
+- Les favoris et l'emplacement d'explorateur restent des preferences locales (hors Git) pour la V1.
+
+
+## 2026-06-28 - Assets Artiste : Modele Dossier, DnD, Parametres
+
+### Fait
+
+- Modele asset = dossier : chaque asset est un dossier (`.../<nom>/<nom>.blend` + `references/` + `textures/`). Champs `paths.assetFolder`, `referencesDir`, `texturesDir` ajoutes. Migration native idempotente `migrate_assets_to_folders` au chargement du projet.
+- BlendUp source de verite du nom : `rename_asset` renomme dossier + `.blend` + MAJ chemins Unity attendus (sans toucher aux fichiers Unity).
+- Operations natives sur disque : `move_asset`, `move_folder` (deplacement reel), `delete_asset` (corbeille systeme via crate `trash`), `set_asset_owners` (assignation equipe).
+- UI Assets artiste :
+  - clic droit (renommer / favori / supprimer pour un asset, ouvrir pour un dossier) ;
+  - glisser-deposer assets et dossiers vers un dossier ;
+  - panneau gauche reorganise : Recent / General (tous les dossiers) / Favoris / Taches / bouton Parametres ;
+  - panneau Parametres (affichage, vignettes, tri, masquer dossiers vides, afficher Taches) persiste par projet ;
+  - fiche detail recentree (overlay) + assignation des membres de l'equipe ;
+  - suppression du message "Aucun asset ici" (on n'affiche plus rien) ;
+  - barre de notification en overlay (ne pousse plus la page).
+
+### Verification
+
+- `npx tsc -b --noEmit` (typecheck @blendup/desktop) : OK.
+- Revue manuelle + sous-agent du Rust (cargo absent du sandbox) : pas d'erreur bloquante detectee.
+- `vite build` et `cargo check` a relancer en local (binaires natifs Windows / cargo absent du sandbox). Nouvelle dependance: `trash = "3"` dans `apps/desktop/src-tauri/Cargo.toml` (la 1re build telechargera la crate).
+
+### Notes
+
+- La migration deplace reellement les fichiers du projet au chargement ; idempotente (assets deja migres ignores).
+- Le renommage/deplacement de dossiers de categorie (Props, Environment) via clic droit n'est pas encore expose ; seul le deplacement par glisser-deposer l'est. Renommer/supprimer un dossier de categorie reste a faire.
+- Favoris, dossiers recents et parametres d'affichage restent des preferences locales (hors Git).

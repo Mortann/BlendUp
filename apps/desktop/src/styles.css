@@ -367,14 +367,22 @@ button {
 }
 
 .operation-banner {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  width: min(620px, calc(100vw - 120px));
   min-height: 42px;
-  padding: 8px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.055);
+  padding: 8px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(12, 16, 24, 0.92);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.4);
 }
 
 .operation-banner strong,
@@ -2467,11 +2475,8 @@ body {
 }
 
 .operation-banner {
-  z-index: 14;
-  margin: 8px 74px 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.24);
+  z-index: 60;
+  margin: 0;
 }
 
 .role-page {
@@ -2615,11 +2620,21 @@ body {
 }
 
 .asset-shortcuts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-right: 1px solid #d2dae6;
+  padding-right: 14px;
+  min-height: 0;
+}
+
+.asset-shortcuts-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: grid;
   align-content: start;
   gap: 16px;
-  border-right: 1px solid #d2dae6;
-  padding-right: 14px;
 }
 
 .asset-shortcut-group {
@@ -2888,9 +2903,9 @@ body {
   z-index: 30;
   inset: 0;
   display: grid;
-  justify-items: end;
+  place-items: center;
   padding: 28px;
-  background: rgba(0, 0, 0, 0.36);
+  background: rgba(0, 0, 0, 0.46);
   backdrop-filter: blur(10px);
 }
 
@@ -3365,4 +3380,459 @@ body {
   .asset-overlay {
     padding: 12px;
   }
+}
+
+
+/* ===== Assets artiste : nouveaux composants (passe dossier/DnD/parametres) ===== */
+
+.asset-explorer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.asset-card-people {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #5a6675;
+  font-size: 0.78rem;
+}
+
+.task-shortcut small,
+.shortcut-empty {
+  color: #6a7585;
+  font-size: 0.74rem;
+}
+
+.shortcut-empty {
+  padding: 4px 10px;
+}
+
+.asset-settings-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid #d2dae6;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #eef2f8;
+  color: #20354f;
+  cursor: pointer;
+}
+
+.asset-settings-button:hover {
+  background: #e1e9f4;
+}
+
+/* Tailles de vignettes */
+.asset-card-grid.thumb-small {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.asset-card-grid.thumb-large {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.asset-card-grid.thumb-small .asset-visual {
+  height: 96px;
+}
+
+.asset-card-grid.thumb-large .asset-visual {
+  height: 190px;
+}
+
+/* Panneau detail centre */
+.artist-detail-panel.centered {
+  position: relative;
+  width: min(640px, calc(100vw - 56px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  border-radius: 14px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.4);
+}
+
+.owner-assign-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.owner-assign-grid label {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.owner-assign-grid label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #3d4755;
+  font-size: 0.85rem;
+}
+
+.owner-assign-grid select {
+  min-height: 34px;
+  border: 1px solid #cdd6e2;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #fff;
+  color: #111318;
+}
+
+/* Menu contextuel */
+.asset-context-menu {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  gap: 2px;
+  min-width: 200px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  padding: 6px;
+  background: #ffffff;
+  color: #111318;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+}
+
+.asset-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.asset-context-menu button:hover {
+  background: #eef2f8;
+}
+
+.asset-context-menu button.danger {
+  color: #c0392b;
+}
+
+.asset-context-menu .context-close {
+  margin-top: 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  color: #6a7585;
+  font-size: 0.8rem;
+}
+
+/* Modales (renommage / parametres) */
+.asset-modal-overlay {
+  position: fixed;
+  z-index: 65;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(8px);
+}
+
+.asset-modal,
+.asset-settings-modal {
+  width: min(440px, calc(100vw - 48px));
+  display: grid;
+  gap: 14px;
+  border-radius: 14px;
+  padding: 22px;
+  background: #f6f7fa;
+  color: #111318;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+}
+
+.asset-modal h3,
+.asset-settings-modal h3 {
+  margin: 0;
+}
+
+.asset-modal input {
+  min-height: 40px;
+  border: 1px solid #cdd6e2;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: #111318;
+  font-size: 0.95rem;
+}
+
+.asset-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.asset-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-field select {
+  min-height: 34px;
+  border: 1px solid #cdd6e2;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #fff;
+  color: #111318;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.folder-tile[draggable="true"] {
+  cursor: grab;
+}
+
+.artist-asset-card[draggable="true"] {
+  cursor: grab;
+}
+
+/* ===== Assets artiste : avatars, etat, creation, raccourcis (passe 3) ===== */
+
+.assets-page.role-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.artist-asset-explorer {
+  flex: 1;
+}
+
+.asset-shortcuts-panel {
+  height: 100%;
+}
+
+/* Avatars facon Trello */
+.avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.avatar-stack .avatar {
+  margin-left: -6px;
+}
+
+.avatar-stack .avatar:first-child {
+  margin-left: 0;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #f6f7fa;
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.avatar.more {
+  background: #8a96a6;
+}
+
+.avatar.tiny {
+  width: 20px;
+  height: 20px;
+  border-width: 0;
+  font-size: 0.6rem;
+}
+
+.avatar-stack.small .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 0.58rem;
+}
+
+.avatar-empty {
+  color: #8a96a6;
+  font-size: 0.76rem;
+}
+
+/* Section Etat : pastilles */
+.status-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #9aa6b5;
+}
+
+.status-dot.status-todo {
+  background: #9aa6b5;
+}
+.status-dot.status-in_progress {
+  background: #2f6fdd;
+}
+.status-dot.status-review {
+  background: #e0a93b;
+}
+.status-dot.status-needs_art_fix {
+  background: #d9603b;
+}
+.status-dot.status-validated {
+  background: #3aa564;
+}
+
+/* Editeur d'assignation dans le detail */
+.assignee-editor {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.assignee-toggle-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assignee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cdd6e2;
+  border-radius: 999px;
+  padding: 3px 10px 3px 4px;
+  background: #fff;
+  color: #3d4755;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.assignee-chip.active {
+  border-color: #143a73;
+  background: #e6edf8;
+  color: #10151d;
+}
+
+/* Boutons de creation */
+.asset-create-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--role-accent, #143a73);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.asset-create-action.ghost {
+  background: #e1e9f4;
+  color: #20354f;
+}
+
+/* Dialogue de creation */
+.field-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.field-stack > span {
+  color: #3d4755;
+  font-size: 0.82rem;
+}
+
+.asset-modal input,
+.asset-modal textarea,
+.asset-modal select {
+  border: 1px solid #cdd6e2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  color: #111318;
+  font: inherit;
+}
+
+.asset-modal.create-asset {
+  width: min(480px, calc(100vw - 48px));
+}
+
+.create-image-row {
+  display: flex;
+  gap: 10px;
+}
+
+.create-image-row button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Raccourcis clavier (Parametres) */
+.shortcut-list {
+  display: grid;
+  gap: 6px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.shortcut-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shortcut-combo {
+  min-width: 140px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.shortcut-combo.capturing {
+  border-color: var(--role-accent, #2f6fdd);
+  color: #bdeff4;
+}
+
+.role-artist .shortcut-row {
+  border-bottom-color: #e1e6ee;
+}
+
+.role-artist .shortcut-combo {
+  border-color: #cdd6e2;
+  background: #fff;
+  color: #111318;
 }

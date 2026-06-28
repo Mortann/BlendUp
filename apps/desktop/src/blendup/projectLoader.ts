@@ -154,6 +154,7 @@ export async function openProjectPath(projectRoot: string, relativePath?: string
 
 export async function updateAssetStatus(options: {
   actor: string;
+  actorIsArtDirector: boolean;
   assetId: string;
   projectRoot: string;
   status: AssetStatus;
@@ -161,9 +162,189 @@ export async function updateAssetStatus(options: {
 }): Promise<void> {
   await invoke("update_asset_status", {
     actor: options.actor,
+    actorIsArtDirector: options.actorIsArtDirector,
     assetId: options.assetId,
     projectRoot: options.projectRoot,
     status: options.status,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function migrateAssetsToFolders(projectRoot: string): Promise<number> {
+  return invoke<number>("migrate_assets_to_folders", { projectRoot });
+}
+
+export async function renameAsset(options: {
+  projectRoot: string;
+  assetId: string;
+  newName: string;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("rename_asset", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    newName: options.newName,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function moveAsset(options: {
+  projectRoot: string;
+  assetId: string;
+  targetDir: string;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("move_asset", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    targetDir: options.targetDir,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function moveFolder(options: {
+  projectRoot: string;
+  fromDir: string;
+  targetDir: string;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("move_folder", {
+    projectRoot: options.projectRoot,
+    fromDir: options.fromDir,
+    targetDir: options.targetDir,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function deleteAsset(options: {
+  projectRoot: string;
+  assetId: string;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("delete_asset", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function selectImageFiles(): Promise<string[]> {
+  const selected = await open({
+    directory: false,
+    multiple: true,
+    title: "Choisir des images",
+    filters: [
+      { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "tga", "tif", "tiff", "bmp", "exr", "psd"] }
+    ]
+  });
+
+  if (Array.isArray(selected)) {
+    return selected;
+  }
+
+  return typeof selected === "string" ? [selected] : [];
+}
+
+export async function createFolder(options: {
+  projectRoot: string;
+  parentDir: string;
+  name: string;
+}): Promise<void> {
+  await invoke("create_folder", {
+    projectRoot: options.projectRoot,
+    parentDir: options.parentDir,
+    name: options.name
+  });
+}
+
+export async function createAsset(options: {
+  projectRoot: string;
+  parentDir: string;
+  name: string;
+  assetType: string;
+  notes: string;
+  referenceImages: string[];
+  textureImages: string[];
+  fbxExport: string | null;
+  unityPrefab: string | null;
+  blenderPath: string | null;
+  actor: string;
+  createdAt: string;
+}): Promise<string> {
+  return invoke<string>("create_asset", {
+    projectRoot: options.projectRoot,
+    parentDir: options.parentDir,
+    name: options.name,
+    assetType: options.assetType,
+    notes: options.notes,
+    referenceImages: options.referenceImages,
+    textureImages: options.textureImages,
+    fbxExport: options.fbxExport,
+    unityPrefab: options.unityPrefab,
+    blenderPath: options.blenderPath,
+    actor: options.actor,
+    createdAt: options.createdAt
+  });
+}
+
+export async function addAssetFiles(options: {
+  projectRoot: string;
+  assetId: string;
+  kind: "references" | "textures";
+  sources: string[];
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("add_asset_files", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    kind: options.kind,
+    sources: options.sources,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function setAssetAssignees(options: {
+  projectRoot: string;
+  assetId: string;
+  assignees: string[];
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("set_asset_assignees", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    assignees: options.assignees,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function setAssetOwners(options: {
+  projectRoot: string;
+  assetId: string;
+  artist: string | null;
+  developer: string | null;
+  reviewer: string | null;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("set_asset_owners", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    artist: options.artist,
+    developer: options.developer,
+    reviewer: options.reviewer,
+    actor: options.actor,
     updatedAt: options.updatedAt
   });
 }

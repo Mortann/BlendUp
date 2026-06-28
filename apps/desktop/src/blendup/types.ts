@@ -78,10 +78,14 @@ export interface BlendUpAsset {
     developer: string | null;
     reviewer: string | null;
   };
+  assignees?: string[];
   paths: {
+    assetFolder?: string;
     blenderSource?: string;
     fbxExport?: string;
     unityPrefab?: string;
+    referencesDir?: string;
+    texturesDir?: string;
     thumbnail?: string;
   };
   export: {
