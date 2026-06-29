@@ -236,6 +236,68 @@ export async function deleteAsset(options: {
   });
 }
 
+export async function deleteFolder(options: {
+  projectRoot: string;
+  dir: string;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("delete_folder", {
+    projectRoot: options.projectRoot,
+    dir: options.dir,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function renameFolder(options: {
+  projectRoot: string;
+  dir: string;
+  newName: string;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("rename_folder", {
+    projectRoot: options.projectRoot,
+    dir: options.dir,
+    newName: options.newName,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function duplicateAsset(options: {
+  projectRoot: string;
+  assetId: string;
+  actor: string;
+  createdAt: string;
+}): Promise<string> {
+  return invoke<string>("duplicate_asset", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    actor: options.actor,
+    createdAt: options.createdAt
+  });
+}
+
+export async function copyAsset(options: {
+  projectRoot: string;
+  assetId: string;
+  targetDir: string;
+  move: boolean;
+  actor: string;
+  createdAt: string;
+}): Promise<string> {
+  return invoke<string>("copy_asset", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    targetDir: options.targetDir,
+    cut: options.move,
+    actor: options.actor,
+    createdAt: options.createdAt
+  });
+}
+
 export async function selectImageFiles(): Promise<string[]> {
   const selected = await open({
     directory: false,

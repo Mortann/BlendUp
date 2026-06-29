@@ -2,20 +2,27 @@ import {
   AlertTriangle,
   ArrowUpDown,
   Boxes,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
+  ClipboardPaste,
   Clock,
+  Copy,
   ExternalLink,
+  FilePlus,
   FileSearch,
+  Files,
   Folder,
   FolderOpen,
+  FolderPlus,
   Grid2X2,
   History,
   ImageIcon,
   List,
   Image as ImageIconFiles,
   Pencil,
-  Plus,
+  Scissors,
   Search,
   SlidersHorizontal,
   Star,
@@ -23,8 +30,8 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { assetLabel, buildAssetName, renameCore, TYPE_PREFIX } from "../blendup/naming";
 import { selectImageFiles } from "../blendup/projectLoader";
@@ -72,12 +79,50 @@ const defaultAssetSettings: AssetSettings = {
 
 type ContextTarget =
   | { kind: "asset"; assetId: string }
-  | { kind: "folder"; path: string };
+  | { kind: "folder"; path: string }
+  | { kind: "background" };
 
 interface ContextMenuState {
   x: number;
   y: number;
   target: ContextTarget;
+}
+
+type ClipboardEntry = { assetId: string; mode: "copy" | "cut" };
+
+// Mapping catégorie de dossier -> type d'asset. Le type d'un asset est déduit de
+// la catégorie (1er segment sous la racine Blender) dans laquelle il se trouve.
+const CATEGORY_TYPE_MAP: { match: string[]; type: AssetType }[] = [
+  { match: ["environment", "environnement", "env", "environments"], type: "environment_piece" },
+  { match: ["prop", "props", "accessoire", "accessoires"], type: "prop" },
+  { match: ["character", "characters", "personnage", "personnages", "chr"], type: "character" },
+  { match: ["material", "materials", "materiau", "materiaux"], type: "material" },
+  { match: ["texture", "textures", "tex"], type: "texture" },
+  { match: ["ui", "interface", "hud"], type: "ui_image" }
+];
+
+// Déduit le type d'asset à partir de l'emplacement (catégorie sous la racine Blender).
+function typeForPath(path: string, blenderRoot: string): AssetType {
+  const normalizedRoot = normalizeFolderPath(blenderRoot);
+  const normalizedPath = normalizeFolderPath(path);
+  const relative =
+    normalizedRoot && (normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`))
+      ? normalizedPath.slice(normalizedRoot.length).replace(/^\//, "")
+      : normalizedPath;
+  const category = relative.split("/").filter(Boolean)[0] ?? "";
+  const lower = category.toLowerCase();
+
+  for (const entry of CATEGORY_TYPE_MAP) {
+    if (entry.match.includes(lower)) {
+      return entry.type;
+    }
+  }
+
+  return "prop";
+}
+
+function categoryTypeLabel(type: AssetType): string {
+  return ASSET_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
 }
 
 const artistStatuses: { label: string; status: AssetStatus }[] = [
@@ -102,6 +147,10 @@ export function AssetsView({
   onSetAssignees,
   onCreateAsset,
   onCreateFolder,
+  onDeleteFolder,
+  onRenameFolder,
+  onDuplicateAsset,
+  onPasteAsset,
   shortcutBindings,
   onExportAsset,
   onOpenInBlender,
@@ -147,6 +196,10 @@ export function AssetsView({
     actor: string
   ) => void;
   onCreateFolder: (parentDir: string, name: string, actor: string) => void;
+  onDeleteFolder: (dir: string, actor: string) => void;
+  onRenameFolder: (dir: string, newName: string, actor: string) => void;
+  onDuplicateAsset: (assetId: string, actor: string) => void;
+  onPasteAsset: (assetId: string, targetDir: string, move: boolean, actor: string) => void;
   shortcutBindings: ShortcutBindings;
   onExportAsset: (assetId: string) => void;
   onOpenInBlender: (assetId: string) => void;
@@ -175,6 +228,10 @@ export function AssetsView({
   const [renameTarget, setRenameTarget] = useState<{ assetId: string; currentName: string } | null>(null);
   const [dragInfo, setDragInfo] = useState<ContextTarget | null>(null);
   const [createMode, setCreateMode] = useState<null | "asset" | "folder">(null);
+  const [clipboard, setClipboard] = useState<ClipboardEntry | null>(null);
+  const [folderRenameTarget, setFolderRenameTarget] = useState<{ path: string; currentName: string } | null>(null);
+  const [folderDeleteTarget, setFolderDeleteTarget] = useState<{ path: string; name: string } | null>(null);
+  const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
   const activeMember = useMemo(() => getActiveMember(projectId), [projectId]);
   const members = useMemo(() => loadTeamMembers(projectId), [projectId]);
   const actorName = activeMember?.name ?? "BlendUp";
@@ -221,6 +278,18 @@ export function AssetsView({
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setIsSpotlightOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const folders = useMemo(() => {
     return Array.from(new Set(filteredAssets.map(assetFolder))).sort((left, right) => left.localeCompare(right));
   }, [filteredAssets]);
@@ -248,13 +317,25 @@ export function AssetsView({
     () => mergeKnownFolders(snapshot.assetFolders, filteredAssets, defaultExplorerPath),
     [defaultExplorerPath, filteredAssets, snapshot.assetFolders]
   );
+  // Dossiers qui contiennent les infos d'un asset (references/textures/.blend) :
+  // ils ne doivent pas apparaitre comme des dossiers d'organisation navigables.
+  const assetFolderSet = useMemo(
+    () => new Set(filteredAssets.map((asset) => normalizeFolderPath(asset.paths.assetFolder)).filter(Boolean)),
+    [filteredAssets]
+  );
   const childFolders = useMemo(
-    () => foldersForPath(filteredAssets, knownFolderPaths, currentPath),
-    [currentPath, filteredAssets, knownFolderPaths]
+    () =>
+      foldersForPath(filteredAssets, knownFolderPaths, currentPath).filter(
+        (folder) => !assetFolderSet.has(folder.path)
+      ),
+    [assetFolderSet, currentPath, filteredAssets, knownFolderPaths]
   );
   const generalFolders = useMemo(
-    () => foldersForPath(filteredAssets, knownFolderPaths, defaultExplorerPath),
-    [defaultExplorerPath, filteredAssets, knownFolderPaths]
+    () =>
+      foldersForPath(filteredAssets, knownFolderPaths, defaultExplorerPath).filter(
+        (folder) => !assetFolderSet.has(folder.path)
+      ),
+    [assetFolderSet, defaultExplorerPath, filteredAssets, knownFolderPaths]
   );
   const currentFolderLabel = currentPath || "Assets";
   const favoriteAssets = filteredAssets.filter((asset) => favoriteAssetIds.includes(asset.id));
@@ -306,6 +387,49 @@ export function AssetsView({
         ? current
         : [normalized, ...current.filter((entry) => entry !== normalized)].slice(0, 5)
     );
+  };
+
+  const removeRecentFolder = (path: string) => {
+    const normalized = normalizeFolderPath(path);
+    setRecentFolders((current) => current.filter((entry) => entry !== normalized));
+  };
+
+  const copyAssetToClipboard = (assetId: string, mode: "copy" | "cut") => {
+    setClipboard({ assetId, mode });
+  };
+
+  const pasteClipboard = (targetDir: string) => {
+    if (!clipboard) {
+      return;
+    }
+
+    onPasteAsset(clipboard.assetId, normalizeFolderPath(targetDir), clipboard.mode === "cut", actorName);
+
+    if (clipboard.mode === "cut") {
+      setClipboard(null);
+    }
+  };
+
+  const beginDrag = (event: ReactDragEvent, target: ContextTarget) => {
+    setDragInfo(target);
+
+    if (event.dataTransfer) {
+      // Indispensable cote WebView pour que le drag HTML5 s'initialise (sinon curseur "interdit").
+      const payload = target.kind === "asset" ? `asset:${target.assetId}` : target.kind === "folder" ? `folder:${target.path}` : "";
+      event.dataTransfer.effectAllowed = "move";
+      try {
+        event.dataTransfer.setData("text/plain", payload);
+      } catch {
+        // Certains environnements restreignent setData ; le state dragInfo suffit alors.
+      }
+    }
+  };
+
+  const allowDrop = (event: ReactDragEvent) => {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
   };
 
   // Recent = dossiers d'un asset ouvert dans Blender (pas juste navigue dans BlendUp).
@@ -376,20 +500,21 @@ export function AssetsView({
     <section className={`assets-page role-page assets-page--${role}`} aria-label="Assets">
       <div className="asset-library-header">
         {role === "artist" ? null : (
-          <div>
+          <div className="asset-header-title">
             <span className="eyebrow">Inventaire technique</span>
             <h2>Assets projet</h2>
           </div>
         )}
-        <label className="search-box">
+        <button
+          className="spotlight-trigger"
+          onClick={() => setIsSpotlightOpen(true)}
+          title="Rechercher dans tout le projet"
+          type="button"
+        >
           <Search size={16} />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Rechercher"
-            type="search"
-          />
-        </label>
+          <span>Rechercher un asset ou un dossier…</span>
+          <kbd>Ctrl K</kbd>
+        </button>
       </div>
 
       {role === "artist" ? (
@@ -400,18 +525,33 @@ export function AssetsView({
                 <div className="asset-shortcut-group">
                   <span className="eyebrow">Recent</span>
                   {recentFolderDetails.map((folder) => (
-                    <button
-                      className={quickFilter === "all" && currentPath === folder.path ? "active" : ""}
+                    <div
+                      className={`recent-folder-row ${quickFilter === "all" && currentPath === folder.path ? "active" : ""}`}
                       key={folder.path}
-                      onClick={() => openFolder(folder.path)}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => handleDropOnFolder(folder.path)}
-                      title={folder.path}
-                      type="button"
                     >
-                      <Clock size={16} />
-                      <span>{folder.name}</span>
-                    </button>
+                      <button
+                        className="recent-folder-open"
+                        onClick={() => openFolder(folder.path)}
+                        onDragOver={allowDrop}
+                        onDrop={() => handleDropOnFolder(folder.path)}
+                        title={folder.path}
+                        type="button"
+                      >
+                        <Clock size={16} />
+                        <span>{folder.name}</span>
+                      </button>
+                      <button
+                        className="recent-folder-remove"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeRecentFolder(folder.path);
+                        }}
+                        title="Retirer des recents"
+                        type="button"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -496,7 +636,10 @@ export function AssetsView({
             </button>
           </aside>
 
-          <div className="asset-explorer-main">
+          <div
+            className="asset-explorer-main"
+            onContextMenu={(event) => openContextMenu(event, { kind: "background" })}
+          >
             <div className="asset-explorer-toolbar">
               <div className="asset-breadcrumb" aria-label="Emplacement asset">
                 {breadcrumbParts(currentPath).map((part, index, parts) => (
@@ -504,7 +647,7 @@ export function AssetsView({
                     key={part.path || "root"}
                     className={index === parts.length - 1 ? "active" : ""}
                     onClick={() => openFolder(part.path)}
-                    onDragOver={(event) => event.preventDefault()}
+                    onDragOver={allowDrop}
                     onDrop={() => handleDropOnFolder(part.path)}
                     type="button"
                   >
@@ -513,40 +656,7 @@ export function AssetsView({
                   </button>
                 ))}
               </div>
-              <div className="asset-view-controls">
-                <button className="asset-create-action" onClick={() => setCreateMode("asset")} type="button">
-                  <Plus size={15} />
-                  Asset
-                </button>
-                <button className="asset-create-action ghost" onClick={() => setCreateMode("folder")} type="button">
-                  <Plus size={15} />
-                  Dossier
-                </button>
-                <label className="select-control">
-                  <ArrowUpDown size={15} />
-                  <select value={sortMode} onChange={(event) => setSortMode(event.target.value as AssetSortMode)}>
-                    <option value="recent">Recents</option>
-                    <option value="name">Nom</option>
-                    <option value="status">Statut</option>
-                  </select>
-                </label>
-                <button
-                  className={displayMode === "grid" ? "compact-action active" : "compact-action"}
-                  onClick={() => setDisplayMode("grid")}
-                  title="Grille"
-                  type="button"
-                >
-                  <Grid2X2 size={16} />
-                </button>
-                <button
-                  className={displayMode === "list" ? "compact-action active" : "compact-action"}
-                  onClick={() => setDisplayMode("list")}
-                  title="Liste"
-                  type="button"
-                >
-                  <List size={16} />
-                </button>
-              </div>
+              <span className="asset-toolbar-hint">Clic droit pour les options</span>
             </div>
 
             {quickFilter === "all" && childFolders.length > 0 ? (
@@ -558,8 +668,8 @@ export function AssetsView({
                     onClick={() => openFolder(folder.path)}
                     onContextMenu={(event) => openContextMenu(event, { kind: "folder", path: folder.path })}
                     draggable
-                    onDragStart={() => setDragInfo({ kind: "folder", path: folder.path })}
-                    onDragOver={(event) => event.preventDefault()}
+                    onDragStart={(event) => beginDrag(event, { kind: "folder", path: folder.path })}
+                    onDragOver={allowDrop}
                     onDrop={() => handleDropOnFolder(folder.path)}
                     type="button"
                   >
@@ -583,7 +693,7 @@ export function AssetsView({
                   isSelected={asset.id === selectedAsset?.id}
                   key={asset.id}
                   onContextMenu={(event) => openContextMenu(event, { kind: "asset", assetId: asset.id })}
-                  onDragStart={() => setDragInfo({ kind: "asset", assetId: asset.id })}
+                  onDragStart={(event) => beginDrag(event, { kind: "asset", assetId: asset.id })}
                   onSelect={() => setSelectedAssetId(asset.id)}
                   onToggleFavorite={() => toggleFavorite(asset.id)}
                   problemCount={problems.filter((problem) => problem.assetId === asset.id).length}
@@ -595,23 +705,40 @@ export function AssetsView({
 
           {contextMenu ? (
             <AssetContextMenu
+              canPaste={Boolean(clipboard)}
+              displayMode={displayMode}
               isFavorite={
                 contextMenu.target.kind === "asset" && favoriteAssetIds.includes(contextMenu.target.assetId)
               }
-              onClose={() => setContextMenu(null)}
-              onDelete={() => {
+              sortMode={sortMode}
+              target={contextMenu.target}
+              x={contextMenu.x}
+              y={contextMenu.y}
+              onCopy={() => {
+                if (contextMenu.target.kind === "asset") {
+                  copyAssetToClipboard(contextMenu.target.assetId, "copy");
+                }
+                setContextMenu(null);
+              }}
+              onCut={() => {
+                if (contextMenu.target.kind === "asset") {
+                  copyAssetToClipboard(contextMenu.target.assetId, "cut");
+                }
+                setContextMenu(null);
+              }}
+              onDuplicate={() => {
+                if (contextMenu.target.kind === "asset") {
+                  onDuplicateAsset(contextMenu.target.assetId, actorName);
+                }
+                setContextMenu(null);
+              }}
+              onDeleteAsset={() => {
                 if (contextMenu.target.kind === "asset") {
                   onDeleteAsset(contextMenu.target.assetId, actorName);
                 }
                 setContextMenu(null);
               }}
-              onOpenFolder={() => {
-                if (contextMenu.target.kind === "folder") {
-                  openFolder(contextMenu.target.path);
-                }
-                setContextMenu(null);
-              }}
-              onRename={() => {
+              onRenameAsset={() => {
                 if (contextMenu.target.kind === "asset") {
                   const targetId = contextMenu.target.assetId;
                   const asset = filteredAssets.find((item) => item.id === targetId);
@@ -627,9 +754,52 @@ export function AssetsView({
                 }
                 setContextMenu(null);
               }}
-              target={contextMenu.target}
-              x={contextMenu.x}
-              y={contextMenu.y}
+              onOpenFolder={() => {
+                if (contextMenu.target.kind === "folder") {
+                  openFolder(contextMenu.target.path);
+                }
+                setContextMenu(null);
+              }}
+              onRenameFolder={() => {
+                if (contextMenu.target.kind === "folder") {
+                  setFolderRenameTarget({
+                    path: contextMenu.target.path,
+                    currentName: contextMenu.target.path.split("/").filter(Boolean).slice(-1)[0] ?? ""
+                  });
+                }
+                setContextMenu(null);
+              }}
+              onDeleteFolder={() => {
+                if (contextMenu.target.kind === "folder") {
+                  setFolderDeleteTarget({
+                    path: contextMenu.target.path,
+                    name: contextMenu.target.path.split("/").filter(Boolean).slice(-1)[0] ?? ""
+                  });
+                }
+                setContextMenu(null);
+              }}
+              onPaste={() => {
+                const targetDir =
+                  contextMenu.target.kind === "folder" ? contextMenu.target.path : currentPath;
+                pasteClipboard(targetDir);
+                setContextMenu(null);
+              }}
+              onCreateFolder={() => {
+                setCreateMode("folder");
+                setContextMenu(null);
+              }}
+              onCreateAsset={() => {
+                setCreateMode("asset");
+                setContextMenu(null);
+              }}
+              onSetSort={(mode) => {
+                setSortMode(mode);
+                setContextMenu(null);
+              }}
+              onSetDisplay={(mode) => {
+                setDisplayMode(mode);
+                setContextMenu(null);
+              }}
             />
           ) : null}
 
@@ -662,11 +832,37 @@ export function AssetsView({
 
           {createMode === "asset" ? (
             <CreateAssetDialog
+              assetType={typeForPath(currentPath, defaultExplorerPath)}
               currentPath={currentPath}
               onCancel={() => setCreateMode(null)}
               onSubmit={(input) => {
                 onCreateAsset(input, actorName);
                 setCreateMode(null);
+              }}
+            />
+          ) : null}
+
+          {folderRenameTarget ? (
+            <RenameDialog
+              current={folderRenameTarget.currentName}
+              title="Renommer le dossier"
+              onCancel={() => setFolderRenameTarget(null)}
+              onSubmit={(value) => {
+                onRenameFolder(folderRenameTarget.path, value, actorName);
+                setFolderRenameTarget(null);
+              }}
+            />
+          ) : null}
+
+          {folderDeleteTarget ? (
+            <ConfirmDialog
+              title="Supprimer le dossier"
+              message={`Envoyer "${folderDeleteTarget.name}" et tout son contenu a la corbeille ?`}
+              confirmLabel="Supprimer"
+              onCancel={() => setFolderDeleteTarget(null)}
+              onConfirm={() => {
+                onDeleteFolder(folderDeleteTarget.path, actorName);
+                setFolderDeleteTarget(null);
               }}
             />
           ) : null}
@@ -784,6 +980,35 @@ export function AssetsView({
           />
         </div>
       ) : null}
+
+      {isSpotlightOpen ? (
+        <SpotlightSearch
+          assets={filteredAssets}
+          folders={
+            role === "artist"
+              ? allFolders
+              : folders.map((folder) => ({
+                  path: folder,
+                  name: folder.split("/").filter(Boolean).slice(-1)[0] ?? folder,
+                  count: filteredAssets.filter((asset) => assetFolder(asset) === folder).length
+                }))
+          }
+          projectRoot={snapshot.projectRoot}
+          onClose={() => setIsSpotlightOpen(false)}
+          onOpenAsset={(assetId) => {
+            setSelectedAssetId(assetId);
+            setIsSpotlightOpen(false);
+          }}
+          onOpenFolder={(path) => {
+            if (role === "artist") {
+              openFolder(path);
+            } else {
+              setFolderFilter(path);
+            }
+            setIsSpotlightOpen(false);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -805,7 +1030,7 @@ function ArtistAssetCard({
   isFavorite: boolean;
   isSelected: boolean;
   onContextMenu: (event: ReactMouseEvent) => void;
-  onDragStart: () => void;
+  onDragStart: (event: ReactDragEvent) => void;
   onSelect: () => void;
   onToggleFavorite: () => void;
   problemCount: number;
@@ -1343,25 +1568,106 @@ function OwnerMultiSelect({
   onChange: (values: string[]) => void;
   values: string[];
 }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const onClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    };
+
+    window.addEventListener("mousedown", onClickOutside);
+    return () => window.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  const selectedSet = new Set(values);
+  const filtered = members.filter((member) =>
+    member.name.toLowerCase().includes(search.trim().toLowerCase())
+  );
+
+  const toggle = (name: string) => {
+    if (selectedSet.has(name)) {
+      onChange(values.filter((value) => value !== name));
+    } else {
+      onChange([...values, name]);
+    }
+  };
+
   return (
-    <label className="owner-multi-select">
-      <span><UserRound size={14} /> {label}</span>
-      <select
-        multiple
-        onChange={(event) =>
-          onChange(Array.from(event.currentTarget.selectedOptions).map((option) => option.value))
-        }
-        size={Math.min(Math.max(members.length, 2), 5)}
-        value={values}
+    <div className="owner-multiselect" ref={containerRef}>
+      <span className="owner-multiselect-label">
+        <UserRound size={14} /> {label}
+      </span>
+      <div
+        className={`ms-control ${open ? "open" : ""}`}
+        onClick={() => setOpen((current) => !current)}
+        role="button"
+        tabIndex={0}
       >
-        {members.map((member) => (
-          <option key={member.id} value={member.name}>
-            {member.name}
-          </option>
-        ))}
-      </select>
-      <small>{values.length > 0 ? values.join(", ") : "Non assigne"}</small>
-    </label>
+        <div className="ms-values">
+          {values.length === 0 ? <span className="ms-placeholder">Selectionner…</span> : null}
+          {values.map((name) => (
+            <span className="ms-chip" key={name}>
+              <span className="ms-chip-dot" style={{ background: memberColor(name) }} />
+              {name}
+              <button
+                className="ms-chip-remove"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onChange(values.filter((value) => value !== name));
+                }}
+                title="Retirer"
+                type="button"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+        <ChevronDown className="ms-arrow" size={15} />
+      </div>
+      {open ? (
+        <div className="ms-menu">
+          <input
+            autoFocus
+            className="ms-search"
+            onChange={(event) => setSearch(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            placeholder="Rechercher…"
+            value={search}
+          />
+          <div className="ms-options">
+            {filtered.length > 0 ? (
+              filtered.map((member) => {
+                const checked = selectedSet.has(member.name);
+                return (
+                  <button
+                    className={`ms-option ${checked ? "checked" : ""}`}
+                    key={member.id}
+                    onClick={() => toggle(member.name)}
+                    type="button"
+                  >
+                    <span className="ms-option-check">{checked ? <Check size={13} /> : null}</span>
+                    <span className="ms-chip-dot" style={{ background: memberColor(member.name) }} />
+                    {member.name}
+                  </button>
+                );
+              })
+            ) : (
+              <p className="soft-text ms-empty">Aucun membre</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1482,25 +1788,49 @@ function baseName(path: string | undefined) {
 }
 
 function AssetContextMenu({
+  canPaste,
+  displayMode,
   isFavorite,
-  onClose,
-  onDelete,
-  onOpenFolder,
-  onRename,
-  onToggleFavorite,
+  sortMode,
   target,
   x,
-  y
+  y,
+  onCopy,
+  onCut,
+  onDuplicate,
+  onDeleteAsset,
+  onRenameAsset,
+  onToggleFavorite,
+  onOpenFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onPaste,
+  onCreateFolder,
+  onCreateAsset,
+  onSetSort,
+  onSetDisplay
 }: {
+  canPaste: boolean;
+  displayMode: AssetDisplayMode;
   isFavorite: boolean;
-  onClose: () => void;
-  onDelete: () => void;
-  onOpenFolder: () => void;
-  onRename: () => void;
-  onToggleFavorite: () => void;
+  sortMode: AssetSortMode;
   target: ContextTarget;
   x: number;
   y: number;
+  onCopy: () => void;
+  onCut: () => void;
+  onDuplicate: () => void;
+  onDeleteAsset: () => void;
+  onRenameAsset: () => void;
+  onToggleFavorite: () => void;
+  onOpenFolder: () => void;
+  onRenameFolder: () => void;
+  onDeleteFolder: () => void;
+  onPaste: () => void;
+  onCreateFolder: () => void;
+  onCreateAsset: () => void;
+  onSetSort: (mode: AssetSortMode) => void;
+  onSetDisplay: (mode: AssetDisplayMode) => void;
 }) {
   return (
     <div
@@ -1512,7 +1842,7 @@ function AssetContextMenu({
     >
       {target.kind === "asset" ? (
         <>
-          <button onClick={onRename} role="menuitem" type="button">
+          <button onClick={onRenameAsset} role="menuitem" type="button">
             <Pencil size={14} />
             Renommer
           </button>
@@ -1520,30 +1850,121 @@ function AssetContextMenu({
             <Star size={14} />
             {isFavorite ? "Retirer des favoris" : "Ajouter aux favoris"}
           </button>
-          <button className="danger" onClick={onDelete} role="menuitem" type="button">
+          <div className="context-divider" />
+          <button onClick={onCopy} role="menuitem" type="button">
+            <Copy size={14} />
+            Copier
+          </button>
+          <button onClick={onCut} role="menuitem" type="button">
+            <Scissors size={14} />
+            Couper
+          </button>
+          <button onClick={onDuplicate} role="menuitem" type="button">
+            <Files size={14} />
+            Dupliquer
+          </button>
+          <div className="context-divider" />
+          <button className="danger" onClick={onDeleteAsset} role="menuitem" type="button">
+            <Trash2 size={14} />
+            Supprimer
+          </button>
+        </>
+      ) : target.kind === "folder" ? (
+        <>
+          <button onClick={onOpenFolder} role="menuitem" type="button">
+            <FolderOpen size={14} />
+            Ouvrir
+          </button>
+          <button onClick={onRenameFolder} role="menuitem" type="button">
+            <Pencil size={14} />
+            Renommer
+          </button>
+          {canPaste ? (
+            <button onClick={onPaste} role="menuitem" type="button">
+              <ClipboardPaste size={14} />
+              Coller ici
+            </button>
+          ) : null}
+          <div className="context-divider" />
+          <button className="danger" onClick={onDeleteFolder} role="menuitem" type="button">
             <Trash2 size={14} />
             Supprimer
           </button>
         </>
       ) : (
-        <button onClick={onOpenFolder} role="menuitem" type="button">
-          <FolderOpen size={14} />
-          Ouvrir le dossier
-        </button>
+        <>
+          <button onClick={onCreateAsset} role="menuitem" type="button">
+            <FilePlus size={14} />
+            Nouvel asset
+          </button>
+          <button onClick={onCreateFolder} role="menuitem" type="button">
+            <FolderPlus size={14} />
+            Nouveau dossier
+          </button>
+          {canPaste ? (
+            <button onClick={onPaste} role="menuitem" type="button">
+              <ClipboardPaste size={14} />
+              Coller
+            </button>
+          ) : null}
+          <div className="context-divider" />
+          <span className="context-label">Trier par</span>
+          {([
+            { value: "recent", label: "Recents" },
+            { value: "name", label: "Nom" },
+            { value: "status", label: "Statut" }
+          ] as { value: AssetSortMode; label: string }[]).map((option) => (
+            <button
+              className={sortMode === option.value ? "context-option active" : "context-option"}
+              key={option.value}
+              onClick={() => onSetSort(option.value)}
+              role="menuitemradio"
+              aria-checked={sortMode === option.value}
+              type="button"
+            >
+              <ArrowUpDown size={14} />
+              {option.label}
+              {sortMode === option.value ? <Check size={13} className="context-check" /> : null}
+            </button>
+          ))}
+          <div className="context-divider" />
+          <span className="context-label">Affichage</span>
+          <button
+            className={displayMode === "grid" ? "context-option active" : "context-option"}
+            onClick={() => onSetDisplay("grid")}
+            role="menuitemradio"
+            aria-checked={displayMode === "grid"}
+            type="button"
+          >
+            <Grid2X2 size={14} />
+            Grille
+            {displayMode === "grid" ? <Check size={13} className="context-check" /> : null}
+          </button>
+          <button
+            className={displayMode === "list" ? "context-option active" : "context-option"}
+            onClick={() => onSetDisplay("list")}
+            role="menuitemradio"
+            aria-checked={displayMode === "list"}
+            type="button"
+          >
+            <List size={14} />
+            Liste
+            {displayMode === "list" ? <Check size={13} className="context-check" /> : null}
+          </button>
+        </>
       )}
-      <button className="context-close" onClick={onClose} role="menuitem" type="button">
-        Fermer
-      </button>
     </div>
   );
 }
 
 function RenameDialog({
   current,
+  title = "Renommer l'asset",
   onCancel,
   onSubmit
 }: {
   current: string;
+  title?: string;
   onCancel: () => void;
   onSubmit: (value: string) => void;
 }) {
@@ -1552,7 +1973,7 @@ function RenameDialog({
   return (
     <div className="asset-modal-overlay" onClick={onCancel} role="presentation">
       <div className="asset-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
-        <h3>Renommer l'asset</h3>
+        <h3>{title}</h3>
         <input
           autoFocus
           onChange={(event) => setValue(event.target.value)}
@@ -1572,6 +1993,154 @@ function RenameDialog({
           <button disabled={!value.trim()} onClick={() => onSubmit(value)} type="button">
             Renommer
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="asset-modal-overlay" onClick={onCancel} role="presentation">
+      <div className="asset-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+        <h3>{title}</h3>
+        <p className="soft-text">{message}</p>
+        <div className="asset-modal-actions">
+          <button className="secondary" onClick={onCancel} type="button">
+            Annuler
+          </button>
+          <button className="danger" onClick={onConfirm} type="button">
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SpotlightSearch({
+  assets,
+  folders,
+  projectRoot,
+  onClose,
+  onOpenAsset,
+  onOpenFolder
+}: {
+  assets: BlendUpAsset[];
+  folders: { path: string; name: string; count: number }[];
+  projectRoot?: string;
+  onClose: () => void;
+  onOpenAsset: (assetId: string) => void;
+  onOpenFolder: (path: string) => void;
+}) {
+  const [term, setTerm] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const normalized = term.trim().toLowerCase();
+
+  const assetResults = useMemo(() => {
+    if (!normalized) {
+      return assets.slice(0, 8);
+    }
+    return assets
+      .filter((asset) => {
+        const label = assetLabel(asset.displayName).toLowerCase();
+        return (
+          label.includes(normalized) ||
+          asset.displayName.toLowerCase().includes(normalized) ||
+          formatAssetType(asset.type).toLowerCase().includes(normalized)
+        );
+      })
+      .slice(0, 12);
+  }, [assets, normalized]);
+
+  const folderResults = useMemo(() => {
+    if (!normalized) {
+      return folders.slice(0, 6);
+    }
+    return folders
+      .filter((folder) => folder.name.toLowerCase().includes(normalized) || folder.path.toLowerCase().includes(normalized))
+      .slice(0, 8);
+  }, [folders, normalized]);
+
+  const hasResults = assetResults.length > 0 || folderResults.length > 0;
+
+  return (
+    <div className="spotlight-overlay" onClick={onClose} role="presentation">
+      <div
+        className="spotlight-panel"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Recherche projet"
+      >
+        <label className="spotlight-input">
+          <Search size={20} />
+          <input
+            ref={inputRef}
+            onChange={(event) => setTerm(event.target.value)}
+            placeholder="Rechercher un asset ou un dossier dans tout le projet"
+            type="search"
+            value={term}
+          />
+        </label>
+
+        <div className="spotlight-results">
+          {folderResults.length > 0 ? (
+            <div className="spotlight-group">
+              <span className="eyebrow">Dossiers</span>
+              {folderResults.map((folder) => (
+                <button key={folder.path} onClick={() => onOpenFolder(folder.path)} type="button">
+                  <Folder size={16} />
+                  <span className="spotlight-result-main">
+                    <strong>{folder.name}</strong>
+                    <small>{folder.path}</small>
+                  </span>
+                  <span className="spotlight-result-count">{folder.count}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {assetResults.length > 0 ? (
+            <div className="spotlight-group">
+              <span className="eyebrow">Assets</span>
+              {assetResults.map((asset) => (
+                <button key={asset.id} onClick={() => onOpenAsset(asset.id)} type="button">
+                  <AssetVisual asset={asset} projectRoot={projectRoot} small />
+                  <span className="spotlight-result-main">
+                    <strong>{assetLabel(asset.displayName)}</strong>
+                    <small>{formatAssetType(asset.type)}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {!hasResults ? <p className="soft-text spotlight-empty">Aucun resultat</p> : null}
         </div>
       </div>
     </div>
@@ -1710,10 +2279,12 @@ function CreateFolderDialog({
 }
 
 function CreateAssetDialog({
+  assetType,
   currentPath,
   onCancel,
   onSubmit
 }: {
+  assetType: AssetType;
   currentPath: string;
   onCancel: () => void;
   onSubmit: (input: {
@@ -1726,7 +2297,6 @@ function CreateAssetDialog({
   }) => void;
 }) {
   const [core, setCore] = useState("");
-  const [assetType, setAssetType] = useState<AssetType>("prop");
   const [notes, setNotes] = useState("");
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
   const [textureImages, setTextureImages] = useState<string[]>([]);
@@ -1750,16 +2320,11 @@ function CreateAssetDialog({
         <h3>Nouvel asset</h3>
         <p className="soft-text">Dans : {currentPath || "Racine"}</p>
 
-        <label className="settings-field">
+        <div className="create-type-info">
           <span>Type</span>
-          <select value={assetType} onChange={(event) => setAssetType(event.target.value as AssetType)}>
-            {ASSET_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <strong>{categoryTypeLabel(assetType)}</strong>
+          <small>defini par le dossier</small>
+        </div>
 
         <label className="field-stack">
           <span>Nom</span>

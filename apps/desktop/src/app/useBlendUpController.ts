@@ -14,7 +14,10 @@ import {
   createAsset,
   createFolder,
   createProject,
+  copyAsset,
   deleteAsset,
+  deleteFolder,
+  duplicateAsset,
   detectLocalTools,
   loadDefaultProjectSnapshot,
   loadProjectSnapshot,
@@ -25,6 +28,7 @@ import {
   openProjectPath,
   rememberProjectInSettings,
   renameAsset,
+  renameFolder,
   saveUserSettings,
   selectProjectDirectory,
   setAssetAssignees,
@@ -894,6 +898,80 @@ export function useBlendUpController() {
     }
   };
 
+  const handleDeleteFolder = async (dir: string, actor: string) => {
+    await runAssetMutation(
+      () =>
+        deleteFolder({
+          projectRoot: project!.projectRoot!,
+          dir,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Dossier supprime",
+      "Envoye a la corbeille",
+      "Suppression impossible"
+    );
+  };
+
+  const handleRenameFolder = async (dir: string, newName: string, actor: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      return;
+    }
+    await runAssetMutation(
+      () =>
+        renameFolder({
+          projectRoot: project!.projectRoot!,
+          dir,
+          newName: trimmed,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Dossier renomme",
+      trimmed,
+      "Renommage impossible"
+    );
+  };
+
+  const handleDuplicateAsset = async (assetId: string, actor: string) => {
+    await runAssetMutation(
+      async () => {
+        await duplicateAsset({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          actor,
+          createdAt: new Date().toISOString()
+        });
+      },
+      "Asset duplique",
+      "Copie creee",
+      "Duplication impossible"
+    );
+  };
+
+  const handlePasteAsset = async (
+    assetId: string,
+    targetDir: string,
+    move: boolean,
+    actor: string
+  ) => {
+    await runAssetMutation(
+      async () => {
+        await copyAsset({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          targetDir,
+          move,
+          actor,
+          createdAt: new Date().toISOString()
+        });
+      },
+      move ? "Asset deplace" : "Asset colle",
+      targetDir || "Racine",
+      move ? "Deplacement impossible" : "Collage impossible"
+    );
+  };
+
   return {
     activeView,
     blenderPathInput,
@@ -951,6 +1029,10 @@ export function useBlendUpController() {
     handleCreateFolder,
     handleAddAssetFiles,
     handleCreateAsset,
+    handleDeleteFolder,
+    handleRenameFolder,
+    handleDuplicateAsset,
+    handlePasteAsset,
     shortcutBindings,
     updateShortcut,
     resetShortcuts,

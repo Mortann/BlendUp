@@ -86,6 +86,10 @@ function App() {
           onSetAssignees={app.handleSetAssignees}
           onCreateAsset={app.handleCreateAsset}
           onCreateFolder={app.handleCreateFolder}
+          onDeleteFolder={app.handleDeleteFolder}
+          onRenameFolder={app.handleRenameFolder}
+          onDuplicateAsset={app.handleDuplicateAsset}
+          onPasteAsset={app.handlePasteAsset}
           shortcutBindings={app.shortcutBindings}
           onOpenInBlender={app.openAssetInBlender}
           onOpenContentPath={app.openProjectContentPath}

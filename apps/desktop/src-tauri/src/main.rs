@@ -1899,6 +1899,11 @@ fn move_asset(
     rewrite(&mut asset, "referencesDir");
     rewrite(&mut asset, "texturesDir");
 
+    // Le type d'asset depend de la categorie (dossier) dans laquelle il se trouve.
+    if let Some(new_type) = type_for_folder(&project_root, &target_dir) {
+        asset["type"] = Value::String(new_type.to_string());
+    }
+
     // Deplace aussi les fichiers Unity en remplacant le segment de categorie.
     let old_cat = base_rel(&parent_rel(&old_folder));
     let new_cat = base_rel(&target_dir);
@@ -2335,6 +2340,310 @@ fn create_asset(
     Ok(message)
 }
 
+// ===== Type d'asset deduit de la categorie (dossier) =====
+
+// Mapping categorie -> type d'asset (parite avec le frontend AssetsView).
+fn type_for_category(category: &str) -> Option<&'static str> {
+    match category.to_lowercase().as_str() {
+        "environment" | "environnement" | "env" | "environments" => Some("environment_piece"),
+        "prop" | "props" | "accessoire" | "accessoires" => Some("prop"),
+        "character" | "characters" | "personnage" | "personnages" | "chr" => Some("character"),
+        "material" | "materials" | "materiau" | "materiaux" => Some("material"),
+        "texture" | "textures" | "tex" => Some("texture"),
+        "ui" | "interface" | "hud" => Some("ui_image"),
+        _ => None,
+    }
+}
+
+// Type deduit de l'emplacement : categorie = 1er segment sous la racine Blender.
+fn type_for_folder(project_root: &Path, folder_rel: &str) -> Option<&'static str> {
+    let project = read_json_file(&project_root.join(".blendup").join("project.json")).ok()?;
+    let blender_root = norm_rel(json_string(&project, &["paths", "blenderRoot"]).unwrap_or("Art/Blender"));
+    let normalized = norm_rel(folder_rel);
+    let relative = if !blender_root.is_empty()
+        && (normalized == blender_root || normalized.starts_with(&format!("{blender_root}/")))
+    {
+        normalized[blender_root.len()..].trim_start_matches('/').to_string()
+    } else {
+        normalized
+    };
+    let category = relative.split('/').find(|segment| !segment.is_empty()).unwrap_or("");
+    type_for_category(category)
+}
+
+// Copie recursive d'un dossier (utilisee pour dupliquer / coller un asset).
+fn copy_dir_recursive(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let target = to.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+// Genere un nom de dossier d'asset unique dans un dossier parent (suffixe _copy, _copy2, ...).
+fn unique_asset_name(parent_abs: &Path, base_name: &str) -> String {
+    if !parent_abs.join(base_name).exists() {
+        return base_name.to_string();
+    }
+    let mut index = 1;
+    loop {
+        let candidate = if index == 1 {
+            format!("{base_name}_copy")
+        } else {
+            format!("{base_name}_copy{index}")
+        };
+        if !parent_abs.join(&candidate).exists() {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+#[tauri::command]
+fn delete_folder(
+    project_root: String,
+    dir: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let dir = norm_rel(&dir);
+    if dir.is_empty() {
+        return Err("Dossier invalide.".to_string());
+    }
+
+    let dir_abs = rel_to_abs(&project_root, &dir);
+    if dir_abs.exists() {
+        trash::delete(&dir_abs)
+            .map_err(|error| format!("Impossible d'envoyer le dossier a la corbeille: {error}"))?;
+    }
+
+    // Supprime aussi les fiches asset situees sous ce dossier.
+    let assets_dir = project_root.join(".blendup").join("assets");
+    if let Ok(entries) = fs::read_dir(&assets_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(asset) = read_json_file(&path) {
+                let folder = asset_folder_rel(&asset);
+                if folder == dir || folder.starts_with(&format!("{dir}/")) {
+                    let _ = trash::delete(&path);
+                }
+            }
+        }
+    }
+
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "folder.deleted",
+            "message": format!("Dossier {dir} supprime (corbeille)")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn rename_folder(
+    project_root: String,
+    dir: String,
+    new_name: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    if !is_safe_name(&new_name) {
+        return Err("Nom de dossier invalide.".to_string());
+    }
+    let project_root = PathBuf::from(project_root);
+    let from_dir = norm_rel(&dir);
+    if from_dir.is_empty() {
+        return Err("Dossier invalide.".to_string());
+    }
+    let parent = parent_rel(&from_dir);
+    let new_dir = join_rel(&parent, new_name.trim());
+    if new_dir == from_dir {
+        return Ok(());
+    }
+
+    let old_abs = rel_to_abs(&project_root, &from_dir);
+    let new_abs = rel_to_abs(&project_root, &new_dir);
+    if new_abs.exists() {
+        return Err(format!("Un dossier {} existe deja.", new_name.trim()));
+    }
+    if old_abs.exists() {
+        fs::rename(&old_abs, &new_abs)
+            .map_err(|error| format!("Impossible de renommer le dossier: {error}"))?;
+    }
+
+    // Reecrit les chemins des assets sous le dossier renomme + recalcule leur type.
+    let assets_dir = project_root.join(".blendup").join("assets");
+    if let Ok(entries) = fs::read_dir(&assets_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let mut asset = read_json_file(&path)?;
+            let mut changed = false;
+            for key in ["assetFolder", "blenderSource", "referencesDir", "texturesDir"] {
+                if let Some(current) = json_string(&asset, &["paths", key]) {
+                    let current = norm_rel(current);
+                    if current == from_dir || current.starts_with(&format!("{from_dir}/")) {
+                        let updated = current.replacen(&from_dir, &new_dir, 1);
+                        set_paths_field(&mut asset, key, &updated);
+                        changed = true;
+                    }
+                }
+            }
+            if changed {
+                let folder = asset_folder_rel(&asset);
+                if let Some(new_type) = type_for_folder(&project_root, &parent_rel(&folder)) {
+                    asset["type"] = Value::String(new_type.to_string());
+                }
+                asset["updatedAt"] = Value::String(updated_at.clone());
+                write_json_file(&path, &asset)?;
+            }
+        }
+    }
+
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "folder.renamed",
+            "message": format!("{from_dir} -> {new_dir}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+// Cree une nouvelle fiche + copie le dossier d'un asset dans `parent_dir`.
+fn clone_asset_into(
+    project_root: &Path,
+    source: &Value,
+    parent_dir: &str,
+    actor: &str,
+    created_at: &str,
+) -> Result<String, String> {
+    let old_folder = asset_folder_rel(source);
+    if old_folder.is_empty() {
+        return Err("Cet asset n'a pas de dossier a copier.".to_string());
+    }
+    let parent_dir = norm_rel(parent_dir);
+    let base_name = base_rel(&old_folder);
+    let parent_abs = rel_to_abs(project_root, &parent_dir);
+    fs::create_dir_all(&parent_abs)
+        .map_err(|error| format!("Impossible de creer {}: {error}", parent_abs.display()))?;
+    let new_name = unique_asset_name(&parent_abs, &base_name);
+    let new_folder = join_rel(&parent_dir, &new_name);
+
+    let old_abs = rel_to_abs(project_root, &old_folder);
+    let new_abs = rel_to_abs(project_root, &new_folder);
+    if old_abs.exists() {
+        copy_dir_recursive(&old_abs, &new_abs)
+            .map_err(|error| format!("Impossible de copier le dossier: {error}"))?;
+        // Renomme le .blend interne s'il porte l'ancien nom.
+        let old_blend = new_abs.join(format!("{base_name}.blend"));
+        if old_blend.exists() {
+            let _ = fs::rename(&old_blend, new_abs.join(format!("{new_name}.blend")));
+        }
+    } else {
+        fs::create_dir_all(&new_abs)
+            .map_err(|error| format!("Impossible de creer {}: {error}", new_abs.display()))?;
+    }
+
+    let id = slug_id(&new_name);
+    let mut asset = source.clone();
+    asset["id"] = Value::String(id.clone());
+    asset["displayName"] = Value::String(new_name.clone());
+    asset["createdAt"] = Value::String(created_at.to_string());
+    asset["updatedAt"] = Value::String(created_at.to_string());
+    set_paths_field(&mut asset, "assetFolder", &new_folder);
+    set_paths_field(&mut asset, "blenderSource", &format!("{new_folder}/{new_name}.blend"));
+    set_paths_field(&mut asset, "referencesDir", &format!("{new_folder}/references"));
+    set_paths_field(&mut asset, "texturesDir", &format!("{new_folder}/textures"));
+    // Les sorties Unity ne sont pas dupliquees.
+    if let Some(paths) = asset.get_mut("paths").and_then(Value::as_object_mut) {
+        paths.remove("fbxExport");
+        paths.remove("unityPrefab");
+        paths.remove("thumbnail");
+    }
+    // Le type suit la categorie de destination.
+    if let Some(new_type) = type_for_folder(project_root, &parent_dir) {
+        asset["type"] = Value::String(new_type.to_string());
+    }
+
+    let asset_file = project_root
+        .join(".blendup")
+        .join("assets")
+        .join(format!("{id}.json"));
+    if asset_file.exists() {
+        return Err(format!("Une fiche asset {id} existe deja."));
+    }
+    write_json_file(&asset_file, &asset)?;
+
+    append_activity(
+        project_root,
+        json!({
+            "time": created_at,
+            "actor": non_empty_string(actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.created",
+            "assetId": id,
+            "message": format!("{new_name} copie depuis {}", base_name)
+        }),
+    )?;
+
+    Ok(format!("Asset {new_name} cree."))
+}
+
+#[tauri::command]
+fn duplicate_asset(
+    project_root: String,
+    asset_id: String,
+    actor: String,
+    created_at: String,
+) -> Result<String, String> {
+    let project_root = PathBuf::from(project_root);
+    let (_, asset) = find_asset_file(&project_root, &asset_id)?;
+    let parent = parent_rel(&asset_folder_rel(&asset));
+    clone_asset_into(&project_root, &asset, &parent, &actor, &created_at)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn copy_asset(
+    project_root: String,
+    asset_id: String,
+    target_dir: String,
+    cut: bool,
+    actor: String,
+    created_at: String,
+) -> Result<String, String> {
+    if cut {
+        // Couper/coller = deplacer (reutilise la logique de deplacement).
+        move_asset(project_root, asset_id, target_dir, actor, created_at)?;
+        return Ok("Asset deplace.".to_string());
+    }
+
+    let project_root = PathBuf::from(project_root);
+    let (_, asset) = find_asset_file(&project_root, &asset_id)?;
+    clone_asset_into(&project_root, &asset, &target_dir, &actor, &created_at)
+}
+
 #[tauri::command]
 fn add_asset_files(
     project_root: String,
@@ -2429,6 +2738,10 @@ fn main() {
             move_asset,
             move_folder,
             delete_asset,
+            delete_folder,
+            rename_folder,
+            duplicate_asset,
+            copy_asset,
             set_asset_owners,
             update_asset_notes,
             create_folder,

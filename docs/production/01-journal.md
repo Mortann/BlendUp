@@ -730,3 +730,39 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 - La creation du `.blend` necessite Blender detecte (sinon l'asset est cree sans `.blend`, a generer depuis Blender).
 - Le deplacement des fichiers Unity repose sur la correspondance de segment de categorie (Models/<categorie>/) ; heuristique a affiner si l'arborescence Unity differe.
+
+
+## 2026-06-29 - Assets : DnD, dossiers, type par categorie, recherche projet
+
+### Fait
+
+- **Drag & drop corrige** : `dragDropEnabled: false` ajoute a la fenetre dans `tauri.conf.json` (le handler de drop natif Tauri interceptait le drag HTML5 du webview -> curseur "interdit"). DnD renforce cote React (`dataTransfer.effectAllowed`/`dropEffect` + `setData`).
+- **Dossiers d'info d'asset masques** : les dossiers qui contiennent les infos d'un asset (`paths.assetFolder` : references/textures/.blend) ne sont plus affiches comme dossiers d'organisation navigables. Corrige le cas "un PROP apparait dans le dossier Environment".
+- **Type d'asset deduit de l'emplacement** : mapping categorie -> type (Environment->environment_piece, Props->prop, Characters->character, Materials->material, Textures->texture, UI->ui_image). Le selecteur de type a la creation est remplace par un type en lecture seule (defini par le dossier). Au deplacement d'un asset (et au renommage d'un dossier de categorie), le `type` est recalcule cote Rust (`type_for_folder` dans `move_asset` / `rename_folder`).
+- **MultiSelect personnes** : composant custom facon react-select (chips, recherche, dropdown) remplace le `<select multiple>` natif pour artistes/devs.
+- **Scrollbars discretes** sur toute l'app (webkit + firefox) dans `styles.css`.
+- **Recent** : possibilite de retirer un dossier de la section Recent (bouton au survol).
+- **Menu contextuel sur le fond d'un dossier** : creer dossier, creer asset, coller, tri, affichage -> ces options ont ete retirees du coin haut-droit (la barre ne garde que le fil d'Ariane).
+- **Menu contextuel sur un dossier** : ouvrir, renommer, supprimer (nouvelles commandes Rust `rename_folder` et `delete_folder`, envoi corbeille + reecriture des fiches assets sous le dossier).
+- **Copier / couper / coller / dupliquer un asset** : clipboard local + nouvelles commandes Rust `duplicate_asset` et `copy_asset` (copie recursive du dossier, nouvelle fiche, sorties Unity non dupliquees, type recalcule selon la categorie de destination ; couper/coller reutilise `move_asset`).
+- **"Fermer" retire** du menu contextuel des assets.
+- **Recherche style Spotlight/Arc** : barre en haut au centre ; au clic (ou Ctrl/Cmd+K), overlay agrandi avec fond floute (backdrop-filter) ; recherche assets + dossiers dans tout le projet, pas seulement le dossier courant.
+
+### Fichiers touches
+
+- `apps/desktop/src/views/AssetsView.tsx` (gros refactor explorateur artiste).
+- `apps/desktop/src/styles.css` (scrollbars, spotlight, multiselect, menu contextuel, recents, type par dossier).
+- `apps/desktop/src-tauri/src/main.rs` (+`delete_folder`, `rename_folder`, `duplicate_asset`, `copy_asset`, `type_for_category`/`type_for_folder`, `move_asset` met a jour le type).
+- `apps/desktop/src-tauri/tauri.conf.json` (`dragDropEnabled: false`).
+- `apps/desktop/src/blendup/projectLoader.ts`, `src/app/useBlendUpController.ts`, `src/App.tsx` (cablage des nouvelles commandes).
+
+### Verification
+
+- Revue manuelle (outils de compilation indisponibles dans le sandbox : pas de cargo, et le mount bash renvoie une version tronquee des gros fichiers donc `tsc` y est non fiable).
+- **A relancer en local Windows** : `npm run typecheck` (tsc) dans `apps/desktop`, puis `cargo check` / `npm run tauri:dev`.
+
+### Notes
+
+- Mapping categorie->type duplique entre le frontend (`CATEGORY_TYPE_MAP` dans AssetsView) et le backend (`type_for_category` dans main.rs) : garder les deux synchronises si on ajoute une categorie.
+- Le drag & drop natif de fichiers depuis l'OS est desactive (`dragDropEnabled: false`) ; si on veut plus tard accepter le depot de fichiers externes, il faudra le reactiver et gerer l'evenement Tauri `drag-drop`.
+- La vue Developpeur (inventaire technique) conserve sa barre d'outils ; les changements d'UX (menu contextuel, dossiers, recherche) concernent l'explorateur Artiste.
