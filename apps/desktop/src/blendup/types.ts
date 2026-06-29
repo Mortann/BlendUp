@@ -1,3 +1,5 @@
+// Types "connus" pour l'autocompletion, mais un type peut etre n'importe quelle
+// chaine : chaque dossier de categorie sous Blender definit dynamiquement un type.
 export type AssetType =
   | "static_mesh"
   | "prop"
@@ -5,7 +7,9 @@ export type AssetType =
   | "material"
   | "texture"
   | "ui_image"
-  | "character";
+  | "character"
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  | (string & {});
 
 export type AssetStatus =
   | "todo"
@@ -59,6 +63,13 @@ export interface BlendUpProject {
   defaultView: "artist" | "developer";
 }
 
+export interface AssetVariant {
+  id: string;
+  name: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface ExpectedComponent {
   name: string;
   requirement: ComponentRequirement;
@@ -105,7 +116,7 @@ export interface BlendUpAsset {
   tags: string[];
   references: string[];
   tasks: string[];
-  variants: unknown[];
+  variants: AssetVariant[];
   notes: {
     artist: string;
     developer: string;

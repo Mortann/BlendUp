@@ -1,17 +1,9 @@
 import type { AssetStatus, AssetType, BlendUpAsset, BlendUpProblem, TaskPriority, TaskStatus } from "../blendup/types";
+import { labelForType } from "../blendup/naming";
 
+// Les types sont dynamiques (un dossier de categorie = un type) : on delegue au catalogue de noms.
 export function formatAssetType(type: AssetType): string {
-  const labels: Record<AssetType, string> = {
-    static_mesh: "Static Mesh",
-    prop: "Prop",
-    environment_piece: "Environment",
-    material: "Material",
-    texture: "Texture",
-    ui_image: "UI Image",
-    character: "Character"
-  };
-
-  return labels[type];
+  return labelForType(type);
 }
 
 export function formatStatus(status: AssetStatus): string {

@@ -7,7 +7,7 @@ import {
   loadStoredRole,
   storeRole
 } from "../blendup/roles";
-import type { AssetStatus, LocalToolsSnapshot, ProjectSnapshot, UserSettings } from "../blendup/types";
+import type { AssetStatus, AssetVariant, LocalToolsSnapshot, ProjectSnapshot, UserSettings } from "../blendup/types";
 import { exportAssetToFbx } from "../blendup/actions";
 import {
   addAssetFiles,
@@ -33,6 +33,7 @@ import {
   selectProjectDirectory,
   setAssetAssignees,
   setAssetOwners,
+  setAssetVariants,
   takeOpenRequest,
   updateAssetNotes,
   updateAssetStatus
@@ -949,6 +950,23 @@ export function useBlendUpController() {
     );
   };
 
+  const handleSetVariants = async (assetId: string, variants: AssetVariant[], actor: string) => {
+    await runAssetMutation(
+      () =>
+        setAssetVariants({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          variants,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Variantes mises a jour",
+      `${variants.length} variante(s)`,
+      "Modification des variantes impossible",
+      assetId
+    );
+  };
+
   const handlePasteAsset = async (
     assetId: string,
     targetDir: string,
@@ -1033,6 +1051,7 @@ export function useBlendUpController() {
     handleRenameFolder,
     handleDuplicateAsset,
     handlePasteAsset,
+    handleSetVariants,
     shortcutBindings,
     updateShortcut,
     resetShortcuts,

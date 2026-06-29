@@ -1,6 +1,7 @@
 import { blendUpTestSnapshot } from "../fixtures/blendUpTest";
 import type {
   AssetStatus,
+  AssetVariant,
   CreateProjectOptions,
   CreateProjectResult,
   LocalToolsSnapshot,
@@ -386,6 +387,22 @@ export async function setAssetAssignees(options: {
     projectRoot: options.projectRoot,
     assetId: options.assetId,
     assignees: options.assignees,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function setAssetVariants(options: {
+  projectRoot: string;
+  assetId: string;
+  variants: AssetVariant[];
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("set_asset_variants", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    variants: options.variants,
     actor: options.actor,
     updatedAt: options.updatedAt
   });

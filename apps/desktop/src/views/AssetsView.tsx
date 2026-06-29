@@ -19,9 +19,11 @@ import {
   Grid2X2,
   History,
   ImageIcon,
+  Layers,
   List,
   Image as ImageIconFiles,
   Pencil,
+  Plus,
   Scissors,
   Search,
   SlidersHorizontal,
@@ -33,13 +35,14 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { assetLabel, buildAssetName, renameCore, TYPE_PREFIX } from "../blendup/naming";
+import { assetLabel, buildAssetName, categoryToType, renameCore } from "../blendup/naming";
 import { selectImageFiles } from "../blendup/projectLoader";
 import { useShortcuts, type ShortcutBindings } from "../app/shortcuts";
 import type { Role, RoleCapabilities } from "../blendup/roles";
 import type {
   AssetStatus,
   AssetType,
+  AssetVariant,
   BlendUpActivityEvent,
   BlendUpAsset,
   BlendUpProblem,
@@ -90,18 +93,8 @@ interface ContextMenuState {
 
 type ClipboardEntry = { assetId: string; mode: "copy" | "cut" };
 
-// Mapping catégorie de dossier -> type d'asset. Le type d'un asset est déduit de
-// la catégorie (1er segment sous la racine Blender) dans laquelle il se trouve.
-const CATEGORY_TYPE_MAP: { match: string[]; type: AssetType }[] = [
-  { match: ["environment", "environnement", "env", "environments"], type: "environment_piece" },
-  { match: ["prop", "props", "accessoire", "accessoires"], type: "prop" },
-  { match: ["character", "characters", "personnage", "personnages", "chr"], type: "character" },
-  { match: ["material", "materials", "materiau", "materiaux"], type: "material" },
-  { match: ["texture", "textures", "tex"], type: "texture" },
-  { match: ["ui", "interface", "hud"], type: "ui_image" }
-];
-
-// Déduit le type d'asset à partir de l'emplacement (catégorie sous la racine Blender).
+// Type dynamique : chaque dossier de categorie sous la racine Blender definit un type.
+// On prend le 1er segment sous la racine Blender comme categorie -> token de type.
 function typeForPath(path: string, blenderRoot: string): AssetType {
   const normalizedRoot = normalizeFolderPath(blenderRoot);
   const normalizedPath = normalizeFolderPath(path);
@@ -110,19 +103,8 @@ function typeForPath(path: string, blenderRoot: string): AssetType {
       ? normalizedPath.slice(normalizedRoot.length).replace(/^\//, "")
       : normalizedPath;
   const category = relative.split("/").filter(Boolean)[0] ?? "";
-  const lower = category.toLowerCase();
 
-  for (const entry of CATEGORY_TYPE_MAP) {
-    if (entry.match.includes(lower)) {
-      return entry.type;
-    }
-  }
-
-  return "prop";
-}
-
-function categoryTypeLabel(type: AssetType): string {
-  return ASSET_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
+  return category ? categoryToType(category) : "prop";
 }
 
 const artistStatuses: { label: string; status: AssetStatus }[] = [
@@ -151,6 +133,7 @@ export function AssetsView({
   onRenameFolder,
   onDuplicateAsset,
   onPasteAsset,
+  onSetVariants,
   shortcutBindings,
   onExportAsset,
   onOpenInBlender,
@@ -200,6 +183,7 @@ export function AssetsView({
   onRenameFolder: (dir: string, newName: string, actor: string) => void;
   onDuplicateAsset: (assetId: string, actor: string) => void;
   onPasteAsset: (assetId: string, targetDir: string, move: boolean, actor: string) => void;
+  onSetVariants: (assetId: string, variants: AssetVariant[], actor: string) => void;
   shortcutBindings: ShortcutBindings;
   onExportAsset: (assetId: string) => void;
   onOpenInBlender: (assetId: string) => void;
@@ -367,13 +351,13 @@ export function AssetsView({
 
   const linkedTasks = useMemo(() => snapshot.tasks.slice(0, 6), [snapshot.tasks]);
 
-  const recentFolderDetails = useMemo(
-    () =>
-      recentFolders
-        .map((path) => ({ path, name: path.split("/").filter(Boolean).slice(-1)[0] ?? path }))
-        .filter((folder) => Boolean(folder.name)),
-    [recentFolders]
-  );
+  const recentFolderDetails = useMemo(() => {
+    const root = normalizeFolderPath(defaultExplorerPath);
+    return recentFolders
+      .map((path) => ({ path: normalizeFolderPath(path), name: path.split("/").filter(Boolean).slice(-1)[0] ?? path }))
+      // On ne garde que les dossiers situes strictement sous la racine Blender.
+      .filter((folder) => Boolean(folder.name) && folder.path !== root && folder.path.startsWith(`${root}/`));
+  }, [defaultExplorerPath, recentFolders]);
 
   const recordRecentFolder = (path: string) => {
     const normalized = normalizeFolderPath(path);
@@ -642,7 +626,7 @@ export function AssetsView({
           >
             <div className="asset-explorer-toolbar">
               <div className="asset-breadcrumb" aria-label="Emplacement asset">
-                {breadcrumbParts(currentPath).map((part, index, parts) => (
+                {breadcrumbParts(currentPath, defaultExplorerPath).map((part, index, parts) => (
                   <button
                     key={part.path || "root"}
                     className={index === parts.length - 1 ? "active" : ""}
@@ -958,6 +942,7 @@ export function AssetsView({
             isFavorite={favoriteAssetIds.includes(selectedAsset.id)}
             members={members}
             onAssignOwners={(owners) => onSetAssetOwners(selectedAsset.id, owners, actorName)}
+            onSetVariants={(variants) => onSetVariants(selectedAsset.id, variants, actorName)}
             onUpdateArtistNotes={(notes) => onUpdateAssetNotes(selectedAsset.id, notes, actorName)}
             onChangeStatus={(status) =>
               onChangeAssetStatus(
@@ -1037,18 +1022,39 @@ function ArtistAssetCard({
   projectRoot?: string;
 }) {
   const people = assetPeople(asset);
+  // Empeche l'ouverture de l'asset (onSelect) quand le clic suit un drag.
+  const draggedRef = useRef(false);
 
   return (
     <article
       className={`artist-asset-card ${displayMode} ${isSelected ? "selected" : ""}`}
       draggable
       onContextMenu={onContextMenu}
-      onDragStart={onDragStart}
+      onDragStart={(event) => {
+        draggedRef.current = true;
+        onDragStart(event);
+      }}
+      onDragEnd={() => {
+        // Laisse passer le cycle d'evenement puis reactive le clic.
+        window.setTimeout(() => {
+          draggedRef.current = false;
+        }, 80);
+      }}
     >
       <button className="asset-favorite-button" onClick={onToggleFavorite} title="Favori" type="button">
         <Star fill={isFavorite ? "currentColor" : "none"} size={16} />
       </button>
-      <button className="artist-asset-card-main" onClick={onSelect} type="button">
+      <button
+        className="artist-asset-card-main"
+        onClick={() => {
+          if (draggedRef.current) {
+            draggedRef.current = false;
+            return;
+          }
+          onSelect();
+        }}
+        type="button"
+      >
         <AssetVisual asset={asset} projectRoot={projectRoot} />
         <span className="asset-folder-label">{assetDirectory(asset)}</span>
         <strong>{assetLabel(asset.displayName)}</strong>
@@ -1056,6 +1062,12 @@ function ArtistAssetCard({
         <div className="asset-card-footer">
           <StatusPill label={formatStatus(normalizeArtistStatus(asset.status))} tone="blue" />
           <AssetAvatars names={people} small />
+          {asset.variants && asset.variants.length > 0 ? (
+            <span className="variant-badge" title={`${asset.variants.length} variante(s)`}>
+              <Layers size={12} />
+              {asset.variants.length}
+            </span>
+          ) : null}
           {problemCount > 0 ? <span className="mini-warning">{problemCount}</span> : null}
         </div>
       </button>
@@ -1141,6 +1153,7 @@ function ArtistAssetDetail({
   isFavorite,
   members,
   onAssignOwners,
+  onSetVariants,
   onUpdateArtistNotes,
   onChangeStatus,
   onClose,
@@ -1160,6 +1173,7 @@ function ArtistAssetDetail({
   isFavorite: boolean;
   members: TeamMember[];
   onAssignOwners: (owners: { artist: string[]; developer: string[]; reviewer: string | null }) => void;
+  onSetVariants: (variants: AssetVariant[]) => void;
   onUpdateArtistNotes: (notes: string) => void;
   onChangeStatus: (status: AssetStatus) => void;
   onClose: () => void;
@@ -1448,6 +1462,10 @@ function ArtistAssetDetail({
             <AssetContentLinks asset={asset} onOpenContentPath={onOpenContentPath} />
           </section>
           <section className="section-block">
+            <h3>Variantes</h3>
+            <AssetVariants asset={asset} onSetVariants={onSetVariants} />
+          </section>
+          <section className="section-block">
             <h3>Checklist asset</h3>
             <AssetChecklist asset={asset} problems={problems} />
           </section>
@@ -1470,6 +1488,76 @@ function ArtistAssetDetail({
         </div>
       )}
     </aside>
+  );
+}
+
+function AssetVariants({
+  asset,
+  onSetVariants
+}: {
+  asset: BlendUpAsset;
+  onSetVariants: (variants: AssetVariant[]) => void;
+}) {
+  const variants = asset.variants ?? [];
+  const [draft, setDraft] = useState("");
+
+  const addVariant = () => {
+    const name = draft.trim();
+    if (!name) {
+      return;
+    }
+    const variant: AssetVariant = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      createdAt: new Date().toISOString()
+    };
+    onSetVariants([...variants, variant]);
+    setDraft("");
+  };
+
+  const removeVariant = (id: string) => {
+    onSetVariants(variants.filter((variant) => variant.id !== id));
+  };
+
+  return (
+    <div className="asset-variants">
+      {variants.length > 0 ? (
+        <ul className="variant-list">
+          {variants.map((variant) => (
+            <li key={variant.id}>
+              <Layers size={14} />
+              <span>{variant.name}</span>
+              <button
+                className="variant-remove"
+                onClick={() => removeVariant(variant.id)}
+                title="Supprimer la variante"
+                type="button"
+              >
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="soft-text">Aucune variante pour cet asset.</p>
+      )}
+      <div className="variant-add">
+        <input
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              addVariant();
+            }
+          }}
+          placeholder="Nom de la variante (ex: Casse, Neige)"
+          value={draft}
+        />
+        <button className="secondary" disabled={!draft.trim()} onClick={addVariant} type="button">
+          <Plus size={14} />
+          Ajouter
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1606,67 +1694,69 @@ function OwnerMultiSelect({
       <span className="owner-multiselect-label">
         <UserRound size={14} /> {label}
       </span>
-      <div
-        className={`ms-control ${open ? "open" : ""}`}
-        onClick={() => setOpen((current) => !current)}
-        role="button"
-        tabIndex={0}
-      >
-        <div className="ms-values">
-          {values.length === 0 ? <span className="ms-placeholder">Selectionner…</span> : null}
-          {values.map((name) => (
-            <span className="ms-chip" key={name}>
-              <span className="ms-chip-dot" style={{ background: memberColor(name) }} />
-              {name}
-              <button
-                className="ms-chip-remove"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onChange(values.filter((value) => value !== name));
-                }}
-                title="Retirer"
-                type="button"
-              >
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-        </div>
-        <ChevronDown className="ms-arrow" size={15} />
-      </div>
-      {open ? (
-        <div className="ms-menu">
-          <input
-            autoFocus
-            className="ms-search"
-            onChange={(event) => setSearch(event.target.value)}
-            onClick={(event) => event.stopPropagation()}
-            placeholder="Rechercher…"
-            value={search}
-          />
-          <div className="ms-options">
-            {filtered.length > 0 ? (
-              filtered.map((member) => {
-                const checked = selectedSet.has(member.name);
-                return (
-                  <button
-                    className={`ms-option ${checked ? "checked" : ""}`}
-                    key={member.id}
-                    onClick={() => toggle(member.name)}
-                    type="button"
-                  >
-                    <span className="ms-option-check">{checked ? <Check size={13} /> : null}</span>
-                    <span className="ms-chip-dot" style={{ background: memberColor(member.name) }} />
-                    {member.name}
-                  </button>
-                );
-              })
-            ) : (
-              <p className="soft-text ms-empty">Aucun membre</p>
-            )}
+      <div className="ms-field">
+        <div
+          className={`ms-control ${open ? "open" : ""}`}
+          onClick={() => setOpen((current) => !current)}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="ms-values">
+            {values.length === 0 ? <span className="ms-placeholder">Selectionner…</span> : null}
+            {values.map((name) => (
+              <span className="ms-chip" key={name}>
+                <span className="ms-chip-dot" style={{ background: memberColor(name) }} />
+                {name}
+                <button
+                  className="ms-chip-remove"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onChange(values.filter((value) => value !== name));
+                  }}
+                  title="Retirer"
+                  type="button"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
           </div>
+          <ChevronDown className="ms-arrow" size={15} />
         </div>
-      ) : null}
+        {open ? (
+          <div className="ms-menu">
+            <input
+              autoFocus
+              className="ms-search"
+              onChange={(event) => setSearch(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              placeholder="Rechercher…"
+              value={search}
+            />
+            <div className="ms-options">
+              {filtered.length > 0 ? (
+                filtered.map((member) => {
+                  const checked = selectedSet.has(member.name);
+                  return (
+                    <button
+                      className={`ms-option ${checked ? "checked" : ""}`}
+                      key={member.id}
+                      onClick={() => toggle(member.name)}
+                      type="button"
+                    >
+                      <span className="ms-option-check">{checked ? <Check size={13} /> : null}</span>
+                      <span className="ms-chip-dot" style={{ background: memberColor(member.name) }} />
+                      {member.name}
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="soft-text ms-empty">Aucun membre</p>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -2322,7 +2412,7 @@ function CreateAssetDialog({
 
         <div className="create-type-info">
           <span>Type</span>
-          <strong>{categoryTypeLabel(assetType)}</strong>
+          <strong>{formatAssetType(assetType)}</strong>
           <small>defini par le dossier</small>
         </div>
 
@@ -2625,12 +2715,20 @@ function resolveThumbnailSrc(path: string | undefined, projectRoot: string | und
   }
 }
 
-function breadcrumbParts(path: string) {
-  const parts = normalizeFolderPath(path).split("/").filter(Boolean);
-  const crumbs = [{ label: "Assets", path: "" }];
-  let current = "";
+function breadcrumbParts(path: string, blenderRoot: string) {
+  const root = normalizeFolderPath(blenderRoot);
+  const rootLabel = root.split("/").filter(Boolean).pop() ?? "Blender";
+  const normalized = normalizeFolderPath(path);
+  const crumbs = [{ label: rootLabel, path: root }];
 
-  for (const part of parts) {
+  // Blender est la racine : on n'affiche que les segments situes sous cette racine.
+  const relative =
+    root && (normalized === root || normalized.startsWith(`${root}/`))
+      ? normalized.slice(root.length).replace(/^\//, "")
+      : "";
+
+  let current = root;
+  for (const part of relative.split("/").filter(Boolean)) {
     current = current ? `${current}/${part}` : part;
     crumbs.push({ label: part, path: current });
   }

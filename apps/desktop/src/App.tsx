@@ -90,6 +90,7 @@ function App() {
           onRenameFolder={app.handleRenameFolder}
           onDuplicateAsset={app.handleDuplicateAsset}
           onPasteAsset={app.handlePasteAsset}
+          onSetVariants={app.handleSetVariants}
           shortcutBindings={app.shortcutBindings}
           onOpenInBlender={app.openAssetInBlender}
           onOpenContentPath={app.openProjectContentPath}

@@ -2342,21 +2342,46 @@ fn create_asset(
 
 // ===== Type d'asset deduit de la categorie (dossier) =====
 
-// Mapping categorie -> type d'asset (parite avec le frontend AssetsView).
-fn type_for_category(category: &str) -> Option<&'static str> {
-    match category.to_lowercase().as_str() {
-        "environment" | "environnement" | "env" | "environments" => Some("environment_piece"),
-        "prop" | "props" | "accessoire" | "accessoires" => Some("prop"),
-        "character" | "characters" | "personnage" | "personnages" | "chr" => Some("character"),
-        "material" | "materials" | "materiau" | "materiaux" => Some("material"),
-        "texture" | "textures" | "tex" => Some("texture"),
-        "ui" | "interface" | "hud" => Some("ui_image"),
-        _ => None,
+// Slug d'un nom de categorie inconnu en token de type (parite avec slugType du frontend).
+fn slug_type(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending_underscore = false;
+    for ch in name.trim().to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_underscore && !out.is_empty() {
+                out.push('_');
+            }
+            pending_underscore = false;
+            out.push(ch);
+        } else {
+            pending_underscore = true;
+        }
+    }
+    out
+}
+
+// Mapping categorie -> token de type. Connu => canonique ; sinon => slug du nom (type dynamique).
+fn category_to_type(category: &str) -> String {
+    match category.trim().to_lowercase().as_str() {
+        "environment" | "environnement" | "env" | "environments" => "environment_piece".to_string(),
+        "prop" | "props" | "accessoire" | "accessoires" => "prop".to_string(),
+        "character" | "characters" | "personnage" | "personnages" | "chr" => "character".to_string(),
+        "material" | "materials" | "materiau" | "materiaux" => "material".to_string(),
+        "texture" | "textures" | "tex" => "texture".to_string(),
+        "ui" | "interface" | "hud" => "ui_image".to_string(),
+        other => {
+            let slug = slug_type(other);
+            if slug.is_empty() {
+                "prop".to_string()
+            } else {
+                slug
+            }
+        }
     }
 }
 
 // Type deduit de l'emplacement : categorie = 1er segment sous la racine Blender.
-fn type_for_folder(project_root: &Path, folder_rel: &str) -> Option<&'static str> {
+fn type_for_folder(project_root: &Path, folder_rel: &str) -> Option<String> {
     let project = read_json_file(&project_root.join(".blendup").join("project.json")).ok()?;
     let blender_root = norm_rel(json_string(&project, &["paths", "blenderRoot"]).unwrap_or("Art/Blender"));
     let normalized = norm_rel(folder_rel);
@@ -2368,7 +2393,10 @@ fn type_for_folder(project_root: &Path, folder_rel: &str) -> Option<&'static str
         normalized
     };
     let category = relative.split('/').find(|segment| !segment.is_empty()).unwrap_or("");
-    type_for_category(category)
+    if category.is_empty() {
+        return None;
+    }
+    Some(category_to_type(category))
 }
 
 // Copie recursive d'un dossier (utilisee pour dupliquer / coller un asset).
@@ -2686,6 +2714,36 @@ fn add_asset_files(
 }
 
 #[tauri::command]
+fn set_asset_variants(
+    project_root: String,
+    asset_id: String,
+    variants: Vec<Value>,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let display_name = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
+    let count = variants.len();
+
+    asset["variants"] = Value::Array(variants);
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.variants_changed",
+            "assetId": asset_id,
+            "message": format!("{count} variante(s) pour {display_name}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
 fn set_asset_assignees(
     project_root: String,
     asset_id: String,
@@ -2746,6 +2804,7 @@ fn main() {
             update_asset_notes,
             create_folder,
             create_asset,
+            set_asset_variants,
             add_asset_files,
             set_asset_assignees,
             take_open_request

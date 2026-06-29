@@ -766,3 +766,34 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - Mapping categorie->type duplique entre le frontend (`CATEGORY_TYPE_MAP` dans AssetsView) et le backend (`type_for_category` dans main.rs) : garder les deux synchronises si on ajoute une categorie.
 - Le drag & drop natif de fichiers depuis l'OS est desactive (`dragDropEnabled: false`) ; si on veut plus tard accepter le depot de fichiers externes, il faudra le reactiver et gerer l'evenement Tauri `drag-drop`.
 - La vue Developpeur (inventaire technique) conserve sa barre d'outils ; les changements d'UX (menu contextuel, dossiers, recherche) concernent l'explorateur Artiste.
+
+
+## 2026-06-29 - Assets : suite (drop, contraste, racine Blender, types dynamiques, variantes)
+
+### Fait
+
+- **Drag & drop** : un clic qui suit un drag n'ouvre plus l'asset par erreur (garde `draggedRef` dans la carte + reset au `dragEnd`).
+- **Contraste** : le MultiSelect (et le panneau detail, en theme clair) etait stylise en theme sombre -> repasse en theme clair lisible (bordures, chips, menu, focus). Aligne sur la grille `120px | 1fr` du panneau via un wrapper `.ms-field`.
+- **Racine Blender** : le fil d'Ariane demarre desormais a `Blender` (label de la racine du projet) ; impossible de remonter au-dessus. La section Recent ne montre que les dossiers situes strictement sous la racine Blender.
+- **Types dynamiques** : chaque dossier de categorie sous Blender definit un type. `AssetType` elargi a `string`. Helpers centralises dans `naming.ts` : `categoryToType` (synonymes connus -> token canonique, sinon slug du nom), `prefixForType` (prefixe connu, sinon 3 premieres lettres en majuscule), `labelForType` (libelle). `formatAssetType` delegue a `labelForType`. Cote Rust : `category_to_type` + `slug_type`, `type_for_folder` renvoie un token dynamique ; applique a la creation, au deplacement et au renommage de dossier. (Ex: dossier `Caracter` -> type `caracter`, prefixe `CAR`.)
+- **Variantes d'asset (cote BlendUp)** : modele `AssetVariant` (`variants: AssetVariant[]`), commande Rust `set_asset_variants`, UI dans le detail (lister / ajouter / supprimer), badge "variantes" sur la carte d'asset.
+
+### Fichiers touches (en plus du round precedent)
+
+- `apps/desktop/src/blendup/naming.ts` (catalogue de types, categoryToType/prefixForType/labelForType, buildAssetName dynamique).
+- `apps/desktop/src/blendup/types.ts` (`AssetType` elargi, interface `AssetVariant`, `variants` type).
+- `apps/desktop/src/ui/format.ts` (`formatAssetType` -> `labelForType`).
+- `apps/desktop/src/views/AssetsView.tsx` (drop fix, breadcrumb racine Blender, typeForPath dynamique, section + badge variantes).
+- `apps/desktop/src/styles.css` (MultiSelect theme clair, badge + section variantes).
+- `apps/desktop/src-tauri/src/main.rs` (`category_to_type`/`slug_type`, `type_for_folder` dynamique, `set_asset_variants`).
+- `projectLoader.ts`, `useBlendUpController.ts`, `App.tsx` (cablage `set_asset_variants`).
+
+### A faire / reste
+
+- **Add-on Blender** : miniatures auto qui ne fonctionnent pas + gestion des variantes cote add-on -> a traiter dans une prochaine session (apps/blender-addon).
+- Garder synchronises le mapping categorie->type entre `naming.ts` (frontend) et `main.rs` (backend).
+
+### Verification
+
+- Revue manuelle (cargo absent du sandbox ; mount bash tronque les gros fichiers donc tsc non fiable ici).
+- **A relancer en local Windows** : `npm run typecheck` puis `cargo check` / `npm run tauri:dev`.
