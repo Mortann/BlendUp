@@ -31,6 +31,12 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
     },
     defaultView: "artist"
   },
+  assetFolders: [
+    "Art/Blender/Environment",
+    "Art/Blender/Environment/ENV_Rock_01",
+    "Art/Blender/Props",
+    "Art/Blender/Props/PROP_CubeCrate_01"
+  ],
   assets: [
     {
       schemaVersion: 1,
@@ -166,6 +172,24 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
     files: [],
     message: "Git est seulement lu dans l'application Tauri."
   },
+  activity: [
+    {
+      time: "2026-06-25T09:12:00Z",
+      actor: "Owner",
+      type: "asset.created",
+      assetId: "asset_prop_cubecrate_01",
+      message: "Asset PROP_CubeCrate_01 cree dans Art/Blender/Props",
+      branch: "main"
+    },
+    {
+      time: "2026-06-25T10:30:00Z",
+      actor: "Clement",
+      type: "asset.status_changed",
+      assetId: "asset_prop_cubecrate_01",
+      message: "PROP_CubeCrate_01: todo -> in_progress",
+      branch: "main"
+    }
+  ],
   problems: [
     {
       id: "problem_export_prop_cubecrate_missing",

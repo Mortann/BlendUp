@@ -30,6 +30,7 @@ import {
   setAssetAssignees,
   setAssetOwners,
   takeOpenRequest,
+  updateAssetNotes,
   updateAssetStatus
 } from "../blendup/projectLoader";
 import type { ActiveView, OperationMessage } from "./types";
@@ -574,6 +575,32 @@ export function useBlendUpController() {
     }
   };
 
+  const openProjectContentPath = async (relativePath: string) => {
+    if (!project?.projectRoot) {
+      setOperationMessage({
+        tone: "error",
+        title: "Ouverture impossible",
+        detail: "Aucun projet charge."
+      });
+      return;
+    }
+
+    try {
+      await openProjectPath(project.projectRoot, relativePath);
+      setOperationMessage({
+        tone: "success",
+        title: "Contenu ouvert",
+        detail: relativePath
+      });
+    } catch (error) {
+      setOperationMessage({
+        tone: "error",
+        title: "Ouverture impossible",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
   const changeAssetStatus = async (
     assetId: string,
     status: AssetStatus,
@@ -725,7 +752,7 @@ export function useBlendUpController() {
 
   const handleSetAssetOwners = async (
     assetId: string,
-    owners: { artist: string | null; developer: string | null; reviewer: string | null },
+    owners: { artist: string[]; developer: string[]; reviewer: string | null },
     actor: string
   ) => {
     await runAssetMutation(
@@ -742,6 +769,23 @@ export function useBlendUpController() {
       "Assignation mise a jour",
       "Equipe de l'asset modifiee",
       "Assignation impossible",
+      assetId
+    );
+  };
+
+  const handleUpdateAssetNotes = async (assetId: string, artistNotes: string, actor: string) => {
+    await runAssetMutation(
+      () =>
+        updateAssetNotes({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          artistNotes,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "Notes mises a jour",
+      "Notes artiste enregistrees",
+      "Modification des notes impossible",
       assetId
     );
   };
@@ -869,6 +913,7 @@ export function useBlendUpController() {
     isLoadingProject,
     openAsset,
     openAssetInBlender,
+    openProjectContentPath,
     openDefaultProject,
     openProject,
     operationMessage,
@@ -901,6 +946,7 @@ export function useBlendUpController() {
     handleMoveFolder,
     handleDeleteAsset,
     handleSetAssetOwners,
+    handleUpdateAssetNotes,
     handleSetAssignees,
     handleCreateFolder,
     handleAddAssetFiles,

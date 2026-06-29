@@ -332,8 +332,8 @@ export async function setAssetAssignees(options: {
 export async function setAssetOwners(options: {
   projectRoot: string;
   assetId: string;
-  artist: string | null;
-  developer: string | null;
+  artist: string[];
+  developer: string[];
   reviewer: string | null;
   actor: string;
   updatedAt: string;
@@ -344,6 +344,22 @@ export async function setAssetOwners(options: {
     artist: options.artist,
     developer: options.developer,
     reviewer: options.reviewer,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
+export async function updateAssetNotes(options: {
+  projectRoot: string;
+  assetId: string;
+  artistNotes: string;
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("update_asset_notes", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    artistNotes: options.artistNotes,
     actor: options.actor,
     updatedAt: options.updatedAt
   });

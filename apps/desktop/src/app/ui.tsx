@@ -66,12 +66,14 @@ export function DetailMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function Owner({ label, value }: { label: string; value: string | null }) {
+export function Owner({ label, value }: { label: string; value: string | string[] | null }) {
+  const labelValue = Array.isArray(value) ? value.join(", ") : value;
+
   return (
     <div className="owner-card">
       <UserRound size={16} />
       <span>{label}</span>
-      <strong>{value ?? "Non assigne"}</strong>
+      <strong>{labelValue || "Non assigne"}</strong>
     </div>
   );
 }

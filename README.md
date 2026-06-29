@@ -74,6 +74,7 @@ npm install
 npm run typecheck
 npm run build
 npm run dev
+npm run tauri:dev
 ```
 
 Pour verifier le backend Tauri/Rust :

@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   ArrowUpDown,
   Boxes,
-  Check,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -14,7 +13,6 @@ import {
   History,
   ImageIcon,
   List,
-  ListTodo,
   Image as ImageIconFiles,
   Pencil,
   Plus,
@@ -27,11 +25,19 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { assetLabel, buildAssetName, renameCore, TYPE_PREFIX } from "../blendup/naming";
 import { selectImageFiles } from "../blendup/projectLoader";
 import { useShortcuts, type ShortcutBindings } from "../app/shortcuts";
 import type { Role, RoleCapabilities } from "../blendup/roles";
-import type { AssetStatus, AssetType, BlendUpAsset, BlendUpProblem, BlendUpTask, ProjectSnapshot } from "../blendup/types";
+import type {
+  AssetStatus,
+  AssetType,
+  BlendUpActivityEvent,
+  BlendUpAsset,
+  BlendUpProblem,
+  ProjectSnapshot
+} from "../blendup/types";
 import { assetFolder } from "../app/metrics";
 import { loadActiveMemberId, loadTeamMembers, type TeamMember } from "../app/people";
 import { DetailMeta, EmptyState, Owner, PathLine, StatusPill } from "../app/ui";
@@ -46,6 +52,7 @@ type AssetSortMode = "name" | "recent" | "status";
 type AssetDisplayMode = "grid" | "list" | "compact";
 type AssetQuickFilter = "all" | "favorites" | "todo" | "in_progress" | "review" | "needs_art_fix" | "validated";
 type AssetThumbSize = "small" | "medium" | "large";
+type HistoryTypeFilter = "all" | "status" | "team" | "notes" | "files" | "export" | "other";
 
 interface AssetSettings {
   defaultDisplayMode: AssetDisplayMode;
@@ -91,12 +98,14 @@ export function AssetsView({
   onMoveFolder,
   onDeleteAsset,
   onSetAssetOwners,
+  onUpdateAssetNotes,
   onSetAssignees,
   onCreateAsset,
   onCreateFolder,
   shortcutBindings,
   onExportAsset,
   onOpenInBlender,
+  onOpenContentPath,
   problems,
   query,
   role,
@@ -121,9 +130,10 @@ export function AssetsView({
   onDeleteAsset: (assetId: string, actor: string) => void;
   onSetAssetOwners: (
     assetId: string,
-    owners: { artist: string | null; developer: string | null; reviewer: string | null },
+    owners: { artist: string[]; developer: string[]; reviewer: string | null },
     actor: string
   ) => void;
+  onUpdateAssetNotes: (assetId: string, artistNotes: string, actor: string) => void;
   onSetAssignees: (assetId: string, assignees: string[], actor: string) => void;
   onCreateAsset: (
     input: {
@@ -140,6 +150,7 @@ export function AssetsView({
   shortcutBindings: ShortcutBindings;
   onExportAsset: (assetId: string) => void;
   onOpenInBlender: (assetId: string) => void;
+  onOpenContentPath: (relativePath: string) => void;
   problems: BlendUpProblem[];
   query: string;
   role: Role;
@@ -233,9 +244,17 @@ export function AssetsView({
       return left.displayName.localeCompare(right.displayName);
     });
   }, [currentPath, favoriteAssetIds, filteredAssets, folderFilter, quickFilter, role, sortMode]);
+  const knownFolderPaths = useMemo(
+    () => mergeKnownFolders(snapshot.assetFolders, filteredAssets, defaultExplorerPath),
+    [defaultExplorerPath, filteredAssets, snapshot.assetFolders]
+  );
   const childFolders = useMemo(
-    () => foldersForPath(filteredAssets, currentPath),
-    [currentPath, filteredAssets]
+    () => foldersForPath(filteredAssets, knownFolderPaths, currentPath),
+    [currentPath, filteredAssets, knownFolderPaths]
+  );
+  const generalFolders = useMemo(
+    () => foldersForPath(filteredAssets, knownFolderPaths, defaultExplorerPath),
+    [defaultExplorerPath, filteredAssets, knownFolderPaths]
   );
   const currentFolderLabel = currentPath || "Assets";
   const favoriteAssets = filteredAssets.filter((asset) => favoriteAssetIds.includes(asset.id));
@@ -356,10 +375,12 @@ export function AssetsView({
   return (
     <section className={`assets-page role-page assets-page--${role}`} aria-label="Assets">
       <div className="asset-library-header">
-        <div>
-          <span className="eyebrow">{role === "artist" ? "Bibliotheque artiste" : "Inventaire technique"}</span>
-          <h2>{role === "artist" ? "Assets" : "Assets projet"}</h2>
-        </div>
+        {role === "artist" ? null : (
+          <div>
+            <span className="eyebrow">Inventaire technique</span>
+            <h2>Assets projet</h2>
+          </div>
+        )}
         <label className="search-box">
           <Search size={16} />
           <input
@@ -383,6 +404,8 @@ export function AssetsView({
                       className={quickFilter === "all" && currentPath === folder.path ? "active" : ""}
                       key={folder.path}
                       onClick={() => openFolder(folder.path)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => handleDropOnFolder(folder.path)}
                       title={folder.path}
                       type="button"
                     >
@@ -392,6 +415,37 @@ export function AssetsView({
                   ))}
                 </div>
               ) : null}
+
+              <div className="asset-shortcut-group">
+                <span className="eyebrow">General</span>
+                <button
+                  className={quickFilter === "all" && currentPath === defaultExplorerPath ? "active" : ""}
+                  onClick={() => openFolder(defaultExplorerPath)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => handleDropOnFolder(defaultExplorerPath)}
+                  title={defaultExplorerPath}
+                  type="button"
+                >
+                  <Folder size={16} />
+                  <span>Blender</span>
+                  <strong>{filteredAssets.length}</strong>
+                </button>
+                {generalFolders.map((folder) => (
+                  <button
+                    className={quickFilter === "all" && currentPath === folder.path ? "active" : ""}
+                    key={folder.path}
+                    onClick={() => openFolder(folder.path)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => handleDropOnFolder(folder.path)}
+                    title={folder.path}
+                    type="button"
+                  >
+                    <Folder size={16} />
+                    <span>{folder.name}</span>
+                    <strong>{folder.assetCount}</strong>
+                  </button>
+                ))}
+              </div>
 
               <div className="asset-shortcut-group">
                 <span className="eyebrow">Etat</span>
@@ -428,7 +482,7 @@ export function AssetsView({
                 </button>
                 {favoriteAssets.slice(0, 5).map((asset) => (
                   <button key={asset.id} onClick={() => setSelectedAssetId(asset.id)} type="button">
-                    <AssetVisual asset={asset} small />
+                    <AssetVisual asset={asset} projectRoot={snapshot.projectRoot} small />
                     <span>{assetLabel(asset.displayName)}</span>
                   </button>
                 ))}
@@ -533,6 +587,7 @@ export function AssetsView({
                   onSelect={() => setSelectedAssetId(asset.id)}
                   onToggleFavorite={() => toggleFavorite(asset.id)}
                   problemCount={problems.filter((problem) => problem.assetId === asset.id).length}
+                  projectRoot={snapshot.projectRoot}
                 />
               ))}
             </section>
@@ -707,7 +762,7 @@ export function AssetsView({
             isFavorite={favoriteAssetIds.includes(selectedAsset.id)}
             members={members}
             onAssignOwners={(owners) => onSetAssetOwners(selectedAsset.id, owners, actorName)}
-            onSetAssignees={(assignees) => onSetAssignees(selectedAsset.id, assignees, actorName)}
+            onUpdateArtistNotes={(notes) => onUpdateAssetNotes(selectedAsset.id, notes, actorName)}
             onChangeStatus={(status) =>
               onChangeAssetStatus(
                 selectedAsset.id,
@@ -719,9 +774,13 @@ export function AssetsView({
             onClose={() => setSelectedAssetId("")}
             onDelete={() => onDeleteAsset(selectedAsset.id, actorName)}
             onOpenInBlender={() => handleOpenInBlender(selectedAsset.id)}
+            onOpenContentPath={onOpenContentPath}
             onRename={() => setRenameTarget({ assetId: selectedAsset.id, currentName: selectedAsset.displayName })}
             onToggleFavorite={() => toggleFavorite(selectedAsset.id)}
             problems={selectedProblems}
+            activity={snapshot.activity.filter((event) => event.assetId === selectedAsset.id)}
+            currentBranch={snapshot.gitStatus.branch}
+            projectRoot={snapshot.projectRoot}
           />
         </div>
       ) : null}
@@ -738,7 +797,8 @@ function ArtistAssetCard({
   onDragStart,
   onSelect,
   onToggleFavorite,
-  problemCount
+  problemCount,
+  projectRoot
 }: {
   asset: BlendUpAsset;
   displayMode: AssetDisplayMode;
@@ -749,8 +809,9 @@ function ArtistAssetCard({
   onSelect: () => void;
   onToggleFavorite: () => void;
   problemCount: number;
+  projectRoot?: string;
 }) {
-  const assignees = asset.assignees ?? [];
+  const people = assetPeople(asset);
 
   return (
     <article
@@ -763,13 +824,13 @@ function ArtistAssetCard({
         <Star fill={isFavorite ? "currentColor" : "none"} size={16} />
       </button>
       <button className="artist-asset-card-main" onClick={onSelect} type="button">
-        <AssetVisual asset={asset} />
+        <AssetVisual asset={asset} projectRoot={projectRoot} />
         <span className="asset-folder-label">{assetDirectory(asset)}</span>
         <strong>{assetLabel(asset.displayName)}</strong>
         <small>{formatAssetType(asset.type)}</small>
         <div className="asset-card-footer">
           <StatusPill label={formatStatus(normalizeArtistStatus(asset.status))} tone="blue" />
-          <AssetAvatars names={assignees} small />
+          <AssetAvatars names={people} small />
           {problemCount > 0 ? <span className="mini-warning">{problemCount}</span> : null}
         </div>
       </button>
@@ -848,57 +909,110 @@ function AssetProblems({
 
 function ArtistAssetDetail({
   activeMember,
+  activity,
   asset,
   capabilities,
+  currentBranch,
   isFavorite,
   members,
   onAssignOwners,
-  onSetAssignees,
+  onUpdateArtistNotes,
   onChangeStatus,
   onClose,
   onDelete,
   onOpenInBlender,
+  onOpenContentPath,
   onRename,
   onToggleFavorite,
-  problems
+  problems,
+  projectRoot
 }: {
   activeMember?: TeamMember;
+  activity: BlendUpActivityEvent[];
   asset: BlendUpAsset;
   capabilities: RoleCapabilities;
+  currentBranch?: string;
   isFavorite: boolean;
   members: TeamMember[];
-  onAssignOwners: (owners: { artist: string | null; developer: string | null; reviewer: string | null }) => void;
-  onSetAssignees: (assignees: string[]) => void;
+  onAssignOwners: (owners: { artist: string[]; developer: string[]; reviewer: string | null }) => void;
+  onUpdateArtistNotes: (notes: string) => void;
   onChangeStatus: (status: AssetStatus) => void;
   onClose: () => void;
   onDelete: () => void;
   onOpenInBlender: () => void;
+  onOpenContentPath: (relativePath: string) => void;
   onRename: () => void;
   onToggleFavorite: () => void;
   problems: BlendUpProblem[];
+  projectRoot?: string;
 }) {
+  const [detailMode, setDetailMode] = useState<"info" | "history">("info");
+  const [artistNotesDraft, setArtistNotesDraft] = useState(asset.notes.artist);
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>("all");
+  const [historyActorFilter, setHistoryActorFilter] = useState("all");
+  const [historyBranchFilter, setHistoryBranchFilter] = useState("all");
   const exported = asset.export.lastExportStatus === "success";
-  const assignees = asset.assignees ?? [];
+  const artistOwners = ownerNames(asset.owners.artist);
+  const developerOwners = ownerNames(asset.owners.developer);
   const artistStatus = normalizeArtistStatus(asset.status);
   const isArtDirector = activeMember?.roles.includes("art_director") ?? false;
   const isValidated = artistStatus === "validated";
   const canEditStatus =
     (isArtDirector || isAssociatedMember(activeMember, asset)) && (!isValidated || isArtDirector);
 
-  const changeOwner = (slot: "artist" | "developer" | "reviewer", value: string) => {
-    const next = {
-      artist: asset.owners.artist,
-      developer: asset.owners.developer,
+  const changeOwnerList = (slot: "artist" | "developer", values: string[]) => {
+    onAssignOwners({
+      artist: slot === "artist" ? values : artistOwners,
+      developer: slot === "developer" ? values : developerOwners,
       reviewer: asset.owners.reviewer
-    };
-    next[slot] = value ? value : null;
-    onAssignOwners(next);
+    });
+  };
+
+  const changeReviewer = (value: string) => {
+    onAssignOwners({
+      artist: artistOwners,
+      developer: developerOwners,
+      reviewer: value ? value : null
+    });
   };
 
   const artistMembers = members.filter(
     (member) => member.roles.includes("artist") || member.roles.includes("art_director")
   );
   const devMembers = members.filter((member) => member.roles.includes("developer"));
+  const historyEntries = useMemo(
+    () => buildAssetHistory(asset, activity, currentBranch),
+    [activity, asset, currentBranch]
+  );
+  const historyActors = useMemo(
+    () => Array.from(new Set(historyEntries.map((entry) => entry.actor))).sort((left, right) => left.localeCompare(right)),
+    [historyEntries]
+  );
+  const historyBranches = useMemo(
+    () => Array.from(new Set(historyEntries.map((entry) => entry.branch))).sort((left, right) => left.localeCompare(right)),
+    [historyEntries]
+  );
+  const filteredHistoryEntries = historyEntries.filter((entry) => {
+    const matchesType = historyTypeFilter === "all" || historyCategory(entry.type) === historyTypeFilter;
+    const matchesActor = historyActorFilter === "all" || entry.actor === historyActorFilter;
+    const matchesBranch = historyBranchFilter === "all" || entry.branch === historyBranchFilter;
+
+    return matchesType && matchesActor && matchesBranch;
+  });
+
+  useEffect(() => {
+    setArtistNotesDraft(asset.notes.artist);
+    setDetailMode("info");
+    setHistoryTypeFilter("all");
+    setHistoryActorFilter("all");
+    setHistoryBranchFilter("all");
+  }, [asset.id, asset.notes.artist]);
+
+  const saveArtistNotes = () => {
+    if (artistNotesDraft !== asset.notes.artist) {
+      onUpdateArtistNotes(artistNotesDraft);
+    }
+  };
 
   return (
     <aside
@@ -912,7 +1026,7 @@ function ArtistAssetDetail({
 
       <div className="detail-header">
         <div className="detail-thumbnail large">
-          <AssetVisual asset={asset} />
+          <AssetVisual asset={asset} projectRoot={projectRoot} />
         </div>
         <div>
           <span className="role-badge">{capabilities.orientationLabel}</span>
@@ -939,33 +1053,39 @@ function ArtistAssetDetail({
                   : "Statut modifiable par les personnes associees a l'asset."}
           </p>
         </div>
-        <div className="asset-status-actions" aria-label="Changer le statut artiste">
-          {artistStatuses.map((option) => {
-            const disabled =
-              option.status === artistStatus ||
-              !canEditStatus ||
-              (option.status === "validated" && !isArtDirector);
-
-            return (
-              <button
-                className={option.status === artistStatus ? "active" : ""}
-                disabled={disabled}
+        <label className="asset-status-select">
+          <span className={`status-dot status-${artistStatus}`} />
+          <select
+            aria-label="Changer le statut artiste"
+            disabled={!canEditStatus}
+            onChange={(event) => onChangeStatus(event.target.value as AssetStatus)}
+            value={artistStatus}
+          >
+            {artistStatuses.map((option) => (
+              <option
+                disabled={option.status === "validated" && !isArtDirector}
                 key={option.status}
-                onClick={() => onChangeStatus(option.status)}
-                type="button"
+                value={option.status}
               >
-                {option.status === artistStatus ? <Check size={14} /> : null}
                 {option.label}
-              </button>
-            );
-          })}
-        </div>
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <div className="asset-action-bar">
         <button disabled={!asset.paths.blenderSource} onClick={onOpenInBlender} type="button">
           <ExternalLink size={16} />
           Ouvrir dans Blender
+        </button>
+        <button
+          className={detailMode === "history" ? "secondary active" : "secondary"}
+          onClick={() => setDetailMode((current) => (current === "history" ? "info" : "history"))}
+          type="button"
+        >
+          <History size={16} />
+          Historique
         </button>
         <button className="secondary" onClick={onToggleFavorite} type="button">
           <Star fill={isFavorite ? "currentColor" : "none"} size={16} />
@@ -981,123 +1101,384 @@ function ArtistAssetDetail({
         </button>
       </div>
 
-      <div className="detail-sections airy">
-        <section className="section-block">
-          <h3>Equipe assignee</h3>
-          <div className="assignee-editor">
-            <AssetAvatars names={assignees} max={8} />
-            <div className="assignee-toggle-list">
-              {members.map((member) => {
-                const active = assignees.includes(member.name);
-                return (
-                  <button
-                    className={active ? "assignee-chip active" : "assignee-chip"}
-                    key={member.id}
-                    onClick={() =>
-                      onSetAssignees(
-                        active
-                          ? assignees.filter((name) => name !== member.name)
-                          : [...assignees, member.name]
-                      )
-                    }
-                    type="button"
-                  >
-                    <span className="avatar tiny" style={{ background: memberColor(member.name) }}>
-                      {memberInitials(member.name)}
-                    </span>
-                    {member.name}
-                    {active ? <Check size={13} /> : null}
-                  </button>
-                );
-              })}
-            </div>
+      {detailMode === "history" ? (
+        <section className="section-block asset-history-panel">
+          <div className="section-heading-row">
+            <h3>Historique complet</h3>
+            <span className="soft-text">{filteredHistoryEntries.length} / {historyEntries.length} evenement(s)</span>
           </div>
-          <div className="owner-assign-grid">
+          <div className="history-filter-bar" aria-label="Filtres historique">
             <label>
-              <span><UserRound size={14} /> Artiste</span>
-              <select value={asset.owners.artist ?? ""} onChange={(event) => changeOwner("artist", event.target.value)}>
-                <option value="">Non assigne</option>
-                {artistMembers.map((member) => (
-                  <option key={member.id} value={member.name}>
-                    {member.name}
+              <span>Type</span>
+              <select value={historyTypeFilter} onChange={(event) => setHistoryTypeFilter(event.target.value as HistoryTypeFilter)}>
+                <option value="all">Tous</option>
+                <option value="status">Etat</option>
+                <option value="team">Equipe</option>
+                <option value="notes">Notes</option>
+                <option value="files">Fichiers</option>
+                <option value="export">Export</option>
+                <option value="other">Autres</option>
+              </select>
+            </label>
+            <label>
+              <span>Personne</span>
+              <select value={historyActorFilter} onChange={(event) => setHistoryActorFilter(event.target.value)}>
+                <option value="all">Toutes</option>
+                {historyActors.map((actor) => (
+                  <option key={actor} value={actor}>
+                    {actor}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              <span><UserRound size={14} /> Dev</span>
-              <select
-                value={asset.owners.developer ?? ""}
-                onChange={(event) => changeOwner("developer", event.target.value)}
+              <span>Branche</span>
+              <select value={historyBranchFilter} onChange={(event) => setHistoryBranchFilter(event.target.value)}>
+                <option value="all">Toutes</option>
+                {historyBranches.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="asset-timeline">
+            {filteredHistoryEntries.length > 0 ? (
+              filteredHistoryEntries.map((entry) => (
+                <article className="timeline-entry" key={`${entry.time}-${entry.type}-${entry.message}`}>
+                  <span className="timeline-dot" />
+                  <div>
+                    <strong>{entry.title}</strong>
+                    <p>{entry.message}</p>
+                    <div className="timeline-meta">
+                      <span>{entry.actor}</span>
+                      <span>{formatDateTime(entry.time)}</span>
+                      <span>{entry.branch}</span>
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <EmptyState icon={<History size={24} />} label="Aucun evenement avec ces filtres" />
+            )}
+          </div>
+        </section>
+      ) : (
+        <div className="detail-sections airy artist-detail-grid">
+          <section className="section-block">
+            <h3>Equipe</h3>
+            <div className="owner-assign-grid">
+              <OwnerMultiSelect
+                label="Artiste"
+                members={artistMembers}
+                onChange={(values) => changeOwnerList("artist", values)}
+                values={artistOwners}
+              />
+              <OwnerMultiSelect
+                label="Dev"
+                members={devMembers}
+                onChange={(values) => changeOwnerList("developer", values)}
+                values={developerOwners}
+              />
+              <label>
+                <span><UserRound size={14} /> Reviewer</span>
+                <select
+                  value={asset.owners.reviewer ?? ""}
+                  onChange={(event) => changeReviewer(event.target.value)}
+                >
+                  <option value="">Non assigne</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.name}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
+          <section className="section-block">
+            <h3>Notes artiste</h3>
+            <textarea
+              className="artist-notes-editor"
+              onBlur={saveArtistNotes}
+              onChange={(event) => setArtistNotesDraft(event.target.value)}
+              placeholder="Ajouter une note artiste"
+              rows={6}
+              value={artistNotesDraft}
+            />
+            <div className="notes-actions">
+              <button
+                className="secondary"
+                disabled={artistNotesDraft === asset.notes.artist}
+                onClick={saveArtistNotes}
+                type="button"
               >
-                <option value="">Non assigne</option>
-                {devMembers.map((member) => (
-                  <option key={member.id} value={member.name}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span><UserRound size={14} /> Reviewer</span>
-              <select
-                value={asset.owners.reviewer ?? ""}
-                onChange={(event) => changeOwner("reviewer", event.target.value)}
-              >
-                <option value="">Non assigne</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.name}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </section>
-        <section className="section-block">
-          <h3>Notes artiste</h3>
-          <p className="soft-text">{asset.notes.artist || "Aucune note artiste."}</p>
-        </section>
-        <section className="section-block">
-          <h3>Contenu de l'asset</h3>
-          <PathLine label="Dossier" value={asset.paths.assetFolder} />
-          <PathLine label="References" value={asset.paths.referencesDir} />
-          <PathLine label="Textures" value={asset.paths.texturesDir} />
-        </section>
-        <section className="section-block">
-          <h3>Historique</h3>
-          <div className="history-list">
-            <div>
-              <History size={15} />
-              <span>Derniere modification</span>
-              <strong>{asset.updatedAt}</strong>
+                Enregistrer
+              </button>
             </div>
-            <div>
-              <History size={15} />
-              <span>Dernier export</span>
-              <strong>{asset.export.lastExportAt ?? "Jamais"}</strong>
-            </div>
-          </div>
-        </section>
-        <details className="detail-disclosure">
-          <summary>Details fichier</summary>
-          <PathLine label="Blender" value={asset.paths.blenderSource} />
-          <PathLine label="FBX" value={asset.paths.fbxExport} />
-        </details>
-        <section className="section-block">
-          <h3>A corriger</h3>
-          <AssetProblems
-            asset={asset}
-            capabilities={capabilities}
-            isExporting={false}
-            onExportAsset={() => undefined}
-            problems={problems}
-            showActions={false}
-          />
-        </section>
-      </div>
+          </section>
+          <section className="section-block">
+            <h3>Contenu de l'asset</h3>
+            <AssetContentLinks asset={asset} onOpenContentPath={onOpenContentPath} />
+          </section>
+          <section className="section-block">
+            <h3>Checklist asset</h3>
+            <AssetChecklist asset={asset} problems={problems} />
+          </section>
+          <details className="detail-disclosure">
+            <summary>Details fichier</summary>
+            <PathLine label="Blender" value={asset.paths.blenderSource} />
+            <PathLine label="FBX" value={asset.paths.fbxExport} />
+          </details>
+          <section className="section-block artist-problems-section">
+            <h3>A corriger</h3>
+            <AssetProblems
+              asset={asset}
+              capabilities={capabilities}
+              isExporting={false}
+              onExportAsset={() => undefined}
+              problems={problems}
+              showActions={false}
+            />
+          </section>
+        </div>
+      )}
     </aside>
   );
+}
+
+function AssetContentLinks({
+  asset,
+  onOpenContentPath
+}: {
+  asset: BlendUpAsset;
+  onOpenContentPath: (relativePath: string) => void;
+}) {
+  const links = [
+    { label: "Dossier", name: baseName(asset.paths.assetFolder) || assetLabel(asset.displayName), path: asset.paths.assetFolder },
+    { label: "References", name: "references", path: asset.paths.referencesDir },
+    { label: "Textures", name: "textures", path: asset.paths.texturesDir }
+  ].filter((link): link is { label: string; name: string; path: string } => Boolean(link.path));
+
+  if (links.length === 0) {
+    return <p className="soft-text">Aucun contenu lie pour cet asset.</p>;
+  }
+
+  return (
+    <div className="asset-content-links">
+      {links.map((link) => (
+        <button key={link.label} onClick={() => onOpenContentPath(link.path)} title={link.path} type="button">
+          <FolderOpen size={16} />
+          <span>{link.label}</span>
+          <strong>{link.name}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AssetChecklist({ asset, problems }: { asset: BlendUpAsset; problems: BlendUpProblem[] }) {
+  const checks = [
+    {
+      label: "Source Blender",
+      detail: asset.paths.blenderSource ?? "Aucun fichier .blend lie",
+      done: Boolean(asset.paths.blenderSource)
+    },
+    {
+      label: "Dossier asset",
+      detail: asset.paths.assetFolder ?? "Dossier asset non defini",
+      done: Boolean(asset.paths.assetFolder)
+    },
+    {
+      label: "References",
+      detail: asset.paths.referencesDir ?? "Dossier references non defini",
+      done: Boolean(asset.paths.referencesDir)
+    },
+    {
+      label: "Textures",
+      detail: asset.paths.texturesDir ?? "Dossier textures non defini",
+      done: Boolean(asset.paths.texturesDir)
+    },
+    {
+      label: "Equipe artiste",
+      detail: ownerNames(asset.owners.artist).join(", ") || "Aucun artiste",
+      done: ownerNames(asset.owners.artist).length > 0
+    },
+    {
+      label: "Export FBX",
+      detail: formatExportStatus(asset.export.lastExportStatus),
+      done: asset.export.lastExportStatus === "success"
+    },
+    {
+      label: "Problemes",
+      detail: problems.length === 0 ? "Aucun probleme" : `${problems.length} point(s) a verifier`,
+      done: problems.length === 0
+    }
+  ];
+
+  return (
+    <div className="asset-checklist">
+      {checks.map((check) => (
+        <div className={check.done ? "done" : ""} key={check.label}>
+          {check.done ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+          <span>
+            <strong>{check.label}</strong>
+            <small>{check.detail}</small>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OwnerMultiSelect({
+  label,
+  members,
+  onChange,
+  values
+}: {
+  label: string;
+  members: TeamMember[];
+  onChange: (values: string[]) => void;
+  values: string[];
+}) {
+  return (
+    <label className="owner-multi-select">
+      <span><UserRound size={14} /> {label}</span>
+      <select
+        multiple
+        onChange={(event) =>
+          onChange(Array.from(event.currentTarget.selectedOptions).map((option) => option.value))
+        }
+        size={Math.min(Math.max(members.length, 2), 5)}
+        value={values}
+      >
+        {members.map((member) => (
+          <option key={member.id} value={member.name}>
+            {member.name}
+          </option>
+        ))}
+      </select>
+      <small>{values.length > 0 ? values.join(", ") : "Non assigne"}</small>
+    </label>
+  );
+}
+
+interface AssetHistoryEntry {
+  actor: string;
+  branch: string;
+  message: string;
+  time: string;
+  title: string;
+  type: string;
+}
+
+function buildAssetHistory(
+  asset: BlendUpAsset,
+  activity: BlendUpActivityEvent[],
+  currentBranch?: string
+): AssetHistoryEntry[] {
+  const branch = currentBranch ?? "Branche inconnue";
+  const entries = activity.map((event) => ({
+    actor: event.actor || "BlendUp",
+    branch: event.branch ?? branch,
+    message: event.message || activityTitle(event.type),
+    time: event.time,
+    title: activityTitle(event.type),
+    type: event.type
+  }));
+
+  entries.push({
+    actor: "BlendUp",
+    branch,
+    message: `${assetLabel(asset.displayName)} cree`,
+    time: asset.createdAt,
+    title: "Creation",
+    type: "asset.created"
+  });
+
+  if (asset.updatedAt !== asset.createdAt) {
+    entries.push({
+      actor: "BlendUp",
+      branch,
+      message: "Fiche asset mise a jour",
+      time: asset.updatedAt,
+      title: "Derniere modification",
+      type: "asset.updated"
+    });
+  }
+
+  if (asset.export.lastExportAt) {
+    entries.push({
+      actor: "Blender",
+      branch,
+      message: `Export FBX: ${formatExportStatus(asset.export.lastExportStatus)}`,
+      time: asset.export.lastExportAt,
+      title: "Export",
+      type: "asset.exported"
+    });
+  }
+
+  return entries.sort((left, right) => Date.parse(right.time) - Date.parse(left.time));
+}
+
+function activityTitle(type: string) {
+  const labels: Record<string, string> = {
+    "asset.assignees_changed": "Assignation",
+    "asset.created": "Creation",
+    "asset.deleted": "Suppression",
+    "asset.files_added": "Fichiers ajoutes",
+    "asset.moved": "Deplacement",
+    "asset.notes_changed": "Notes",
+    "asset.owners_changed": "Equipe",
+    "asset.renamed": "Renommage",
+    "asset.status_changed": "Etat",
+    "asset.thumbnail_updated": "Visuel"
+  };
+
+  return labels[type] ?? type.replaceAll(".", " ");
+}
+
+function historyCategory(type: string): HistoryTypeFilter {
+  if (type.includes("status")) {
+    return "status";
+  }
+
+  if (type.includes("assignees") || type.includes("owners")) {
+    return "team";
+  }
+
+  if (type.includes("notes")) {
+    return "notes";
+  }
+
+  if (type.includes("files") || type.includes("moved") || type.includes("renamed") || type.includes("thumbnail")) {
+    return "files";
+  }
+
+  if (type.includes("export")) {
+    return "export";
+  }
+
+  return "other";
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(date);
+}
+
+function baseName(path: string | undefined) {
+  return normalizeFolderPath(path).split("/").filter(Boolean).pop() ?? "";
 }
 
 function AssetContextMenu({
@@ -1626,10 +2007,18 @@ function AssetAvatars({ names, max = 4, small = false }: { names: string[]; max?
   );
 }
 
-function AssetVisual({ asset, small = false }: { asset: BlendUpAsset; small?: boolean }) {
-  const thumbnail = asset.paths.thumbnail;
+function AssetVisual({
+  asset,
+  projectRoot,
+  small = false
+}: {
+  asset: BlendUpAsset;
+  projectRoot?: string;
+  small?: boolean;
+}) {
+  const thumbnail = resolveThumbnailSrc(asset.paths.thumbnail, projectRoot);
 
-  if (thumbnail && isRenderableThumbnail(thumbnail)) {
+  if (thumbnail) {
     return (
       <span className={`asset-visual ${small ? "small" : ""}`}>
         <img alt="" src={thumbnail} />
@@ -1642,6 +2031,33 @@ function AssetVisual({ asset, small = false }: { asset: BlendUpAsset; small?: bo
       {asset.type === "texture" || asset.type === "ui_image" ? <ImageIcon size={small ? 14 : 28} /> : <Boxes size={small ? 14 : 28} />}
     </span>
   );
+}
+
+function resolveThumbnailSrc(path: string | undefined, projectRoot: string | undefined) {
+  if (!path) {
+    return "";
+  }
+
+  if (isRenderableThumbnail(path)) {
+    return path;
+  }
+
+  const normalizedPath = normalizeFolderPath(path);
+  const absolutePath = path.match(/^[a-zA-Z]:[\\/]/)
+    ? path
+    : projectRoot
+      ? `${projectRoot.replaceAll("\\", "/")}/${normalizedPath}`
+      : "";
+
+  if (!absolutePath) {
+    return "";
+  }
+
+  try {
+    return convertFileSrc(absolutePath);
+  } catch {
+    return "";
+  }
 }
 
 function breadcrumbParts(path: string) {
@@ -1657,9 +2073,57 @@ function breadcrumbParts(path: string) {
   return crumbs;
 }
 
-function foldersForPath(assets: BlendUpAsset[], path: string) {
+function mergeKnownFolders(assetFolders: string[], assets: BlendUpAsset[], defaultExplorerPath: string) {
+  const folders = new Set<string>();
+
+  folders.add(normalizeFolderPath(defaultExplorerPath));
+
+  for (const folder of assetFolders) {
+    const normalized = normalizeFolderPath(folder);
+    if (normalized) {
+      folders.add(normalized);
+    }
+  }
+
+  for (const asset of assets) {
+    const directory = assetDirectory(asset);
+    if (directory) {
+      folders.add(directory);
+    }
+
+    const assetFolderPath = normalizeFolderPath(asset.paths.assetFolder);
+    if (assetFolderPath) {
+      folders.add(assetFolderPath);
+    }
+  }
+
+  return Array.from(folders).sort((left, right) => left.localeCompare(right));
+}
+
+function foldersForPath(assets: BlendUpAsset[], folderPaths: string[], path: string) {
   const normalizedPath = normalizeFolderPath(path);
   const folders = new Map<string, { name: string; path: string; assetCount: number }>();
+
+  for (const directory of folderPaths) {
+    const isInCurrentBranch =
+      normalizedPath === "" || directory === normalizedPath || directory.startsWith(`${normalizedPath}/`);
+
+    if (!isInCurrentBranch || directory === normalizedPath) {
+      continue;
+    }
+
+    const relative = normalizedPath === "" ? directory : directory.slice(normalizedPath.length + 1);
+    const childName = relative.split("/").filter(Boolean)[0];
+
+    if (!childName) {
+      continue;
+    }
+
+    const childPath = normalizedPath ? `${normalizedPath}/${childName}` : childName;
+    if (!folders.has(childPath)) {
+      folders.set(childPath, { name: childName, path: childPath, assetCount: 0 });
+    }
+  }
 
   for (const asset of assets) {
     const directory = assetDirectory(asset);
@@ -1714,7 +2178,9 @@ function filterArtistAssets(
 
   const normalizedPath = normalizeFolderPath(currentPath);
 
-  return assets.filter((asset) => assetDirectory(asset) === normalizedPath);
+  return assets.filter(
+    (asset) => assetDirectory(asset) === normalizedPath || normalizeFolderPath(asset.paths.assetFolder) === normalizedPath
+  );
 }
 
 function assetDirectory(asset: BlendUpAsset) {
@@ -1759,13 +2225,31 @@ function isAssociatedMember(member: TeamMember | undefined, asset: BlendUpAsset)
     return false;
   }
 
-  const owners = [asset.owners.artist, asset.owners.developer, asset.owners.reviewer].filter(Boolean);
+  const owners = assetPeople(asset);
 
   if (owners.length === 0) {
     return member.roles.includes("artist") || member.roles.includes("art_director");
   }
 
   return owners.includes(member.name);
+}
+
+function ownerNames(value: string | string[] | null | undefined): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  return value ? [value] : [];
+}
+
+function assetPeople(asset: BlendUpAsset): string[] {
+  return Array.from(
+    new Set([
+      ...ownerNames(asset.owners.artist),
+      ...ownerNames(asset.owners.developer),
+      ...ownerNames(asset.owners.reviewer)
+    ])
+  );
 }
 
 function getActiveMember(projectId: string) {

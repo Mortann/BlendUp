@@ -82,11 +82,13 @@ function App() {
           onMoveFolder={app.handleMoveFolder}
           onDeleteAsset={app.handleDeleteAsset}
           onSetAssetOwners={app.handleSetAssetOwners}
+          onUpdateAssetNotes={app.handleUpdateAssetNotes}
           onSetAssignees={app.handleSetAssignees}
           onCreateAsset={app.handleCreateAsset}
           onCreateFolder={app.handleCreateFolder}
           shortcutBindings={app.shortcutBindings}
           onOpenInBlender={app.openAssetInBlender}
+          onOpenContentPath={app.openProjectContentPath}
           problems={app.project.problems}
           query={app.query}
           role={app.role}

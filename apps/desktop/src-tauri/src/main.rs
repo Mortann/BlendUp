@@ -40,9 +40,11 @@ main()
 struct ProjectSnapshot {
     project_root: String,
     project: Value,
+    asset_folders: Vec<String>,
     assets: Vec<Value>,
     tasks: Vec<Value>,
     git_status: GitStatusSnapshot,
+    activity: Vec<Value>,
     problems: Vec<BlendUpProblem>,
 }
 
@@ -221,9 +223,11 @@ fn read_default_project_snapshot() -> Result<ProjectSnapshot, String> {
 fn read_project_snapshot(project_root: String) -> Result<ProjectSnapshot, String> {
     let project_root = PathBuf::from(project_root);
     let project = read_json_file(&project_root.join(".blendup").join("project.json"))?;
+    let asset_folders = read_asset_folders(&project_root, &project);
     let (mut assets, mut problems) = read_assets(&project_root);
     let (mut tasks, task_problems) = read_tasks(&project_root);
     let git_status = read_git_status(&project_root);
+    let activity = read_activity(&project_root);
 
     problems.extend(task_problems);
 
@@ -254,9 +258,11 @@ fn read_project_snapshot(project_root: String) -> Result<ProjectSnapshot, String
     Ok(ProjectSnapshot {
         project_root: project_root.to_string_lossy().to_string(),
         project,
+        asset_folders,
         assets,
         tasks,
         git_status,
+        activity,
         problems,
     })
 }
@@ -673,6 +679,50 @@ fn read_assets(project_root: &Path) -> (Vec<Value>, Vec<BlendUpProblem>) {
     (assets, problems)
 }
 
+fn read_asset_folders(project_root: &Path, project: &Value) -> Vec<String> {
+    let blender_root = json_string(project, &["paths", "blenderRoot"]).unwrap_or("Art/Blender");
+    let root_rel = norm_rel(blender_root);
+    let root_abs = rel_to_abs(project_root, &root_rel);
+    let mut folders = Vec::new();
+
+    fn visit(project_root: &Path, directory: &Path, depth: usize, folders: &mut Vec<String>) {
+        if depth > 5 {
+            return;
+        }
+
+        let Ok(entries) = fs::read_dir(directory) else {
+            return;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let relative = path
+                .strip_prefix(project_root)
+                .map(|value| norm_rel(&value.to_string_lossy()))
+                .unwrap_or_default();
+
+            if !relative.is_empty() {
+                folders.push(relative);
+            }
+
+            visit(project_root, &path, depth + 1, folders);
+        }
+    }
+
+    if root_abs.is_dir() {
+        folders.push(root_rel);
+        visit(project_root, &root_abs, 0, &mut folders);
+    }
+
+    folders.sort();
+    folders.dedup();
+    folders
+}
+
 fn read_tasks(project_root: &Path) -> (Vec<Value>, Vec<BlendUpProblem>) {
     let tasks_dir = project_root.join(".blendup").join("tasks");
     let mut tasks = Vec::new();
@@ -937,6 +987,28 @@ fn write_text_file(path: &Path, content: &str) -> Result<(), String> {
 
     fs::write(path, content)
         .map_err(|error| format!("Impossible d'ecrire {}: {error}", path.display()))
+}
+
+fn read_activity(project_root: &Path) -> Vec<Value> {
+    let path = project_root
+        .join(".blendup")
+        .join("logs")
+        .join("activity.jsonl");
+    let Ok(content) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+
+    content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                serde_json::from_str::<Value>(trimmed).ok()
+            }
+        })
+        .collect()
 }
 
 fn append_activity(project_root: &Path, entry: Value) -> Result<(), String> {
@@ -1983,8 +2055,8 @@ fn delete_asset(
 fn set_asset_owners(
     project_root: String,
     asset_id: String,
-    artist: Option<String>,
-    developer: Option<String>,
+    artist: Vec<String>,
+    developer: Vec<String>,
     reviewer: Option<String>,
     actor: String,
     updated_at: String,
@@ -1993,18 +2065,26 @@ fn set_asset_owners(
     let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
     let display_name = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
 
-    let to_value = |value: Option<String>| match value.and_then(|inner| non_empty_string(&inner)) {
+    let to_single_value = |value: Option<String>| match value.and_then(|inner| non_empty_string(&inner)) {
         Some(name) => Value::String(name),
         None => Value::Null,
+    };
+    let to_list_value = |values: Vec<String>| {
+        Value::Array(
+            values
+                .iter()
+                .filter_map(|value| non_empty_string(value).map(Value::String))
+                .collect(),
+        )
     };
 
     if asset.get("owners").and_then(Value::as_object).is_none() {
         asset["owners"] = json!({});
     }
     if let Some(owners) = asset.get_mut("owners").and_then(Value::as_object_mut) {
-        owners.insert("artist".to_string(), to_value(artist));
-        owners.insert("developer".to_string(), to_value(developer));
-        owners.insert("reviewer".to_string(), to_value(reviewer));
+        owners.insert("artist".to_string(), to_list_value(artist));
+        owners.insert("developer".to_string(), to_list_value(developer));
+        owners.insert("reviewer".to_string(), to_single_value(reviewer));
     }
 
     asset["updatedAt"] = Value::String(updated_at.clone());
@@ -2017,6 +2097,41 @@ fn set_asset_owners(
             "type": "asset.owners_changed",
             "assetId": asset_id,
             "message": format!("Assignation mise a jour pour {display_name}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn update_asset_notes(
+    project_root: String,
+    asset_id: String,
+    artist_notes: String,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let display_name = json_string(&asset, &["displayName"]).unwrap_or(&asset_id).to_string();
+
+    if asset.get("notes").and_then(Value::as_object).is_none() {
+        asset["notes"] = json!({});
+    }
+    if let Some(notes) = asset.get_mut("notes").and_then(Value::as_object_mut) {
+        notes.insert("artist".to_string(), Value::String(artist_notes));
+    }
+
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.notes_changed",
+            "assetId": asset_id,
+            "message": format!("Notes artiste mises a jour pour {display_name}")
         }),
     )?;
 
@@ -2315,6 +2430,7 @@ fn main() {
             move_folder,
             delete_asset,
             set_asset_owners,
+            update_asset_notes,
             create_folder,
             create_asset,
             add_asset_files,

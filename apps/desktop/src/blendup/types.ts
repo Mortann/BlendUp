@@ -74,8 +74,8 @@ export interface BlendUpAsset {
   status: AssetStatus;
   productionMode: ProductionMode;
   owners: {
-    artist: string | null;
-    developer: string | null;
+    artist: string | string[] | null;
+    developer: string | string[] | null;
     reviewer: string | null;
   };
   assignees?: string[];
@@ -138,6 +138,15 @@ export interface BlendUpTask {
   updatedAt: string;
 }
 
+export interface BlendUpActivityEvent {
+  time: string;
+  actor: string;
+  type: string;
+  assetId?: string;
+  message: string;
+  branch?: string;
+}
+
 export interface GitStatusFile {
   status: string;
   path: string;
@@ -153,9 +162,11 @@ export interface GitStatusSnapshot {
 export interface ProjectSnapshot {
   projectRoot?: string;
   project: BlendUpProject;
+  assetFolders: string[];
   assets: BlendUpAsset[];
   tasks: BlendUpTask[];
   gitStatus: GitStatusSnapshot;
+  activity: BlendUpActivityEvent[];
   problems: BlendUpProblem[];
 }
 
