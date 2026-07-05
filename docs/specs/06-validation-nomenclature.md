@@ -51,6 +51,20 @@ Types possibles :
 
 Cette liste peut etre completee par projet.
 
+Dans l'application, la liste est editable dans `Nomenclature`. Elle est stockee
+dans `.blendup/presets/asset-types.json` avec les champs `id`, `displayName`,
+`prefix`, `categoryNames` et `influence`.
+
+Le type d'un asset est deduit de son emplacement :
+
+```text
+<racine asset>/<dossier type>/<dossier asset>/<fichier asset>.blend
+```
+
+Les racines sont definies dans `project.assets.roots` et modifiables dans les
+parametres de la vue Assets. Deplacer un asset ou un dossier sous un autre
+`dossier type` recalcule `asset.type` et le prefixe technique.
+
 ## Nomenclature Variants
 
 Exemples :
@@ -135,6 +149,7 @@ Corrections mineures possibles, configurables par projet :
 - remplacer espaces par `_` ou `-` selon contexte ;
 - supprimer caracteres interdits ;
 - appliquer prefix type ;
+- appliquer le prefixe configure par le dossier de type ;
 - proposer suffixe variant ;
 - renommer dossier cree par BlendUp ;
 - creer chemin export manquant ;

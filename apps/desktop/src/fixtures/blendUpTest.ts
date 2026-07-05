@@ -29,6 +29,10 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
       clickUp: false,
       pureRef: true
     },
+    assets: {
+      roots: ["Art/Blender"],
+      typeFolderDepth: 1
+    },
     defaultView: "artist"
   },
   assetFolders: [
@@ -37,6 +41,37 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
     "Art/Blender/Props",
     "Art/Blender/Props/PROP_CubeCrate_01"
   ],
+  assetTypePresets: [
+    {
+      id: "assets",
+      displayName: "Assets",
+      prefix: "ASS",
+      categoryNames: ["Assets"],
+      influence: "Assets generiques organises par dossier."
+    },
+    {
+      id: "prop",
+      displayName: "Prop",
+      prefix: "PROP",
+      categoryNames: ["Prop", "Props", "Accessoire", "Accessoires"],
+      influence: "Props et accessoires exportes vers Unity."
+    },
+    {
+      id: "environment_piece",
+      displayName: "Environment",
+      prefix: "ENV",
+      categoryNames: ["Environment", "Environnement", "Env"],
+      influence: "Elements de decor et environnement."
+    }
+  ],
+  assetNamingRules: {
+    schemaVersion: 1,
+    kind: "asset_naming_rules",
+    pattern: "{prefix}_{name}_{index}",
+    prefixes: ["ASS", "PROP", "ENV", "CHR", "MAT", "TEX", "UI", "FX"],
+    blenderSuffixes: ["_MESH", "_COL", "_LOD0", "_LOD1", "_ARM", "_RIG", "_EMPTY", "_SOCKET"],
+    forbiddenNameFragments: ["final", "new", "copy", "test"]
+  },
   assets: [
     {
       schemaVersion: 1,

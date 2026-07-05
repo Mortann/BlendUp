@@ -35,12 +35,14 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { assetLabel, buildAssetName, categoryToType, renameCore } from "../blendup/naming";
+import { assetLabel, buildAssetName, categoryToType, labelForType, renameCore } from "../blendup/naming";
 import { selectImageFiles } from "../blendup/projectLoader";
 import { useShortcuts, type ShortcutBindings } from "../app/shortcuts";
 import type { Role, RoleCapabilities } from "../blendup/roles";
 import type {
   AssetStatus,
+  AssetNamingRules,
+  AssetTypePreset,
   AssetType,
   AssetVariant,
   BlendUpActivityEvent,
@@ -95,16 +97,20 @@ type ClipboardEntry = { assetId: string; mode: "copy" | "cut" };
 
 // Type dynamique : chaque dossier de categorie sous la racine Blender definit un type.
 // On prend le 1er segment sous la racine Blender comme categorie -> token de type.
-function typeForPath(path: string, blenderRoot: string): AssetType {
-  const normalizedRoot = normalizeFolderPath(blenderRoot);
+function typeForPath(path: string, assetRoots: string[], presets: AssetTypePreset[]): AssetType {
   const normalizedPath = normalizeFolderPath(path);
+  const normalizedRoots = assetRoots.map(normalizeFolderPath).filter(Boolean);
+  const normalizedRoot =
+    normalizedRoots
+      .filter((root) => normalizedPath === root || normalizedPath.startsWith(`${root}/`))
+      .sort((left, right) => right.length - left.length)[0] ?? normalizedRoots[0] ?? "";
   const relative =
     normalizedRoot && (normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`))
       ? normalizedPath.slice(normalizedRoot.length).replace(/^\//, "")
       : normalizedPath;
   const category = relative.split("/").filter(Boolean)[0] ?? "";
 
-  return category ? categoryToType(category) : "prop";
+  return category ? categoryToType(category, presets) : "prop";
 }
 
 const artistStatuses: { label: string; status: AssetStatus }[] = [
@@ -133,6 +139,7 @@ export function AssetsView({
   onRenameFolder,
   onDuplicateAsset,
   onPasteAsset,
+  onSaveAssetConfiguration,
   onSetVariants,
   shortcutBindings,
   onExportAsset,
@@ -183,6 +190,11 @@ export function AssetsView({
   onRenameFolder: (dir: string, newName: string, actor: string) => void;
   onDuplicateAsset: (assetId: string, actor: string) => void;
   onPasteAsset: (assetId: string, targetDir: string, move: boolean, actor: string) => void;
+  onSaveAssetConfiguration: (
+    assetRoots: string[],
+    assetTypePresets: AssetTypePreset[],
+    assetNamingRules: AssetNamingRules
+  ) => void;
   onSetVariants: (assetId: string, variants: AssetVariant[], actor: string) => void;
   shortcutBindings: ShortcutBindings;
   onExportAsset: (assetId: string) => void;
@@ -202,7 +214,8 @@ export function AssetsView({
   const [folderFilter, setFolderFilter] = useState("all");
   const [sortMode, setSortMode] = useState<AssetSortMode>(() => loadAssetSettings(projectId).defaultSort);
   const [displayMode, setDisplayMode] = useState<AssetDisplayMode>(() => loadAssetSettings(projectId).defaultDisplayMode);
-  const defaultExplorerPath = normalizeFolderPath(snapshot.project.paths.blenderRoot);
+  const assetRoots = useMemo(() => getAssetRoots(snapshot), [snapshot]);
+  const defaultExplorerPath = normalizeFolderPath(assetRoots[0] ?? snapshot.project.paths.blenderRoot);
   const [currentPath, setCurrentPath] = useState(() => loadAssetExplorerPath(projectId) ?? defaultExplorerPath);
   const [quickFilter, setQuickFilter] = useState<AssetQuickFilter>("all");
   const [favoriteAssetIds, setFavoriteAssetIds] = useState<string[]>(() => loadAssetFavorites(projectId));
@@ -298,8 +311,8 @@ export function AssetsView({
     });
   }, [currentPath, favoriteAssetIds, filteredAssets, folderFilter, quickFilter, role, sortMode]);
   const knownFolderPaths = useMemo(
-    () => mergeKnownFolders(snapshot.assetFolders, filteredAssets, defaultExplorerPath),
-    [defaultExplorerPath, filteredAssets, snapshot.assetFolders]
+    () => mergeKnownFolders(snapshot.assetFolders, filteredAssets, assetRoots),
+    [assetRoots, filteredAssets, snapshot.assetFolders]
   );
   // Dossiers qui contiennent les infos d'un asset (references/textures/.blend) :
   // ils ne doivent pas apparaitre comme des dossiers d'organisation navigables.
@@ -310,16 +323,18 @@ export function AssetsView({
   const childFolders = useMemo(
     () =>
       foldersForPath(filteredAssets, knownFolderPaths, currentPath).filter(
-        (folder) => !assetFolderSet.has(folder.path)
+        (folder) => !assetFolderSet.has(folder.path) && (!settings.hideEmptyFolders || folder.assetCount > 0)
       ),
-    [assetFolderSet, currentPath, filteredAssets, knownFolderPaths]
+    [assetFolderSet, currentPath, filteredAssets, knownFolderPaths, settings.hideEmptyFolders]
   );
   const generalFolders = useMemo(
     () =>
-      foldersForPath(filteredAssets, knownFolderPaths, defaultExplorerPath).filter(
-        (folder) => !assetFolderSet.has(folder.path)
+      assetRoots.flatMap((root) =>
+        foldersForPath(filteredAssets, knownFolderPaths, root).filter(
+          (folder) => !assetFolderSet.has(folder.path) && (!settings.hideEmptyFolders || folder.assetCount > 0)
+        )
       ),
-    [assetFolderSet, defaultExplorerPath, filteredAssets, knownFolderPaths]
+    [assetFolderSet, assetRoots, filteredAssets, knownFolderPaths, settings.hideEmptyFolders]
   );
   const currentFolderLabel = currentPath || "Assets";
   const favoriteAssets = filteredAssets.filter((asset) => favoriteAssetIds.includes(asset.id));
@@ -352,12 +367,15 @@ export function AssetsView({
   const linkedTasks = useMemo(() => snapshot.tasks.slice(0, 6), [snapshot.tasks]);
 
   const recentFolderDetails = useMemo(() => {
-    const root = normalizeFolderPath(defaultExplorerPath);
+    const roots = assetRoots.map(normalizeFolderPath).filter(Boolean);
     return recentFolders
       .map((path) => ({ path: normalizeFolderPath(path), name: path.split("/").filter(Boolean).slice(-1)[0] ?? path }))
-      // On ne garde que les dossiers situes strictement sous la racine Blender.
-      .filter((folder) => Boolean(folder.name) && folder.path !== root && folder.path.startsWith(`${root}/`));
-  }, [defaultExplorerPath, recentFolders]);
+      .filter(
+        (folder) =>
+          Boolean(folder.name) &&
+          roots.some((root) => folder.path !== root && folder.path.startsWith(`${root}/`))
+      );
+  }, [assetRoots, recentFolders]);
 
   const recordRecentFolder = (path: string) => {
     const normalized = normalizeFolderPath(path);
@@ -542,18 +560,6 @@ export function AssetsView({
 
               <div className="asset-shortcut-group">
                 <span className="eyebrow">General</span>
-                <button
-                  className={quickFilter === "all" && currentPath === defaultExplorerPath ? "active" : ""}
-                  onClick={() => openFolder(defaultExplorerPath)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => handleDropOnFolder(defaultExplorerPath)}
-                  title={defaultExplorerPath}
-                  type="button"
-                >
-                  <Folder size={16} />
-                  <span>Blender</span>
-                  <strong>{filteredAssets.length}</strong>
-                </button>
                 {generalFolders.map((folder) => (
                   <button
                     className={quickFilter === "all" && currentPath === folder.path ? "active" : ""}
@@ -612,6 +618,32 @@ export function AssetsView({
                 ))}
               </div>
 
+              {settings.showTasks && linkedTasks.length > 0 ? (
+                <div className="asset-shortcut-group">
+                  <span className="eyebrow">Taches</span>
+                  {linkedTasks.map((task) => {
+                    const firstAssetId = task.assetIds[0];
+                    return (
+                      <button
+                        disabled={!firstAssetId}
+                        key={task.id}
+                        onClick={() => {
+                          if (firstAssetId) {
+                            setSelectedAssetId(firstAssetId);
+                          }
+                        }}
+                        title={task.title}
+                        type="button"
+                      >
+                        <CheckCircle2 size={16} />
+                        <span>{task.title}</span>
+                        <strong>{task.status}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
             </div>
 
             <button className="asset-settings-button" onClick={() => setIsSettingsOpen(true)} type="button">
@@ -626,7 +658,7 @@ export function AssetsView({
           >
             <div className="asset-explorer-toolbar">
               <div className="asset-breadcrumb" aria-label="Emplacement asset">
-                {breadcrumbParts(currentPath, defaultExplorerPath).map((part, index, parts) => (
+                {breadcrumbParts(currentPath, assetRoots).map((part, index, parts) => (
                   <button
                     key={part.path || "root"}
                     className={index === parts.length - 1 ? "active" : ""}
@@ -640,7 +672,6 @@ export function AssetsView({
                   </button>
                 ))}
               </div>
-              <span className="asset-toolbar-hint">Clic droit pour les options</span>
             </div>
 
             {quickFilter === "all" && childFolders.length > 0 ? (
@@ -657,7 +688,7 @@ export function AssetsView({
                     onDrop={() => handleDropOnFolder(folder.path)}
                     type="button"
                   >
-                    <Folder size={24} />
+                    <FolderPreview assets={filteredAssets} folderPath={folder.path} projectRoot={snapshot.projectRoot} />
                     <strong>{folder.name}</strong>
                     <span>{folder.assetCount} asset(s)</span>
                   </button>
@@ -744,6 +775,20 @@ export function AssetsView({
                 }
                 setContextMenu(null);
               }}
+              onRevealInExplorer={() => {
+                if (contextMenu.target.kind === "folder") {
+                  onOpenContentPath(contextMenu.target.path);
+                } else if (contextMenu.target.kind === "asset") {
+                  const assetId = contextMenu.target.assetId;
+                  const asset = filteredAssets.find((item) => item.id === assetId);
+                  if (asset) {
+                    onOpenContentPath(asset.paths.assetFolder || assetDirectory(asset));
+                  }
+                } else {
+                  onOpenContentPath(currentPath);
+                }
+                setContextMenu(null);
+              }}
               onRenameFolder={() => {
                 if (contextMenu.target.kind === "folder") {
                   setFolderRenameTarget({
@@ -797,8 +842,16 @@ export function AssetsView({
 
           {isSettingsOpen ? (
             <AssetSettingsPanel
-              onChange={setSettings}
+              assetNamingRules={snapshot.assetNamingRules}
+              assetRoots={assetRoots}
+              assetTypePresets={snapshot.assetTypePresets}
+              onChange={(nextSettings) => {
+                setSettings(nextSettings);
+                setDisplayMode(nextSettings.defaultDisplayMode);
+                setSortMode(nextSettings.defaultSort);
+              }}
               onClose={() => setIsSettingsOpen(false)}
+              onSaveAssetConfiguration={onSaveAssetConfiguration}
               settings={settings}
             />
           ) : null}
@@ -816,9 +869,10 @@ export function AssetsView({
 
           {createMode === "asset" ? (
             <CreateAssetDialog
-              assetType={typeForPath(currentPath, defaultExplorerPath)}
+              assetType={typeForPath(currentPath, assetRoots, snapshot.assetTypePresets)}
               currentPath={currentPath}
               onCancel={() => setCreateMode(null)}
+              typePresets={snapshot.assetTypePresets}
               onSubmit={(input) => {
                 onCreateAsset(input, actorName);
                 setCreateMode(null);
@@ -1892,6 +1946,7 @@ function AssetContextMenu({
   onRenameAsset,
   onToggleFavorite,
   onOpenFolder,
+  onRevealInExplorer,
   onRenameFolder,
   onDeleteFolder,
   onPaste,
@@ -1914,6 +1969,7 @@ function AssetContextMenu({
   onRenameAsset: () => void;
   onToggleFavorite: () => void;
   onOpenFolder: () => void;
+  onRevealInExplorer: () => void;
   onRenameFolder: () => void;
   onDeleteFolder: () => void;
   onPaste: () => void;
@@ -1940,6 +1996,10 @@ function AssetContextMenu({
             <Star size={14} />
             {isFavorite ? "Retirer des favoris" : "Ajouter aux favoris"}
           </button>
+          <button onClick={onRevealInExplorer} role="menuitem" type="button">
+            <ExternalLink size={14} />
+            Afficher dans l'explorateur
+          </button>
           <div className="context-divider" />
           <button onClick={onCopy} role="menuitem" type="button">
             <Copy size={14} />
@@ -1964,6 +2024,10 @@ function AssetContextMenu({
           <button onClick={onOpenFolder} role="menuitem" type="button">
             <FolderOpen size={14} />
             Ouvrir
+          </button>
+          <button onClick={onRevealInExplorer} role="menuitem" type="button">
+            <ExternalLink size={14} />
+            Afficher dans l'explorateur
           </button>
           <button onClick={onRenameFolder} role="menuitem" type="button">
             <Pencil size={14} />
@@ -2238,25 +2302,60 @@ function SpotlightSearch({
 }
 
 function AssetSettingsPanel({
+  assetNamingRules,
+  assetRoots,
+  assetTypePresets,
   onChange,
   onClose,
+  onSaveAssetConfiguration,
   settings
 }: {
+  assetNamingRules: AssetNamingRules;
+  assetRoots: string[];
+  assetTypePresets: AssetTypePreset[];
   onChange: (settings: AssetSettings) => void;
   onClose: () => void;
+  onSaveAssetConfiguration: (
+    assetRoots: string[],
+    assetTypePresets: AssetTypePreset[],
+    assetNamingRules: AssetNamingRules
+  ) => void;
   settings: AssetSettings;
 }) {
+  const [rootsDraft, setRootsDraft] = useState(assetRoots.join("\n"));
   const update = (patch: Partial<AssetSettings>) => onChange({ ...settings, ...patch });
+  const roots = rootsDraft
+    .split(/\r?\n/)
+    .map((root) => normalizeFolderPath(root))
+    .filter(Boolean);
 
   return (
     <div className="asset-modal-overlay" onClick={onClose} role="presentation">
       <div className="asset-settings-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
         <div className="asset-settings-head">
-          <h3>Parametres d'affichage</h3>
+          <h3>Parametres Assets</h3>
           <button className="icon-button" onClick={onClose} title="Fermer" type="button">
             <X size={16} />
           </button>
         </div>
+
+        <label className="settings-field">
+          <span>Dossiers racines</span>
+          <textarea
+            onChange={(event) => setRootsDraft(event.target.value)}
+            placeholder="Art/Blender"
+            rows={4}
+            value={rootsDraft}
+          />
+        </label>
+
+        <button
+          disabled={roots.length === 0}
+          onClick={() => onSaveAssetConfiguration(roots, assetTypePresets, assetNamingRules)}
+          type="button"
+        >
+          Enregistrer les racines
+        </button>
 
         <label className="settings-field">
           <span>Affichage par defaut</span>
@@ -2316,16 +2415,6 @@ function AssetSettingsPanel({
   );
 }
 
-const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
-  { value: "prop", label: "Prop" },
-  { value: "static_mesh", label: "Static Mesh" },
-  { value: "environment_piece", label: "Environment" },
-  { value: "material", label: "Material" },
-  { value: "texture", label: "Texture" },
-  { value: "ui_image", label: "UI Image" },
-  { value: "character", label: "Character" }
-];
-
 function CreateFolderDialog({
   currentPath,
   onCancel,
@@ -2372,11 +2461,13 @@ function CreateAssetDialog({
   assetType,
   currentPath,
   onCancel,
+  typePresets,
   onSubmit
 }: {
   assetType: AssetType;
   currentPath: string;
   onCancel: () => void;
+  typePresets: AssetTypePreset[];
   onSubmit: (input: {
     parentDir: string;
     name: string;
@@ -2391,7 +2482,7 @@ function CreateAssetDialog({
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
   const [textureImages, setTextureImages] = useState<string[]>([]);
 
-  const technicalName = core.trim() ? buildAssetName(assetType, core) : "";
+  const technicalName = core.trim() ? buildAssetName(assetType, core, "_01", typePresets) : "";
 
   const pickImages = async (current: string[], setter: (paths: string[]) => void) => {
     try {
@@ -2412,7 +2503,7 @@ function CreateAssetDialog({
 
         <div className="create-type-info">
           <span>Type</span>
-          <strong>{formatAssetType(assetType)}</strong>
+          <strong>{labelForType(assetType, typePresets)}</strong>
           <small>defini par le dossier</small>
         </div>
 
@@ -2671,7 +2762,7 @@ function AssetVisual({
   projectRoot?: string;
   small?: boolean;
 }) {
-  const thumbnail = resolveThumbnailSrc(asset.paths.thumbnail, projectRoot);
+  const thumbnail = resolveThumbnailSrc(asset.paths.thumbnail, projectRoot, asset.updatedAt);
 
   if (thumbnail) {
     return (
@@ -2688,7 +2779,49 @@ function AssetVisual({
   );
 }
 
-function resolveThumbnailSrc(path: string | undefined, projectRoot: string | undefined) {
+function FolderPreview({
+  assets,
+  folderPath,
+  projectRoot
+}: {
+  assets: BlendUpAsset[];
+  folderPath: string;
+  projectRoot?: string;
+}) {
+  const normalizedFolder = normalizeFolderPath(folderPath);
+  const thumbnails = assets
+    .filter((asset) => {
+      const directory = assetDirectory(asset);
+      return directory === normalizedFolder || directory.startsWith(`${normalizedFolder}/`);
+    })
+    .map((asset) => resolveThumbnailSrc(asset.paths.thumbnail, projectRoot, asset.updatedAt))
+    .filter(Boolean)
+    .slice(0, 4);
+
+  if (thumbnails.length === 0) {
+    return (
+      <span className="folder-preview empty">
+        <Folder size={22} />
+      </span>
+    );
+  }
+
+  return (
+    <span className={`folder-preview count-${thumbnails.length}`}>
+      {thumbnails.map((thumbnail, index) => (
+        <img alt="" key={`${thumbnail}-${index}`} src={thumbnail} />
+      ))}
+    </span>
+  );
+}
+
+function getAssetRoots(snapshot: ProjectSnapshot) {
+  const configured = snapshot.project.assets?.roots?.map(normalizeFolderPath).filter(Boolean) ?? [];
+
+  return configured.length > 0 ? configured : [normalizeFolderPath(snapshot.project.paths.blenderRoot)];
+}
+
+function resolveThumbnailSrc(path: string | undefined, projectRoot: string | undefined, cacheKey?: string) {
   if (!path) {
     return "";
   }
@@ -2709,19 +2842,23 @@ function resolveThumbnailSrc(path: string | undefined, projectRoot: string | und
   }
 
   try {
-    return convertFileSrc(absolutePath);
+    const src = convertFileSrc(absolutePath);
+    return cacheKey ? `${src}${src.includes("?") ? "&" : "?"}v=${encodeURIComponent(cacheKey)}` : src;
   } catch {
     return "";
   }
 }
 
-function breadcrumbParts(path: string, blenderRoot: string) {
-  const root = normalizeFolderPath(blenderRoot);
-  const rootLabel = root.split("/").filter(Boolean).pop() ?? "Blender";
+function breadcrumbParts(path: string, assetRoots: string[]) {
   const normalized = normalizeFolderPath(path);
+  const roots = assetRoots.map(normalizeFolderPath).filter(Boolean);
+  const root =
+    roots
+      .filter((candidate) => normalized === candidate || normalized.startsWith(`${candidate}/`))
+      .sort((left, right) => right.length - left.length)[0] ?? roots[0] ?? "";
+  const rootLabel = root.split("/").filter(Boolean).pop() ?? "Assets";
   const crumbs = [{ label: rootLabel, path: root }];
 
-  // Blender est la racine : on n'affiche que les segments situes sous cette racine.
   const relative =
     root && (normalized === root || normalized.startsWith(`${root}/`))
       ? normalized.slice(root.length).replace(/^\//, "")
@@ -2736,10 +2873,12 @@ function breadcrumbParts(path: string, blenderRoot: string) {
   return crumbs;
 }
 
-function mergeKnownFolders(assetFolders: string[], assets: BlendUpAsset[], defaultExplorerPath: string) {
+function mergeKnownFolders(assetFolders: string[], assets: BlendUpAsset[], assetRoots: string[]) {
   const folders = new Set<string>();
 
-  folders.add(normalizeFolderPath(defaultExplorerPath));
+  for (const root of assetRoots) {
+    folders.add(normalizeFolderPath(root));
+  }
 
   for (const folder of assetFolders) {
     const normalized = normalizeFolderPath(folder);

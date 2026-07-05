@@ -105,6 +105,12 @@ Exemple :
     "clickUp": false,
     "pureRef": true
   },
+  "assets": {
+    "roots": [
+      "Art/Blender"
+    ],
+    "typeFolderDepth": 1
+  },
   "defaultView": "artist"
 }
 ```
@@ -194,6 +200,25 @@ Exemples V1 :
 
 La V1 doit prioriser `static_mesh`, `prop` et `environment_piece`.
 
+Les types affiches dans l'application viennent du fichier :
+
+```text
+.blendup/presets/asset-types.json
+```
+
+Chaque entree peut definir :
+
+- `id` : token stocke dans `asset.type` ;
+- `displayName` : libelle affiche ;
+- `prefix` : prefixe applique au nom technique ;
+- `categoryNames` : noms de dossiers qui declenchent ce type ;
+- `influence` : aide projet expliquant l'impact du type.
+
+Les racines d'assets viennent de `project.assets.roots`. Le dossier de type est
+le premier dossier sous une de ces racines. Exemple : avec racine `Art/Blender`,
+`Art/Blender/Assets/PROP_Porte_01` prend le type associe au dossier `Assets`
+et le prefixe configure (par defaut `ASS`).
+
 La V1 peut inclure `material`, `texture` et `ui_image` avec un support plus simple :
 
 - fiche asset ;
@@ -253,6 +278,8 @@ Nom affiche vs nom technique :
 - BlendUp affiche le "coeur" (`Rock`) en enlevant le prefixe de type et le suffixe de variante ;
 - renommer edite le coeur, reconstruit le nom technique (prefixe + index conserves) et renomme dossier + `.blend` + fichiers Unity `.fbx`/`.prefab` (+ `.meta`) ;
 - deplacer un asset deplace aussi les fichiers Unity en repercutant le changement de categorie.
+- deplacer un asset ou un dossier sous une autre categorie recalcule `type` et
+  renomme le prefixe technique selon `.blendup/presets/asset-types.json`.
 
 Assignation : champ `assignees` (liste de personnes) en plus des `owners` par role. Affichage en avatars facon Trello.
 

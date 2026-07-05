@@ -58,7 +58,10 @@ def thumbnail_on_save(_dummy):
         render.resolution_x = 512
         render.resolution_y = 320
         render.resolution_percentage = 100
-        bpy.ops.render.opengl(write_still=True, view_context=False)
+        try:
+            bpy.ops.render.opengl(write_still=True, view_context=True)
+        except Exception:
+            bpy.ops.render.opengl(write_still=True, view_context=False)
     except Exception as error:  # noqa: BLE001 - preview best effort
         print(f"[BlendUp] thumbnail ignore: {error}")
         return

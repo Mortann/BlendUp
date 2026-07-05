@@ -3,6 +3,8 @@
 
 export const ASSET_PREFIXES = ["PROP", "ENV", "CHR", "MAT", "TEX", "UI", "FX"] as const;
 
+import type { AssetTypePreset } from "./types";
+
 // Catalogue des types "connus" : token canonique -> prefixe + libelle affiche.
 const KNOWN_TYPE_META: Record<string, { prefix: string; label: string }> = {
   static_mesh: { prefix: "PROP", label: "Static Mesh" },
@@ -54,13 +56,28 @@ function slugType(name: string): string {
 }
 
 // Nom de dossier (categorie) -> token de type. Connu => canonique ; sinon => slug du nom.
-export function categoryToType(folderName: string): string {
+export function categoryToType(folderName: string, presets: AssetTypePreset[] = []): string {
   const lower = folderName.trim().toLowerCase();
+  const preset = presets.find((item) =>
+    [item.id, item.displayName, ...(item.categoryNames ?? [])]
+      .map((value) => value.trim().toLowerCase())
+      .includes(lower)
+  );
+
+  if (preset) {
+    return preset.id;
+  }
+
   return CATEGORY_SYNONYMS[lower] ?? slugType(folderName) ?? "prop";
 }
 
 // Prefixe de nomenclature pour un type (connu ou dynamique).
-export function prefixForType(type: string): string {
+export function prefixForType(type: string, presets: AssetTypePreset[] = []): string {
+  const preset = presets.find((item) => item.id === type);
+  if (preset?.prefix) {
+    return preset.prefix.toUpperCase();
+  }
+
   const known = KNOWN_TYPE_META[type];
   if (known) {
     return known.prefix;
@@ -70,7 +87,12 @@ export function prefixForType(type: string): string {
 }
 
 // Libelle affiche pour un type (connu => joli libelle ; sinon => nom capitalise).
-export function labelForType(type: string): string {
+export function labelForType(type: string, presets: AssetTypePreset[] = []): string {
+  const preset = presets.find((item) => item.id === type);
+  if (preset?.displayName) {
+    return preset.displayName;
+  }
+
   const known = KNOWN_TYPE_META[type];
   if (known) {
     return known.label;
@@ -112,7 +134,14 @@ export function renameCore(currentName: string, newCore: string): string {
   return parsed.prefix ? `${parsed.prefix}_${core}${parsed.index}` : `${core}${parsed.index}`;
 }
 
+export function renamePrefix(currentName: string, type: string, presets: AssetTypePreset[] = []): string {
+  const parsed = parseAssetName(currentName);
+  const prefix = prefixForType(type, presets);
+
+  return `${prefix}_${parsed.core || currentName}${parsed.index || "_01"}`;
+}
+
 // Construit un nom technique a la creation a partir d'un type, d'un coeur et d'un index.
-export function buildAssetName(type: string, core: string, index = "_01"): string {
-  return `${prefixForType(type)}_${sanitizeCore(core)}${index}`;
+export function buildAssetName(type: string, core: string, index = "_01", presets: AssetTypePreset[] = []): string {
+  return `${prefixForType(type, presets)}_${sanitizeCore(core)}${index}`;
 }

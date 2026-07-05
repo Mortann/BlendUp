@@ -24,7 +24,8 @@ dossier `addons` de Blender plutot que d'installer un zip.
 Dans `Edit > Preferences > Add-ons > BlendUp` :
 
 - `Nom d'acteur` : nom ecrit dans le journal d'activite `.blendup/logs/activity.jsonl` ;
-- `Executable BlendUp` et `lien blendup://` : options pour l'ouverture de fiche ;
+- `Executable BlendUp` : optionnel, permet de lancer l'application apres avoir
+  ecrit la requete d'ouverture de fiche ;
 - `Export FBX` : tous les reglages d'export (selection, echelle, lissage, types
   d'objets, mode des chemins...). C'est ici que vivent les parametres d'export.
 
@@ -40,8 +41,11 @@ Panneau `BlendUp` dans la sidebar de la vue 3D (touche `N`).
 4. `Exporter en FBX` exporte vers `paths.fbxExport` et met a jour la fiche
    (`export.lastExportStatus`, `status`, `updatedAt`) comme le fait l'application.
 5. En mode `Auto`, l'export se relance a chaque sauvegarde du `.blend`.
-6. `Valider la scene` lance la validation de base (nom, echelle, materiaux...).
-7. `Ouvrir la fiche dans BlendUp` ecrit `.blendup/temp/open-request.json`.
+6. A chaque sauvegarde liee a un asset, l'add-on tente aussi de generer une
+   miniature `.blendup/thumbnails/<assetId>.png` et met a jour la fiche asset.
+7. `Valider la scene` lance la validation de base (nom, echelle, materiaux...).
+8. `Ouvrir la fiche dans BlendUp` ecrit `.blendup/temp/open-request.json` et
+   lance BlendUp si un executable est renseigne dans les preferences.
 
 ## Architecture
 
@@ -60,10 +64,9 @@ Les tests du coeur ne necessitent pas Blender :
 python apps/blender-addon/tests/test_core.py
 ```
 
-## Limite connue (suivi cote application)
+## Ouverture de fiche depuis Blender
 
 `Ouvrir la fiche dans BlendUp` ecrit une requete dans
-`.blendup/temp/open-request.json` (et tente le lien `blendup://asset/<id>`).
-Pour une ouverture automatique, l'application desktop doit encore surveiller ce
-fichier (ou enregistrer le protocole `blendup://`). Cote add-on, la demande est
-complete.
+`.blendup/temp/open-request.json`.
+L'application desktop lit cette requete a l'ouverture du projet et par polling
+tant qu'il est ouvert.

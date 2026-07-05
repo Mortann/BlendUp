@@ -196,11 +196,13 @@ Implementation actuelle :
 - la navigation se fait en mode explorateur parent/enfant sur les vrais dossiers du projet, et l'emplacement courant est memorise (localStorage, par projet) entre les sessions ;
 - un panneau d'acces rapides a gauche regroupe favoris et collections (favoris, a valider, a retravailler) ; les favoris sont personnels a chaque utilisateur (locaux, par projet) ;
 - chaque asset affiche un visuel (thumbnail si disponible, sinon une carte generee par type) avec, dessous, son nom, son etat artiste et les personnes associees ;
+- les dossiers affichent un apercu compose des miniatures des assets contenus ;
 - l'etat artiste (A faire / En cours / A valider / A retravailler / Valide) se change depuis la fiche ; seul le `Directeur artistique` peut valider ou rouvrir un asset valide (verrou applique aussi cote natif) ;
-- clic droit sur un asset : renommer, ajouter/retirer des favoris, supprimer (corbeille) ; clic droit sur un dossier : ouvrir ;
+- clic droit sur un asset : renommer, ajouter/retirer des favoris, supprimer (corbeille) ; clic droit sur un dossier : ouvrir, renommer, supprimer ;
 - glisser-deposer un asset ou un dossier vers un autre dossier le deplace reellement sur le disque ;
+- renommer ou deplacer un asset ne selectionne plus automatiquement l'asset apres validation/depot ;
 - le panneau de gauche presente : Recent (5 derniers dossiers ouverts), General (tous les dossiers + A valider / A retravailler), Favoris, Taches (optionnel), et un bouton Parametres en bas ;
-- le bouton Parametres ouvre un panneau (mode d'affichage par defaut, taille des vignettes, tri par defaut, masquer les dossiers vides, afficher la partie Taches) ;
+- le bouton Parametres ouvre un panneau (racines d'assets projet, mode d'affichage par defaut, taille des vignettes, tri par defaut, masquer les dossiers vides, afficher la partie Taches) ;
 - la fiche detail s'ouvre centree au milieu de la page (overlay) et permet d'assigner les membres de l'equipe (artiste / dev / reviewer) ;
 - la barre de notification s'affiche en surimpression (overlay) sans pousser la page ;
 - un asset represente un dossier (contenant le `.blend`, `references/`, `textures/`) et son nom est synchronise avec BlendUp comme source de verite ;
@@ -478,9 +480,10 @@ La nomenclature doit etre accessible sans passer par les settings locaux.
 Implementation actuelle :
 
 - page `Nomenclature` dediee ;
-- vue artiste centree sur prefixes assets, suffixes Blender, exemples et fragments interdits ;
+- vue artiste centree sur types assets editables, prefixes, alias de dossiers, suffixes Blender et fragments interdits ;
 - vue dev avec les chemins projet et exemples de branches Git en plus ;
 - les donnees affichees reprennent les conventions V1 generees dans `.blendup/naming`.
+- enregistrer la page met a jour `.blendup/presets/asset-types.json` et `.blendup/naming/asset-naming.json`.
 
 ## Equipe Et Comptes Simples
 

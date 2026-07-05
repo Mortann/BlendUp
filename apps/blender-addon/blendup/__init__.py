@@ -16,7 +16,7 @@ from __future__ import annotations
 bl_info = {
     "name": "BlendUp",
     "author": "BlendUp",
-    "version": (0, 1, 0),
+    "version": (0, 1, 2),
     "blender": (4, 0, 0),
     "location": "Vue 3D > Sidebar (N) > BlendUp",
     "description": "Pont Blender <-> BlendUp : export FBX, validation, liaison assets.",

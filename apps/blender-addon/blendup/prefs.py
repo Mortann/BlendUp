@@ -32,8 +32,8 @@ class BlendUpPreferences(AddonPreferences):
     )
     enable_deep_link: BoolProperty(
         name="Tenter le lien blendup://",
-        description="Ouvrir blendup://asset/<id> en plus d'ecrire la requete d'ouverture",
-        default=True,
+        description="Ancienne option reservee a un futur enregistrement du protocole Windows",
+        default=False,
     )
 
     # --- Reglages d'export FBX ---
@@ -97,7 +97,6 @@ class BlendUpPreferences(AddonPreferences):
         box.label(text="Identite et application", icon="USER")
         box.prop(self, "actor")
         box.prop(self, "app_path")
-        box.prop(self, "enable_deep_link")
 
         box = layout.box()
         box.label(text="Export FBX", icon="EXPORT")

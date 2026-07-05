@@ -91,6 +91,7 @@ function App() {
           onDuplicateAsset={app.handleDuplicateAsset}
           onPasteAsset={app.handlePasteAsset}
           onSetVariants={app.handleSetVariants}
+          onSaveAssetConfiguration={app.handleSaveAssetConfiguration}
           shortcutBindings={app.shortcutBindings}
           onOpenInBlender={app.openAssetInBlender}
           onOpenContentPath={app.openProjectContentPath}
@@ -106,7 +107,11 @@ function App() {
       ) : app.activeView === "references" ? (
         <ReferencesView onOpenAsset={app.openAsset} role={app.role} snapshot={app.project} />
       ) : app.activeView === "nomenclature" ? (
-        <NomenclatureView role={app.role} snapshot={app.project} />
+        <NomenclatureView
+          onSaveAssetConfiguration={app.handleSaveAssetConfiguration}
+          role={app.role}
+          snapshot={app.project}
+        />
       ) : app.activeView === "problems" ? (
         <ProblemsView
           exportAllowed={app.capabilities.canExport}

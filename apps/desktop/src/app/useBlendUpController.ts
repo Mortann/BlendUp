@@ -7,7 +7,15 @@ import {
   loadStoredRole,
   storeRole
 } from "../blendup/roles";
-import type { AssetStatus, AssetVariant, LocalToolsSnapshot, ProjectSnapshot, UserSettings } from "../blendup/types";
+import type {
+  AssetNamingRules,
+  AssetStatus,
+  AssetTypePreset,
+  AssetVariant,
+  LocalToolsSnapshot,
+  ProjectSnapshot,
+  UserSettings
+} from "../blendup/types";
 import { exportAssetToFbx } from "../blendup/actions";
 import {
   addAssetFiles,
@@ -29,6 +37,7 @@ import {
   rememberProjectInSettings,
   renameAsset,
   renameFolder,
+  saveAssetConfiguration,
   saveUserSettings,
   selectProjectDirectory,
   setAssetAssignees,
@@ -153,12 +162,19 @@ export function useBlendUpController() {
         return;
       }
 
-      const asset = project?.assets.find((item) => item.id === request.assetId);
-
-      if (!asset) {
+      const refreshedProject = await loadProjectSnapshot(projectRoot);
+      if (cancelled) {
         return;
       }
 
+      const asset = refreshedProject.assets.find((item) => item.id === request.assetId);
+
+      if (!asset) {
+        setProject(refreshedProject);
+        return;
+      }
+
+      setProject(refreshedProject);
       setSelectedAssetId(asset.id);
       setActiveView("assets");
       setOperationMessage({
@@ -172,7 +188,32 @@ export function useBlendUpController() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [project?.assets, project?.projectRoot]);
+  }, [project?.projectRoot]);
+
+  useEffect(() => {
+    const projectRoot = project?.projectRoot;
+
+    if (!projectRoot || activeView !== "assets") {
+      return;
+    }
+
+    let cancelled = false;
+    const intervalId = window.setInterval(async () => {
+      try {
+        const refreshedProject = await loadProjectSnapshot(projectRoot);
+        if (!cancelled) {
+          setProject(refreshedProject);
+        }
+      } catch (error) {
+        console.warn("Actualisation assets impossible", error);
+      }
+    }, 6000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeView, project?.projectRoot]);
 
   const migratedRoots = useRef(new Set<string>());
 
@@ -701,8 +742,7 @@ export function useBlendUpController() {
         }),
       "Asset renomme",
       trimmed,
-      "Renommage impossible",
-      assetId
+      "Renommage impossible"
     );
   };
 
@@ -718,8 +758,7 @@ export function useBlendUpController() {
         }),
       "Asset deplace",
       targetDir || "Racine",
-      "Deplacement impossible",
-      assetId
+      "Deplacement impossible"
     );
   };
 
@@ -990,6 +1029,34 @@ export function useBlendUpController() {
     );
   };
 
+  const handleSaveAssetConfiguration = async (
+    assetRoots: string[],
+    assetTypePresets: AssetTypePreset[],
+    assetNamingRules: AssetNamingRules
+  ) => {
+    if (!project?.projectRoot) {
+      setOperationMessage({
+        tone: "error",
+        title: "Configuration non enregistree",
+        detail: "Le projet courant n'a pas de dossier source charge."
+      });
+      return;
+    }
+
+    await runAssetMutation(
+      () =>
+        saveAssetConfiguration({
+          projectRoot: project.projectRoot!,
+          assetRoots,
+          assetTypePresets,
+          assetNamingRules
+        }),
+      "Configuration assets enregistree",
+      `${assetRoots.length} racine(s), ${assetTypePresets.length} type(s)`,
+      "Configuration non enregistree"
+    );
+  };
+
   return {
     activeView,
     blenderPathInput,
@@ -1052,6 +1119,7 @@ export function useBlendUpController() {
     handleDuplicateAsset,
     handlePasteAsset,
     handleSetVariants,
+    handleSaveAssetConfiguration,
     shortcutBindings,
     updateShortcut,
     resetShortcuts,

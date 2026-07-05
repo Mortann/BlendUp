@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import webbrowser
+import subprocess
 
 import bpy
 from bpy.props import EnumProperty
@@ -89,10 +89,11 @@ class BLENDUP_OT_open_card(Operator):
         asset_id = asset.get("id")
         links.write_open_request(project_root, asset_id)
 
-        if prefs.get_prefs(context).enable_deep_link:
+        app_path = (prefs.get_prefs(context).app_path or "").strip()
+        if app_path:
             try:
-                webbrowser.open(links.deep_link(asset_id))
-            except Exception:  # noqa: BLE001 - le lien profond est best-effort
+                subprocess.Popen([app_path])  # noqa: S603 - chemin choisi par l'utilisateur
+            except Exception:  # noqa: BLE001 - lancement best-effort
                 pass
 
         self.report(

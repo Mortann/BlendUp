@@ -60,7 +60,30 @@ export interface BlendUpProject {
     clickUp: boolean;
     pureRef: boolean;
   };
+  assets?: {
+    roots?: string[];
+    typeFolderDepth?: number;
+  };
   defaultView: "artist" | "developer";
+}
+
+export interface AssetTypePreset {
+  id: string;
+  displayName: string;
+  prefix: string;
+  categoryNames?: string[];
+  influence?: string;
+  defaultExportProfile?: string | null;
+  defaultQualityBudget?: string | null;
+}
+
+export interface AssetNamingRules {
+  schemaVersion: number;
+  kind: "asset_naming_rules";
+  pattern: string;
+  prefixes: string[];
+  blenderSuffixes: string[];
+  forbiddenNameFragments: string[];
 }
 
 export interface AssetVariant {
@@ -174,6 +197,8 @@ export interface ProjectSnapshot {
   projectRoot?: string;
   project: BlendUpProject;
   assetFolders: string[];
+  assetTypePresets: AssetTypePreset[];
+  assetNamingRules: AssetNamingRules;
   assets: BlendUpAsset[];
   tasks: BlendUpTask[];
   gitStatus: GitStatusSnapshot;

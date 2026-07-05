@@ -1,6 +1,8 @@
 import { blendUpTestSnapshot } from "../fixtures/blendUpTest";
 import type {
   AssetStatus,
+  AssetNamingRules,
+  AssetTypePreset,
   AssetVariant,
   CreateProjectOptions,
   CreateProjectResult,
@@ -405,6 +407,20 @@ export async function setAssetVariants(options: {
     variants: options.variants,
     actor: options.actor,
     updatedAt: options.updatedAt
+  });
+}
+
+export async function saveAssetConfiguration(options: {
+  projectRoot: string;
+  assetRoots: string[];
+  assetTypePresets: AssetTypePreset[];
+  assetNamingRules: AssetNamingRules;
+}): Promise<void> {
+  await invoke("save_asset_configuration", {
+    projectRoot: options.projectRoot,
+    assetRoots: options.assetRoots,
+    assetTypePresets: options.assetTypePresets,
+    assetNamingRules: options.assetNamingRules
   });
 }
 

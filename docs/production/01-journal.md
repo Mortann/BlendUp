@@ -797,3 +797,49 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 - Revue manuelle (cargo absent du sandbox ; mount bash tronque les gros fichiers donc tsc non fiable ici).
 - **A relancer en local Windows** : `npm run typecheck` puis `cargo check` / `npm run tauri:dev`.
+
+
+## 2026-07-05 - Assets Artiste : racines, nomenclature et miniatures
+
+### Fait
+
+- Renommer ou deplacer un asset ne selectionne plus automatiquement l'asset apres validation/depot.
+- Texte "Clic droit pour les options" retire de la barre Assets.
+- Section General de la vue artiste : l'entree racine `Blender` n'est plus affichee ; les dossiers sous les racines configurees sont affiches directement.
+- Parametres Assets : ajout des racines d'assets projet, sauvegardees dans `project.assets.roots`.
+- Snapshot Tauri enrichi avec `assetTypePresets` et `assetNamingRules`.
+- Page Nomenclature rendue editable : types, prefixe, alias de dossiers (`categoryNames`), influence, suffixes Blender et fragments interdits.
+- Le type d'asset est maintenant deduit depuis le premier dossier sous une racine configuree, via `.blendup/presets/asset-types.json`.
+- Deplacer un asset ou un dossier recalcule `asset.type` et renomme le prefixe du nom technique selon le type cible.
+- Ajout du type exemple `assets` / prefixe `ASS` pour couvrir les dossiers nommes `Assets`.
+- Les dossiers affichent un apercu compose des miniatures des assets contenus.
+- Add-on Blender passe en `0.1.1` : generation de vignette plus robuste au save (`render.opengl` tente le contexte viewport puis fallback).
+
+### Verification
+
+- `npm.cmd run typecheck --workspace apps/desktop` : OK.
+- `C:\Users\morit\.cargo\bin\cargo.exe check` dans `apps/desktop/src-tauri` : OK.
+
+### Notes
+
+- Les miniatures sont generees au prochain enregistrement du `.blend` lie a une fiche asset. Les vignettes deja absentes ne sont donc pas retro-generees tant que Blender n'a pas resauvegarde l'asset.
+- Les racines d'assets sont projet/versionnables ; les preferences d'affichage restent locales par projet.
+
+
+## 2026-07-05 - Corrections Assets et bouton Blender
+
+### Fait
+
+- Parametres Assets appliques immediatement : affichage par defaut, tri par defaut, taille de vignette.
+- Option `Masquer les dossiers vides` branchee sur les listes de dossiers.
+- Option `Afficher la partie Taches` branchee sur le panneau gauche Assets.
+- Ajout de `Afficher dans l'explorateur` dans le menu contextuel d'un asset ou d'un dossier.
+- Rafraichissement automatique du snapshot quand la vue Assets est ouverte, pour voir les miniatures generees par Blender sans redemarrer l'app.
+- Cache-buster sur les URLs de miniatures pour eviter qu'une ancienne image/absence d'image reste en cache.
+- Add-on Blender `0.1.2` : le bouton `Ouvrir la fiche dans BlendUp` n'ouvre plus `blendup://`, donc plus de popup Microsoft Store si le protocole n'est pas enregistre. Il ecrit la requete fichier et lance seulement l'executable BlendUp si un chemin est renseigne.
+
+### Verification
+
+- `npm.cmd run typecheck --workspace apps/desktop` : OK.
+- `npm.cmd run build --workspace apps/desktop` : OK.
+- `C:\Users\morit\.cargo\bin\cargo.exe check` dans `apps/desktop/src-tauri` : OK.
