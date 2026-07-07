@@ -50,6 +50,38 @@ Reglages d'export : stockes dans les preferences de l'add-on Blender. Les reglag
 
 Ouverture de fiche depuis Blender : l'add-on ecrit `.blendup/temp/open-request.json` (et tente `blendup://asset/<id>`). L'ecoute cote application desktop reste a ajouter.
 
+Ouverture de fichier Blender depuis BlendUp : l'application desktop peut lancer
+directement Blender avec le `.blend` associe si un chemin Blender est detecte ou
+renseigne. Une preference locale permet d'afficher ou masquer l'invite de
+commande sous Windows.
+
+### Variantes Dans Blender
+
+Proposition V1+ :
+
+- lire la liste `asset.variants` depuis la fiche asset ;
+- proposer une action `Creer collection variante` qui cree `VAR_<Nom>` ;
+- associer une variante a une collection, un material set ou un objet alternatif ;
+- exporter une variante vers un chemin dedie si elle a besoin d'un FBX/prefab propre ;
+- remonter son etat (`in_blender`, `exported`) dans la fiche asset.
+
+Regle recommandee : BlendUp ne doit pas imposer une structure Blender unique.
+Il doit proposer des conventions lisibles, puis laisser l'artiste garder le
+controle de sa scene.
+
+### LODs Dans Blender
+
+Proposition V1+ :
+
+- detecter les objets ou collections nommes `_LOD0`, `_LOD1`, `_LOD2` ;
+- afficher les niveaux trouves dans le panneau BlendUp ;
+- creer rapidement un niveau depuis `LOD0` par duplication ;
+- proposer une decimation controlee selon `targetRatio`, sans ecraser le mesh source ;
+- exporter chaque niveau vers son chemin dedie ou vers un FBX compatible `LODGroup`.
+
+La generation avancee de LOD reste hors V1 stricte, mais BlendUp peut deja aider
+a nommer, verifier et tester les niveaux.
+
 ### Auto-export
 
 Auto-export par defaut, mais configurable par asset.
@@ -127,6 +159,26 @@ Regles :
 - enregistrer les erreurs dans BlendUp ;
 - eviter de supprimer des donnees sans confirmation ;
 - rester simple en V1.
+
+### Variantes Dans Unity
+
+Proposition V1+ :
+
+- creer un prefab variant Unity par entree `asset.variants` quand un chemin prefab est renseigne ;
+- appliquer des material overrides pour les variantes visuelles ;
+- appliquer un FBX ou enfant alternatif pour les variantes mesh ;
+- exposer les variantes gameplay comme presets ou composants attendus, sans deviner la logique ;
+- remonter dans BlendUp l'etat `in_unity` ou un warning si la variante n'est pas testable.
+
+### LODs Dans Unity
+
+Proposition V1+ :
+
+- detecter les FBX ou enfants nommes `LOD0`, `LOD1`, `LOD2` ;
+- creer ou mettre a jour un composant `LODGroup` sur la racine visuelle geree par BlendUp ;
+- affecter les renderers par niveau ;
+- appliquer des seuils de transition simples par preset ;
+- remonter warnings si `LOD0` est absent, si un niveau est vide, ou si le budget triangle est depasse.
 
 ### Modifications Automatiques Autorisees V1
 

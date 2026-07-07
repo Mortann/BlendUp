@@ -89,6 +89,22 @@ export interface AssetNamingRules {
 export interface AssetVariant {
   id: string;
   name: string;
+  variantType?: "visual" | "mesh" | "gameplay";
+  status?: "planned" | "in_blender" | "exported" | "in_unity" | "validated";
+  blenderCollection?: string;
+  unityPrefab?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface AssetLod {
+  id: string;
+  level: string;
+  targetRatio?: number;
+  triangleBudget?: number;
+  status?: "planned" | "in_blender" | "exported" | "in_unity" | "validated";
+  blenderObject?: string;
+  fbxExport?: string;
   notes?: string;
   createdAt: string;
 }
@@ -140,6 +156,7 @@ export interface BlendUpAsset {
   references: string[];
   tasks: string[];
   variants: AssetVariant[];
+  lods: AssetLod[];
   notes: {
     artist: string;
     developer: string;
@@ -214,6 +231,7 @@ export interface UserSettings {
   blenderPath: string | null;
   unityPath: string | null;
   pureRefPath: string | null;
+  showBlenderCommandPrompt: boolean;
 }
 
 export interface ToolDetection {

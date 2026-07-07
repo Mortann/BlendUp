@@ -8,6 +8,7 @@ import {
   storeRole
 } from "../blendup/roles";
 import type {
+  AssetLod,
   AssetNamingRules,
   AssetStatus,
   AssetTypePreset,
@@ -33,6 +34,7 @@ import {
   migrateAssetsToFolders,
   moveAsset,
   moveFolder,
+  openBlendFileInBlender,
   openProjectPath,
   rememberProjectInSettings,
   renameAsset,
@@ -41,6 +43,7 @@ import {
   saveUserSettings,
   selectProjectDirectory,
   setAssetAssignees,
+  setAssetLods,
   setAssetOwners,
   setAssetVariants,
   takeOpenRequest,
@@ -298,6 +301,16 @@ export function useBlendUpController() {
     setPureRefPathInput(savedSettings.pureRefPath ?? "");
 
     return savedSettings;
+  };
+
+  const setShowBlenderCommandPrompt = async (showBlenderCommandPrompt: boolean) => {
+    await persistUserSettings({
+      ...userSettings,
+      blenderPath: blenderPathInput,
+      unityPath: unityPathInput,
+      pureRefPath: pureRefPathInput,
+      showBlenderCommandPrompt
+    });
   };
 
   const chooseProjectDirectory = async () => {
@@ -606,7 +619,12 @@ export function useBlendUpController() {
     }
 
     try {
-      await openProjectPath(project.projectRoot, asset.paths.blenderSource);
+      await openBlendFileInBlender({
+        blenderPath: blenderPathInput,
+        projectRoot: project.projectRoot,
+        relativePath: asset.paths.blenderSource,
+        showCommandPrompt: userSettings.showBlenderCommandPrompt
+      });
       setOperationMessage({
         tone: "success",
         title: "Fichier Blender ouvert",
@@ -1006,6 +1024,23 @@ export function useBlendUpController() {
     );
   };
 
+  const handleSetLods = async (assetId: string, lods: AssetLod[], actor: string) => {
+    await runAssetMutation(
+      () =>
+        setAssetLods({
+          projectRoot: project!.projectRoot!,
+          assetId,
+          lods,
+          actor,
+          updatedAt: new Date().toISOString()
+        }),
+      "LODs mis a jour",
+      `${lods.length} niveau(x)`,
+      "Modification des LODs impossible",
+      assetId
+    );
+  };
+
   const handlePasteAsset = async (
     assetId: string,
     targetDir: string,
@@ -1103,6 +1138,7 @@ export function useBlendUpController() {
     setQuery,
     setRole,
     setSelectedAssetId,
+    setShowBlenderCommandPrompt,
     setUnityPathInput,
     handleRenameAsset,
     handleMoveAsset,
@@ -1118,6 +1154,7 @@ export function useBlendUpController() {
     handleRenameFolder,
     handleDuplicateAsset,
     handlePasteAsset,
+    handleSetLods,
     handleSetVariants,
     handleSaveAssetConfiguration,
     shortcutBindings,

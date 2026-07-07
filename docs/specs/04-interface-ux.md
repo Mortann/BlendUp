@@ -332,6 +332,8 @@ Afficher en V1 :
 - prefab lie ;
 - composants Unity ;
 - variants ;
+- LODs ;
+- exports visibles ;
 - autres assets lies manuellement.
 
 Plus tard :
@@ -340,6 +342,18 @@ Plus tard :
 - materials reels ;
 - textures detectees ;
 - prefabs qui reference cet asset.
+
+### Miniatures
+
+Regles V1 :
+
+- afficher `paths.thumbnail` si la fiche asset le definit ;
+- si le champ est absent, chercher une miniature `.blendup/thumbnails/<assetId>.<ext>` dans le snapshot natif ;
+- si l'URL locale ne se charge pas dans la WebView, relire l'image via une commande native et l'afficher en data URL ;
+- si tout echoue, afficher un visuel par defaut lisible par type d'asset.
+
+Le visuel par defaut doit rester sobre et utile : trame, icone claire, contraste
+suffisant, sans ressembler a une image cassee.
 
 ## Vue Artiste
 
@@ -353,6 +367,9 @@ Met en avant :
 - validation ;
 - export ;
 - notes artiste ;
+- variantes ;
+- LODs ;
+- visualisation mesh/rendu/textures ;
 - warnings comprehensibles.
 
 Actions rapides :
@@ -360,10 +377,20 @@ Actions rapides :
 - ouvrir Blender ;
 - ouvrir PureRef ;
 - creer variant ;
+- ajouter LOD ;
 - exporter ;
 - export test ;
 - corriger nom propose ;
 - changer statut.
+
+La fiche asset artiste expose une section Visualisation. En V1 elle rassemble
+thumbnail/rendu, statut mesh FBX, dossier textures, nombre de variantes et nombre
+de LODs. Plus tard, cette section peut devenir un viewer interactif pour changer
+de variante et basculer les LODs.
+
+Les Parametres Assets peuvent exposer des preferences locales liees au travail
+artiste, par exemple afficher ou masquer l'invite de commande quand BlendUp ouvre
+un fichier `.blend` dans Blender. Cette preference reste locale a la machine.
 
 ## Vue Dev
 

@@ -28,7 +28,9 @@ export function SettingsView({
   setBlenderPathInput,
   setProjectPathInput,
   setPureRefPathInput,
+  setShowBlenderCommandPrompt,
   setUnityPathInput,
+  showBlenderCommandPrompt,
   shortcutBindings,
   onUpdateShortcut,
   onResetShortcuts,
@@ -51,7 +53,9 @@ export function SettingsView({
   setBlenderPathInput: (blenderPath: string) => void;
   setProjectPathInput: (projectRoot: string) => void;
   setPureRefPathInput: (pureRefPath: string) => void;
+  setShowBlenderCommandPrompt: (show: boolean) => void;
   setUnityPathInput: (unityPath: string) => void;
+  showBlenderCommandPrompt: boolean;
   shortcutBindings: ShortcutBindings;
   onUpdateShortcut: (action: ShortcutAction, combo: string) => void;
   onResetShortcuts: () => void;
@@ -138,6 +142,14 @@ export function SettingsView({
               />
             </label>
             <ToolStatus label="Blender" status={toolsSnapshot?.blender} />
+            <label className="settings-toggle">
+              <input
+                checked={showBlenderCommandPrompt}
+                onChange={(event) => setShowBlenderCommandPrompt(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Afficher l'invite de commande au lancement de Blender</span>
+            </label>
             <label className="settings-field">
               <span>Unity</span>
               <input

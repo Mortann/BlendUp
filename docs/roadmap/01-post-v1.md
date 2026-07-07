@@ -105,7 +105,37 @@ Idees :
 - variants visuels/material ;
 - variants gameplay ;
 - comparaison entre variants ;
-- statut par variant.
+- statut par variant ;
+- creation de collection `VAR_<Nom>` dans Blender ;
+- material overrides et prefab variants dans Unity ;
+- preview comparative dans BlendUp.
+
+## V2 - LODs Assistés
+
+Objectif : rendre la creation et le test des LODs plus simples.
+
+Idees :
+
+- liste `LOD0`, `LOD1`, `LOD2` par asset ;
+- cible de reduction et budget triangle par niveau ;
+- detection des objets suffixes `_LOD0`, `_LOD1`, `_LOD2` dans Blender ;
+- duplication/decimation assistee depuis Blender ;
+- export par niveau ;
+- creation ou verification automatique d'un `LODGroup` Unity ;
+- comparaison visuelle et warnings de budget dans BlendUp.
+
+## V2 - Visualisation Asset
+
+Objectif : verifier un asset exporte sans quitter BlendUp.
+
+Idees :
+
+- viewer mesh/rendu/textures ;
+- bascule entre variantes ;
+- bascule entre LODs ;
+- inspection des chemins exportes ;
+- statut d'import Unity dans la meme vue ;
+- comparaison thumbnail Blender / prefab Unity.
 
 ## V2 - Uses / Used By Avance
 

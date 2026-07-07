@@ -1,5 +1,6 @@
 import { blendUpTestSnapshot } from "../fixtures/blendUpTest";
 import type {
+  AssetLod,
   AssetStatus,
   AssetNamingRules,
   AssetTypePreset,
@@ -23,7 +24,8 @@ export const defaultUserSettings: UserSettings = {
   recentProjects: [],
   blenderPath: null,
   unityPath: null,
-  pureRefPath: null
+  pureRefPath: null,
+  showBlenderCommandPrompt: false
 };
 
 export async function loadProjectSnapshot(projectRoot?: string): Promise<ProjectSnapshot> {
@@ -150,6 +152,35 @@ export async function openProjectPath(projectRoot: string, relativePath?: string
   }
 
   await invoke("open_project_path", {
+    projectRoot,
+    relativePath: relativePath.trim()
+  });
+}
+
+export async function openBlendFileInBlender(options: {
+  blenderPath?: string;
+  projectRoot: string;
+  relativePath?: string;
+  showCommandPrompt: boolean;
+}): Promise<void> {
+  if (!options.relativePath?.trim()) {
+    throw new Error("Aucun fichier Blender n'est associe a cet asset.");
+  }
+
+  await invoke("open_blend_file", {
+    projectRoot: options.projectRoot,
+    relativePath: options.relativePath.trim(),
+    blenderPath: options.blenderPath?.trim() || null,
+    showCommandPrompt: options.showCommandPrompt
+  });
+}
+
+export async function readProjectFileDataUrl(projectRoot: string, relativePath?: string): Promise<string> {
+  if (!relativePath?.trim()) {
+    return "";
+  }
+
+  return invoke<string>("read_project_file_data_url", {
     projectRoot,
     relativePath: relativePath.trim()
   });
@@ -410,6 +441,22 @@ export async function setAssetVariants(options: {
   });
 }
 
+export async function setAssetLods(options: {
+  projectRoot: string;
+  assetId: string;
+  lods: AssetLod[];
+  actor: string;
+  updatedAt: string;
+}): Promise<void> {
+  await invoke("set_asset_lods", {
+    projectRoot: options.projectRoot,
+    assetId: options.assetId,
+    lods: options.lods,
+    actor: options.actor,
+    updatedAt: options.updatedAt
+  });
+}
+
 export async function saveAssetConfiguration(options: {
   projectRoot: string;
   assetRoots: string[];
@@ -503,7 +550,8 @@ function normalizeUserSettings(settings: Partial<UserSettings>): UserSettings {
     recentProjects: recentProjects.slice(0, 8),
     blenderPath: normalizeOptionalPath(settings.blenderPath),
     unityPath: normalizeOptionalPath(settings.unityPath),
-    pureRefPath: normalizeOptionalPath(settings.pureRefPath)
+    pureRefPath: normalizeOptionalPath(settings.pureRefPath),
+    showBlenderCommandPrompt: Boolean(settings.showBlenderCommandPrompt)
   };
 }
 

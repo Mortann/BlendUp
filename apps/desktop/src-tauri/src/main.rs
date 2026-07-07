@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -153,6 +154,8 @@ struct UserSettings {
     blender_path: Option<String>,
     unity_path: Option<String>,
     pure_ref_path: Option<String>,
+    #[serde(default)]
+    show_blender_command_prompt: bool,
 }
 
 impl Default for UserSettings {
@@ -165,6 +168,7 @@ impl Default for UserSettings {
             blender_path: None,
             unity_path: None,
             pure_ref_path: None,
+            show_blender_command_prompt: false,
         }
     }
 }
@@ -531,7 +535,99 @@ fn open_project_path(project_root: String, relative_path: String) -> Result<(), 
         return Err("Le fichier demande est en dehors du projet BlendUp.".to_string());
     }
 
-    open_with_system(&target_path)
+    open_with_system(&target_path, false)
+}
+
+#[tauri::command]
+fn open_blend_file(
+    project_root: String,
+    relative_path: String,
+    blender_path: Option<String>,
+    show_command_prompt: bool,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root)
+        .canonicalize()
+        .map_err(|error| format!("Projet introuvable: {error}"))?;
+    let relative_path = relative_path.trim();
+
+    if relative_path.is_empty() {
+        return Err("Aucun fichier Blender n'est associe a cet asset.".to_string());
+    }
+
+    let target_path = project_root.join(relative_path);
+    let target_path = target_path.canonicalize().map_err(|error| {
+        format!(
+            "Impossible de trouver {}: {error}",
+            project_root.join(relative_path).display()
+        )
+    })?;
+
+    if !target_path.starts_with(&project_root) {
+        return Err("Le fichier demande est en dehors du projet BlendUp.".to_string());
+    }
+
+    if !target_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("blend"))
+    {
+        return Err("Le fichier demande n'est pas un fichier Blender .blend.".to_string());
+    }
+
+    if let Some(blender_executable) = find_blender_executable(blender_path.as_deref()) {
+        let mut command = Command::new(&blender_executable);
+        command.arg(&target_path);
+        apply_command_window_preference(&mut command, show_command_prompt);
+        command.spawn().map_err(|error| {
+            format!(
+                "Impossible d'ouvrir {} avec Blender {}: {error}",
+                target_path.display(),
+                blender_executable.display()
+            )
+        })?;
+        return Ok(());
+    }
+
+    open_with_system(&target_path, show_command_prompt)
+}
+
+#[tauri::command]
+fn read_project_file_data_url(project_root: String, relative_path: String) -> Result<String, String> {
+    let project_root = PathBuf::from(project_root)
+        .canonicalize()
+        .map_err(|error| format!("Projet introuvable: {error}"))?;
+    let relative_path = norm_rel(&relative_path);
+
+    if relative_path.is_empty() {
+        return Err("Aucun fichier a lire.".to_string());
+    }
+
+    let target_path = project_root.join(&relative_path);
+    let target_path = target_path.canonicalize().map_err(|error| {
+        format!(
+            "Impossible de trouver {}: {error}",
+            project_root.join(&relative_path).display()
+        )
+    })?;
+
+    if !target_path.starts_with(&project_root) {
+        return Err("Le fichier demande est en dehors du projet BlendUp.".to_string());
+    }
+
+    let mime = image_mime_for_path(&target_path)
+        .ok_or_else(|| "Le fichier demande n'est pas une image supportee.".to_string())?;
+    let metadata = fs::metadata(&target_path)
+        .map_err(|error| format!("Impossible de lire {}: {error}", target_path.display()))?;
+
+    if metadata.len() > 8 * 1024 * 1024 {
+        return Err("Image trop lourde pour l'aperçu BlendUp.".to_string());
+    }
+
+    let bytes = fs::read(&target_path)
+        .map_err(|error| format!("Impossible de lire {}: {error}", target_path.display()))?;
+    let encoded = general_purpose::STANDARD.encode(bytes);
+
+    Ok(format!("data:{mime};base64,{encoded}"))
 }
 
 #[tauri::command]
@@ -609,14 +705,13 @@ fn take_open_request(project_root: String) -> Option<OpenRequest> {
     })
 }
 
-fn open_with_system(path: &Path) -> Result<(), String> {
+fn open_with_system(path: &Path, show_command_prompt: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .arg("/C")
-            .arg("start")
-            .arg("")
-            .arg(path)
+        let mut command = Command::new("cmd");
+        command.arg("/C").arg("start").arg("").arg(path);
+        apply_command_window_preference(&mut command, show_command_prompt);
+        command
             .spawn()
             .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))?;
     }
@@ -638,6 +733,36 @@ fn open_with_system(path: &Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn apply_command_window_preference(command: &mut Command, show_command_prompt: bool) {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    if !show_command_prompt {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_command_window_preference(_command: &mut Command, _show_command_prompt: bool) {}
+
+fn image_mime_for_path(path: &Path) -> Option<&'static str> {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => Some("image/png"),
+        Some("jpg") | Some("jpeg") => Some("image/jpeg"),
+        Some("webp") => Some("image/webp"),
+        Some("gif") => Some("image/gif"),
+        Some("bmp") => Some("image/bmp"),
+        _ => None,
+    }
 }
 
 fn read_assets(project_root: &Path) -> (Vec<Value>, Vec<BlendUpProblem>) {
@@ -669,7 +794,10 @@ fn read_assets(project_root: &Path) -> (Vec<Value>, Vec<BlendUpProblem>) {
         }
 
         match read_json_file(&path) {
-            Ok(asset) => assets.push(asset),
+            Ok(mut asset) => {
+                hydrate_asset_for_snapshot(project_root, &mut asset);
+                assets.push(asset);
+            }
             Err(error) => problems.push(problem(
                 &format!("asset_file_invalid_{}", file_stem(&path)),
                 "error",
@@ -683,6 +811,36 @@ fn read_assets(project_root: &Path) -> (Vec<Value>, Vec<BlendUpProblem>) {
     }
 
     (assets, problems)
+}
+
+fn hydrate_asset_for_snapshot(project_root: &Path, asset: &mut Value) {
+    if asset.get("variants").and_then(Value::as_array).is_none() {
+        asset["variants"] = Value::Array(Vec::new());
+    }
+
+    if asset.get("lods").and_then(Value::as_array).is_none() {
+        asset["lods"] = Value::Array(Vec::new());
+    }
+
+    let has_thumbnail = json_string(asset, &["paths", "thumbnail"])
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+
+    if has_thumbnail {
+        return;
+    }
+
+    let Some(asset_id) = json_string(asset, &["id"]) else {
+        return;
+    };
+
+    for extension in ["png", "jpg", "jpeg", "webp"] {
+        let thumbnail_rel = format!(".blendup/thumbnails/{asset_id}.{extension}");
+        if rel_to_abs(project_root, &thumbnail_rel).is_file() {
+            set_paths_field(asset, "thumbnail", &thumbnail_rel);
+            return;
+        }
+    }
 }
 
 fn read_asset_folders(project_root: &Path, project: &Value) -> Vec<String> {
@@ -1361,6 +1519,7 @@ fn normalize_user_settings(settings: UserSettings) -> UserSettings {
         pure_ref_path: settings
             .pure_ref_path
             .and_then(|value| non_empty_string(&value)),
+        show_blender_command_prompt: settings.show_blender_command_prompt,
     }
 }
 
@@ -2511,6 +2670,7 @@ fn create_asset(
         "references": [],
         "tasks": [],
         "variants": [],
+        "lods": [],
         "notes": { "artist": notes, "developer": "" },
         "createdAt": created_at,
         "updatedAt": created_at
@@ -3168,6 +3328,38 @@ fn set_asset_variants(
 }
 
 #[tauri::command]
+fn set_asset_lods(
+    project_root: String,
+    asset_id: String,
+    lods: Vec<Value>,
+    actor: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project_root);
+    let (asset_file, mut asset) = find_asset_file(&project_root, &asset_id)?;
+    let display_name = json_string(&asset, &["displayName"])
+        .unwrap_or(&asset_id)
+        .to_string();
+    let count = lods.len();
+
+    asset["lods"] = Value::Array(lods);
+    asset["updatedAt"] = Value::String(updated_at.clone());
+    write_json_file(&asset_file, &asset)?;
+    append_activity(
+        &project_root,
+        json!({
+            "time": updated_at,
+            "actor": non_empty_string(&actor).unwrap_or_else(|| "BlendUp".to_string()),
+            "type": "asset.lods_changed",
+            "assetId": asset_id,
+            "message": format!("{count} LOD(s) pour {display_name}")
+        }),
+    )?;
+
+    Ok(())
+}
+
+#[tauri::command]
 fn set_asset_assignees(
     project_root: String,
     asset_id: String,
@@ -3215,6 +3407,8 @@ fn main() {
             detect_blender,
             detect_local_tools,
             export_asset_to_fbx,
+            read_project_file_data_url,
+            open_blend_file,
             open_project_path,
             update_asset_status,
             migrate_assets_to_folders,
@@ -3231,6 +3425,7 @@ fn main() {
             create_folder,
             create_asset,
             save_asset_configuration,
+            set_asset_lods,
             set_asset_variants,
             add_asset_files,
             set_asset_assignees,

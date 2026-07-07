@@ -33,14 +33,15 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { assetLabel, buildAssetName, categoryToType, labelForType, renameCore } from "../blendup/naming";
-import { selectImageFiles } from "../blendup/projectLoader";
+import { readProjectFileDataUrl, selectImageFiles } from "../blendup/projectLoader";
 import { useShortcuts, type ShortcutBindings } from "../app/shortcuts";
 import type { Role, RoleCapabilities } from "../blendup/roles";
 import type {
   AssetStatus,
+  AssetLod,
   AssetNamingRules,
   AssetTypePreset,
   AssetType,
@@ -139,6 +140,7 @@ export function AssetsView({
   onRenameFolder,
   onDuplicateAsset,
   onPasteAsset,
+  onSetLods,
   onSaveAssetConfiguration,
   onSetVariants,
   shortcutBindings,
@@ -151,7 +153,9 @@ export function AssetsView({
   selectedAsset,
   selectedProblems,
   setQuery,
+  setShowBlenderCommandPrompt,
   setSelectedAssetId,
+  showBlenderCommandPrompt,
   snapshot
 }: {
   capabilities: RoleCapabilities;
@@ -190,6 +194,7 @@ export function AssetsView({
   onRenameFolder: (dir: string, newName: string, actor: string) => void;
   onDuplicateAsset: (assetId: string, actor: string) => void;
   onPasteAsset: (assetId: string, targetDir: string, move: boolean, actor: string) => void;
+  onSetLods: (assetId: string, lods: AssetLod[], actor: string) => void;
   onSaveAssetConfiguration: (
     assetRoots: string[],
     assetTypePresets: AssetTypePreset[],
@@ -206,7 +211,9 @@ export function AssetsView({
   selectedAsset?: BlendUpAsset;
   selectedProblems: BlendUpProblem[];
   setQuery: (query: string) => void;
+  setShowBlenderCommandPrompt: (show: boolean) => void;
   setSelectedAssetId: (assetId: string) => void;
+  showBlenderCommandPrompt: boolean;
   snapshot: ProjectSnapshot;
 }) {
   const projectId = snapshot.project.projectId;
@@ -852,7 +859,9 @@ export function AssetsView({
               }}
               onClose={() => setIsSettingsOpen(false)}
               onSaveAssetConfiguration={onSaveAssetConfiguration}
+              onSetShowBlenderCommandPrompt={setShowBlenderCommandPrompt}
               settings={settings}
+              showBlenderCommandPrompt={showBlenderCommandPrompt}
             />
           ) : null}
 
@@ -996,6 +1005,7 @@ export function AssetsView({
             isFavorite={favoriteAssetIds.includes(selectedAsset.id)}
             members={members}
             onAssignOwners={(owners) => onSetAssetOwners(selectedAsset.id, owners, actorName)}
+            onSetLods={(lods) => onSetLods(selectedAsset.id, lods, actorName)}
             onSetVariants={(variants) => onSetVariants(selectedAsset.id, variants, actorName)}
             onUpdateArtistNotes={(notes) => onUpdateAssetNotes(selectedAsset.id, notes, actorName)}
             onChangeStatus={(status) =>
@@ -1122,6 +1132,11 @@ function ArtistAssetCard({
               {asset.variants.length}
             </span>
           ) : null}
+          {asset.lods && asset.lods.length > 0 ? (
+            <span className="lod-badge" title={`${asset.lods.length} LOD(s)`}>
+              LOD {asset.lods.length}
+            </span>
+          ) : null}
           {problemCount > 0 ? <span className="mini-warning">{problemCount}</span> : null}
         </div>
       </button>
@@ -1207,6 +1222,7 @@ function ArtistAssetDetail({
   isFavorite,
   members,
   onAssignOwners,
+  onSetLods,
   onSetVariants,
   onUpdateArtistNotes,
   onChangeStatus,
@@ -1227,6 +1243,7 @@ function ArtistAssetDetail({
   isFavorite: boolean;
   members: TeamMember[];
   onAssignOwners: (owners: { artist: string[]; developer: string[]; reviewer: string | null }) => void;
+  onSetLods: (lods: AssetLod[]) => void;
   onSetVariants: (variants: AssetVariant[]) => void;
   onUpdateArtistNotes: (notes: string) => void;
   onChangeStatus: (status: AssetStatus) => void;
@@ -1520,6 +1537,14 @@ function ArtistAssetDetail({
             <AssetVariants asset={asset} onSetVariants={onSetVariants} />
           </section>
           <section className="section-block">
+            <h3>LODs</h3>
+            <AssetLods asset={asset} onSetLods={onSetLods} />
+          </section>
+          <section className="section-block">
+            <h3>Visualisation</h3>
+            <AssetPreviewPanel asset={asset} onOpenContentPath={onOpenContentPath} projectRoot={projectRoot} />
+          </section>
+          <section className="section-block">
             <h3>Checklist asset</h3>
             <AssetChecklist asset={asset} problems={problems} />
           </section>
@@ -1545,6 +1570,39 @@ function ArtistAssetDetail({
   );
 }
 
+function variantTypeLabel(type: AssetVariant["variantType"]) {
+  const labels: Record<NonNullable<AssetVariant["variantType"]>, string> = {
+    gameplay: "Gameplay",
+    mesh: "Mesh",
+    visual: "Visuelle"
+  };
+
+  return type ? labels[type] : "Visuelle";
+}
+
+function variantStatusLabel(status: AssetVariant["status"] | AssetLod["status"]) {
+  const labels: Record<NonNullable<AssetVariant["status"]>, string> = {
+    exported: "Exporte",
+    in_blender: "Dans Blender",
+    in_unity: "Dans Unity",
+    planned: "A faire",
+    validated: "Valide"
+  };
+
+  return status ? labels[status] : "A faire";
+}
+
+function nextLodLevel(lods: AssetLod[]) {
+  const used = new Set(lods.map((lod) => lod.level.trim().toUpperCase()));
+  let index = 0;
+
+  while (used.has(`LOD${index}`)) {
+    index += 1;
+  }
+
+  return `LOD${index}`;
+}
+
 function AssetVariants({
   asset,
   onSetVariants
@@ -1554,6 +1612,8 @@ function AssetVariants({
 }) {
   const variants = asset.variants ?? [];
   const [draft, setDraft] = useState("");
+  const [draftType, setDraftType] = useState<NonNullable<AssetVariant["variantType"]>>("visual");
+  const [draftNotes, setDraftNotes] = useState("");
 
   const addVariant = () => {
     const name = draft.trim();
@@ -1563,10 +1623,14 @@ function AssetVariants({
     const variant: AssetVariant = {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       name,
+      variantType: draftType,
+      status: "planned",
+      notes: draftNotes.trim() || undefined,
       createdAt: new Date().toISOString()
     };
     onSetVariants([...variants, variant]);
     setDraft("");
+    setDraftNotes("");
   };
 
   const removeVariant = (id: string) => {
@@ -1580,7 +1644,13 @@ function AssetVariants({
           {variants.map((variant) => (
             <li key={variant.id}>
               <Layers size={14} />
-              <span>{variant.name}</span>
+              <span>
+                <strong>{variant.name}</strong>
+                <small>
+                  {variantTypeLabel(variant.variantType)} - {variantStatusLabel(variant.status)}
+                  {variant.notes ? ` - ${variant.notes}` : ""}
+                </small>
+              </span>
               <button
                 className="variant-remove"
                 onClick={() => removeVariant(variant.id)}
@@ -1606,7 +1676,121 @@ function AssetVariants({
           placeholder="Nom de la variante (ex: Casse, Neige)"
           value={draft}
         />
+        <select
+          aria-label="Type de variante"
+          onChange={(event) => setDraftType(event.target.value as NonNullable<AssetVariant["variantType"]>)}
+          value={draftType}
+        >
+          <option value="visual">Visuelle</option>
+          <option value="mesh">Mesh</option>
+          <option value="gameplay">Gameplay</option>
+        </select>
+        <input
+          onChange={(event) => setDraftNotes(event.target.value)}
+          placeholder="Note courte"
+          value={draftNotes}
+        />
         <button className="secondary" disabled={!draft.trim()} onClick={addVariant} type="button">
+          <Plus size={14} />
+          Ajouter
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AssetLods({
+  asset,
+  onSetLods
+}: {
+  asset: BlendUpAsset;
+  onSetLods: (lods: AssetLod[]) => void;
+}) {
+  const lods = asset.lods ?? [];
+  const [level, setLevel] = useState(nextLodLevel(lods));
+  const [targetRatio, setTargetRatio] = useState("50");
+  const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    setLevel(nextLodLevel(lods));
+  }, [asset.id, lods.length]);
+
+  const addLod = () => {
+    const normalizedLevel = level.trim().toUpperCase();
+    if (!normalizedLevel) {
+      return;
+    }
+
+    const ratio = Number.parseInt(targetRatio, 10);
+    const lod: AssetLod = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      level: normalizedLevel,
+      targetRatio: Number.isFinite(ratio) ? Math.min(100, Math.max(1, ratio)) : undefined,
+      status: "planned",
+      notes: notes.trim() || undefined,
+      createdAt: new Date().toISOString()
+    };
+
+    onSetLods([...lods, lod]);
+    setLevel(nextLodLevel([...lods, lod]));
+    setTargetRatio("50");
+    setNotes("");
+  };
+
+  const removeLod = (id: string) => {
+    onSetLods(lods.filter((lod) => lod.id !== id));
+  };
+
+  return (
+    <div className="asset-variants asset-lods">
+      {lods.length > 0 ? (
+        <ul className="variant-list lod-list">
+          {lods.map((lod) => (
+            <li key={lod.id}>
+              <Layers size={14} />
+              <span>
+                <strong>{lod.level}</strong>
+                <small>
+                  {lod.targetRatio ? `${lod.targetRatio}% du LOD0` : "Ratio libre"} - {variantStatusLabel(lod.status)}
+                  {lod.notes ? ` - ${lod.notes}` : ""}
+                </small>
+              </span>
+              <button
+                className="variant-remove"
+                onClick={() => removeLod(lod.id)}
+                title="Supprimer le LOD"
+                type="button"
+              >
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="soft-text">Aucun LOD pour cet asset.</p>
+      )}
+      <div className="variant-add lod-add">
+        <input
+          onChange={(event) => setLevel(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              addLod();
+            }
+          }}
+          placeholder="LOD1"
+          value={level}
+        />
+        <input
+          inputMode="numeric"
+          max={100}
+          min={1}
+          onChange={(event) => setTargetRatio(event.target.value)}
+          placeholder="Ratio %"
+          type="number"
+          value={targetRatio}
+        />
+        <input onChange={(event) => setNotes(event.target.value)} placeholder="Note courte" value={notes} />
+        <button className="secondary" disabled={!level.trim()} onClick={addLod} type="button">
           <Plus size={14} />
           Ajouter
         </button>
@@ -1645,6 +1829,84 @@ function AssetContentLinks({
   );
 }
 
+function AssetPreviewPanel({
+  asset,
+  onOpenContentPath,
+  projectRoot
+}: {
+  asset: BlendUpAsset;
+  onOpenContentPath: (relativePath: string) => void;
+  projectRoot?: string;
+}) {
+  const variants = asset.variants ?? [];
+  const lods = asset.lods ?? [];
+  const hasTextures = Boolean(asset.paths.texturesDir);
+  const hasRender = Boolean(asset.paths.thumbnail);
+  const hasMesh = Boolean(asset.paths.fbxExport);
+
+  return (
+    <div className="asset-preview-panel">
+      <div className="asset-preview-media">
+        <AssetVisual asset={asset} projectRoot={projectRoot} />
+      </div>
+      <div className="asset-preview-grid">
+        <PreviewMetric
+          icon={<Boxes size={16} />}
+          label="Mesh"
+          value={hasMesh ? formatExportStatus(asset.export.lastExportStatus) : "Aucun FBX"}
+          actionLabel={asset.paths.fbxExport ? "Ouvrir" : undefined}
+          onAction={asset.paths.fbxExport ? () => onOpenContentPath(asset.paths.fbxExport!) : undefined}
+        />
+        <PreviewMetric
+          icon={<ImageIconFiles size={16} />}
+          label="Rendu"
+          value={hasRender ? "Miniature disponible" : "Miniature manquante"}
+          actionLabel={asset.paths.thumbnail ? "Ouvrir" : undefined}
+          onAction={asset.paths.thumbnail ? () => onOpenContentPath(asset.paths.thumbnail!) : undefined}
+        />
+        <PreviewMetric
+          icon={<FolderOpen size={16} />}
+          label="Textures"
+          value={hasTextures ? baseName(asset.paths.texturesDir) || "Dossier textures" : "Aucun dossier"}
+          actionLabel={asset.paths.texturesDir ? "Ouvrir" : undefined}
+          onAction={asset.paths.texturesDir ? () => onOpenContentPath(asset.paths.texturesDir!) : undefined}
+        />
+        <PreviewMetric icon={<Layers size={16} />} label="Variantes" value={`${variants.length} variante(s)`} />
+        <PreviewMetric icon={<Layers size={16} />} label="LODs" value={`${lods.length} niveau(x)`} />
+      </div>
+    </div>
+  );
+}
+
+function PreviewMetric({
+  actionLabel,
+  icon,
+  label,
+  onAction,
+  value
+}: {
+  actionLabel?: string;
+  icon: ReactNode;
+  label: string;
+  onAction?: () => void;
+  value: string;
+}) {
+  return (
+    <div className="preview-metric">
+      <span className="preview-metric-icon">{icon}</span>
+      <span>
+        <strong>{label}</strong>
+        <small>{value}</small>
+      </span>
+      {actionLabel && onAction ? (
+        <button className="variant-remove preview-open" onClick={onAction} title={actionLabel} type="button">
+          <ExternalLink size={13} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function AssetChecklist({ asset, problems }: { asset: BlendUpAsset; problems: BlendUpProblem[] }) {
   const checks = [
     {
@@ -1676,6 +1938,11 @@ function AssetChecklist({ asset, problems }: { asset: BlendUpAsset; problems: Bl
       label: "Export FBX",
       detail: formatExportStatus(asset.export.lastExportStatus),
       done: asset.export.lastExportStatus === "success"
+    },
+    {
+      label: "LODs",
+      detail: `${(asset.lods ?? []).length} niveau(x)`,
+      done: (asset.lods ?? []).length > 0
     },
     {
       label: "Problemes",
@@ -1879,12 +2146,14 @@ function activityTitle(type: string) {
     "asset.created": "Creation",
     "asset.deleted": "Suppression",
     "asset.files_added": "Fichiers ajoutes",
+    "asset.lods_changed": "LODs",
     "asset.moved": "Deplacement",
     "asset.notes_changed": "Notes",
     "asset.owners_changed": "Equipe",
     "asset.renamed": "Renommage",
     "asset.status_changed": "Etat",
-    "asset.thumbnail_updated": "Visuel"
+    "asset.thumbnail_updated": "Visuel",
+    "asset.variants_changed": "Variantes"
   };
 
   return labels[type] ?? type.replaceAll(".", " ");
@@ -2308,7 +2577,9 @@ function AssetSettingsPanel({
   onChange,
   onClose,
   onSaveAssetConfiguration,
-  settings
+  onSetShowBlenderCommandPrompt,
+  settings,
+  showBlenderCommandPrompt
 }: {
   assetNamingRules: AssetNamingRules;
   assetRoots: string[];
@@ -2320,7 +2591,9 @@ function AssetSettingsPanel({
     assetTypePresets: AssetTypePreset[],
     assetNamingRules: AssetNamingRules
   ) => void;
+  onSetShowBlenderCommandPrompt: (show: boolean) => void;
   settings: AssetSettings;
+  showBlenderCommandPrompt: boolean;
 }) {
   const [rootsDraft, setRootsDraft] = useState(assetRoots.join("\n"));
   const update = (patch: Partial<AssetSettings>) => onChange({ ...settings, ...patch });
@@ -2409,6 +2682,15 @@ function AssetSettingsPanel({
             type="checkbox"
           />
           <span>Afficher la partie Taches</span>
+        </label>
+
+        <label className="settings-toggle">
+          <input
+            checked={showBlenderCommandPrompt}
+            onChange={(event) => onSetShowBlenderCommandPrompt(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Afficher l'invite de commande quand Blender s'ouvre</span>
         </label>
       </div>
     </div>
@@ -2762,12 +3044,51 @@ function AssetVisual({
   projectRoot?: string;
   small?: boolean;
 }) {
-  const thumbnail = resolveThumbnailSrc(asset.paths.thumbnail, projectRoot, asset.updatedAt);
+  const thumbnailPath = asset.paths.thumbnail;
+  const thumbnail = resolveThumbnailSrc(thumbnailPath, projectRoot, asset.updatedAt);
+  const [fallbackThumbnail, setFallbackThumbnail] = useState("");
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
 
-  if (thumbnail) {
+  useEffect(() => {
+    setFallbackThumbnail("");
+    setThumbnailFailed(false);
+  }, [asset.id, asset.updatedAt, projectRoot, thumbnailPath]);
+
+  const loadFallbackThumbnail = async () => {
+    if (!projectRoot || !thumbnailPath) {
+      setThumbnailFailed(true);
+      return;
+    }
+
+    try {
+      const dataUrl = await readProjectFileDataUrl(projectRoot, thumbnailPath);
+      if (dataUrl) {
+        setFallbackThumbnail(dataUrl);
+        setThumbnailFailed(false);
+      } else {
+        setThumbnailFailed(true);
+      }
+    } catch {
+      setThumbnailFailed(true);
+    }
+  };
+
+  const source = thumbnailFailed ? "" : fallbackThumbnail || thumbnail;
+
+  if (source) {
     return (
       <span className={`asset-visual ${small ? "small" : ""}`}>
-        <img alt="" src={thumbnail} />
+        <img
+          alt=""
+          onError={() => {
+            if (fallbackThumbnail) {
+              setThumbnailFailed(true);
+              return;
+            }
+            void loadFallbackThumbnail();
+          }}
+          src={source}
+        />
       </span>
     );
   }

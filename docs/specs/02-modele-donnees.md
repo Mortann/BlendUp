@@ -325,18 +325,21 @@ Effets :
 
 ## Variant
 
+Les variantes restent attachees a l'asset parent dans la V1. Elles servent
+d'abord a inventorier et tester des declinaisons simples sans creer un systeme
+de variants imbriques.
+
 Exemple :
 
 ```json
 {
   "id": "variant_wood",
-  "displayName": "Wood",
+  "name": "Wood",
   "variantType": "visual",
-  "status": "in_progress",
-  "paths": {
-    "fbxExport": "Unity/Assets/Models/Props/PROP_Barrel_01_Wood.fbx",
-    "unityPrefab": "Unity/Assets/Prefabs/Props/PROP_Barrel_01_Wood.prefab"
-  },
+  "status": "planned",
+  "blenderCollection": "VAR_Wood",
+  "unityPrefab": "Unity/Assets/Prefabs/Props/PROP_Barrel_01_Wood.prefab",
+  "createdAt": "2026-07-07T12:00:00Z",
   "notes": "Version bois standard."
 }
 ```
@@ -346,6 +349,62 @@ Types de variantes :
 - `visual`
 - `mesh`
 - `gameplay`
+
+Etats proposes :
+
+- `planned` : variante prevue dans BlendUp ;
+- `in_blender` : collection, mesh ou material set en cours dans Blender ;
+- `exported` : sortie exportee ;
+- `in_unity` : prefab/material teste dans Unity ;
+- `validated` : variante acceptee.
+
+Proposition d'evolution :
+
+- dans BlendUp : afficher type, etat, note courte, chemin Unity et comparaison rapide ;
+- dans Blender : creer une collection `VAR_<Nom>` ou un material set par variante, puis exporter une sortie dediee si necessaire ;
+- dans Unity : creer un prefab variant ou un material override lie a la variante BlendUp.
+
+## LOD
+
+Les LODs suivent le meme principe que les variantes : une liste simple stockee
+sur la fiche asset, suffisante pour planifier, tester et valider progressivement.
+
+Exemple :
+
+```json
+{
+  "id": "lod_1",
+  "level": "LOD1",
+  "targetRatio": 50,
+  "triangleBudget": 2500,
+  "status": "planned",
+  "blenderObject": "PROP_Barrel_01_LOD1",
+  "fbxExport": "Unity/Assets/Models/Props/PROP_Barrel_01_LOD1.fbx",
+  "createdAt": "2026-07-07T12:00:00Z",
+  "notes": "Silhouette conservee, details secondaires retires."
+}
+```
+
+Proposition d'evolution :
+
+- dans BlendUp : ajouter rapidement `LOD0`, `LOD1`, `LOD2`, cible de reduction et statut ;
+- dans Blender : detecter les objets suffixes `_LOD0`, `_LOD1`, `_LOD2`, proposer duplication/decimation controlee et export par niveau ;
+- dans Unity : generer ou verifier un `LODGroup`, affecter les FBX par niveau et afficher les seuils de transition.
+
+## Visualisation Asset
+
+La fiche asset peut exposer une vue de verification qui regroupe :
+
+- miniature/rendu ;
+- mesh exporte ;
+- dossier textures ;
+- variantes ;
+- LODs ;
+- statut d'export et chemins principaux.
+
+La V1 affiche un recapitulatif visuel et des liens d'ouverture. Une evolution
+possible est un viewer 3D embarque capable de charger le FBX/glTF exporte,
+changer de variante, basculer les LODs et inspecter les textures.
 
 ## Reference
 

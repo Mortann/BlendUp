@@ -843,3 +843,23 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - `npm.cmd run typecheck --workspace apps/desktop` : OK.
 - `npm.cmd run build --workspace apps/desktop` : OK.
 - `C:\Users\morit\.cargo\bin\cargo.exe check` dans `apps/desktop/src-tauri` : OK.
+
+
+## 2026-07-07 - Assets : miniatures, console Blender, variantes, LODs et visualisation
+
+### Fait
+
+- Miniatures : fallback plus robuste. Le snapshot natif renseigne `paths.thumbnail` si un fichier `.blendup/thumbnails/<assetId>.<ext>` existe, meme si la fiche asset ne l'avait pas encore. Cote UI, si l'URL locale ne charge pas, BlendUp relit l'image via une commande native et l'affiche en data URL.
+- Visuel par defaut : remplacement du placeholder trop faible par une vignette par type plus lisible (trame, contraste et icone).
+- Ouverture Blender : ajout d'une commande native `open_blend_file`, qui lance directement Blender si un chemin est detecte/renseigne, avec preference locale pour afficher ou masquer l'invite de commande sous Windows.
+- Parametres : ajout de l'option `Afficher l'invite de commande...` dans les Settings generaux et les Parametres Assets.
+- Variantes : enrichissement du modele (`variantType`, `status`, note courte, liens optionnels Blender/Unity), ajout type/statut/note dans l'UI et correction du contraste du bouton Ajouter.
+- LODs : ajout du modele `AssetLod`, commande native `set_asset_lods`, badge carte, section detail pour ajouter/supprimer un niveau avec ratio cible.
+- Visualisation : ajout d'une section dans la fiche asset qui regroupe thumbnail/rendu, statut mesh FBX, textures, variantes et LODs.
+- Documentation mise a jour : modele de donnees, UX, integrations Blender/Unity, roadmap.
+
+### Verification
+
+- `npm run typecheck` : OK.
+- `C:\Users\morit\.cargo\bin\cargo.exe check --manifest-path apps/desktop/src-tauri/Cargo.toml` avec `CARGO_INCREMENTAL=0` : OK.
+- `npm run build` : OK.

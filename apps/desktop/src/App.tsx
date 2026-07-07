@@ -90,6 +90,7 @@ function App() {
           onRenameFolder={app.handleRenameFolder}
           onDuplicateAsset={app.handleDuplicateAsset}
           onPasteAsset={app.handlePasteAsset}
+          onSetLods={app.handleSetLods}
           onSetVariants={app.handleSetVariants}
           onSaveAssetConfiguration={app.handleSaveAssetConfiguration}
           shortcutBindings={app.shortcutBindings}
@@ -101,6 +102,8 @@ function App() {
           selectedAsset={app.selectedAsset}
           selectedProblems={app.selectedProblems}
           setQuery={app.setQuery}
+          showBlenderCommandPrompt={app.userSettings.showBlenderCommandPrompt}
+          setShowBlenderCommandPrompt={app.setShowBlenderCommandPrompt}
           setSelectedAssetId={app.setSelectedAssetId}
           snapshot={app.project}
         />
@@ -142,7 +145,9 @@ function App() {
           setBlenderPathInput={app.setBlenderPathInput}
           setProjectPathInput={app.setProjectPathInput}
           setPureRefPathInput={app.setPureRefPathInput}
+          setShowBlenderCommandPrompt={app.setShowBlenderCommandPrompt}
           setUnityPathInput={app.setUnityPathInput}
+          showBlenderCommandPrompt={app.userSettings.showBlenderCommandPrompt}
           shortcutBindings={app.shortcutBindings}
           onUpdateShortcut={app.updateShortcut}
           onResetShortcuts={app.resetShortcuts}

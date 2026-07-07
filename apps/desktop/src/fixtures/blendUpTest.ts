@@ -116,6 +116,7 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
       references: [],
       tasks: ["task_export_first_assets", "task_define_collider_rules"],
       variants: [],
+      lods: [],
       notes: {
         artist: "Premier asset prop de test.",
         developer: "Doit permettre de tester export FBX, prefab simple et collider recommande."
@@ -166,6 +167,7 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
       references: [],
       tasks: ["task_export_first_assets"],
       variants: [],
+      lods: [],
       notes: {
         artist: "Asset environnement de test. Contient un material dans le fichier Blender.",
         developer: "Doit permettre de tester export FBX, prefab simple, material et warning collider recommande."
