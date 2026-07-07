@@ -865,6 +865,26 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - `npm run build` : OK.
 
 
+## 2026-07-07 - Assets : visualisation conditionnelle et viewer FBX
+
+### Fait
+
+- Correction du retour automatique vers la premiere section : la fenetre ne reinitialise plus l'onglet actif a chaque rafraichissement du snapshot.
+- Navigation conditionnelle : `Modele 3D` apparait seulement avec un FBX exporte, `Rendus` seulement avec des images dans `renders/`, `Textures` seulement avec des images dans `textures/`.
+- Suppression de `Vue d'ensemble`, `Variantes`, `LODs` et `Fichiers` dans la fenetre de visualisation.
+- Ajout de Three.js + `FBXLoader` + `OrbitControls` pour afficher le FBX exporte dans un vrai viewer 3D WebGL integre.
+- Ajout de reglages 3D : fond, presets de lumieres, grille sol, rotation/orbite/zoom souris.
+- Ajout du dossier `renders/` dans les chemins d'asset et d'une commande native `list_project_images` pour alimenter les galeries.
+- Rendus et textures affiches en galerie grand format avec fleches et zoom image.
+- Documentation mise a jour : UX, modele de donnees, journal.
+
+### Verification
+
+- `npm run typecheck` : OK.
+- `npm run build` : OK (avertissement de taille bundle attendu avec Three.js).
+- `C:\Users\morit\.cargo\bin\cargo.exe check --manifest-path apps/desktop/src-tauri/Cargo.toml` : OK.
+
+
 ## 2026-07-07 - Assets : fenetre de visualisation interne
 
 ### Fait

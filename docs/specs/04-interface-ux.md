@@ -388,15 +388,17 @@ La fiche asset artiste garde les actions de gestion et expose un bouton
 `Visualiser` pres de `Ouvrir dans Blender`, `Historique`, `Favori` et
 `Renommer`. Cette action ouvre une fenetre interne a BlendUp :
 
-- navigation a gauche : vue d'ensemble, mesh, rendu, textures, variantes, LODs, fichiers ;
-- zone centrale : apercu adapte a la section courante ;
+- navigation a gauche conditionnelle selon le contenu disponible : `Modele 3D`
+  seulement si un export FBX existe, `Rendus` seulement si le dossier de rendus
+  contient des images, `Textures` seulement si des images sont detectees ;
+- zone centrale : viewer FBX interactif ou galerie image grand format ;
 - panneau droit : parametres d'affichage contextuels, par exemple fond, zoom,
-  grille, bounds, canal texture ou LOD actif.
+  grille, lumieres ou zoom image.
 
-En V1 cette fenetre reste un inspecteur visuel base sur les donnees disponibles
-dans la fiche asset. Une evolution possible est un viewer 3D embarque capable de
-charger le FBX/glTF exporte, changer de variante, basculer les LODs et inspecter
-les textures reelles.
+En V1 cette fenetre charge le FBX exporte dans un viewer 3D WebGL integre
+(rotation/orbite/zoom via souris), et affiche les rendus/textures depuis les
+dossiers de l'asset. Les sections Variantes, LODs et Fichiers sont retirees de
+la visualisation tant que ces workflows ne sont pas finalises.
 
 Les Parametres Assets peuvent exposer des preferences locales liees au travail
 artiste, par exemple afficher ou masquer l'invite de commande quand BlendUp ouvre

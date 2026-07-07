@@ -136,6 +136,7 @@ export interface BlendUpAsset {
     unityPrefab?: string;
     referencesDir?: string;
     texturesDir?: string;
+    rendersDir?: string;
     thumbnail?: string;
   };
   export: {

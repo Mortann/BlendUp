@@ -19,12 +19,14 @@
     "framer-motion": "latest",
     "lucide-react": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.3",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "latest",
     "typescript": "latest",
     "vite": "latest"

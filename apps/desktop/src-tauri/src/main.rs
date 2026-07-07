@@ -80,6 +80,14 @@ struct ExportAssetResult {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ProjectImageFile {
+    path: String,
+    name: String,
+    modified_at: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct OpenRequest {
     asset_id: String,
     requested_at: String,
@@ -631,6 +639,88 @@ fn read_project_file_data_url(project_root: String, relative_path: String) -> Re
 }
 
 #[tauri::command]
+fn list_project_images(project_root: String, relative_dir: String) -> Result<Vec<ProjectImageFile>, String> {
+    let project_root = PathBuf::from(project_root)
+        .canonicalize()
+        .map_err(|error| format!("Projet introuvable: {error}"))?;
+    let relative_dir = norm_rel(&relative_dir);
+
+    if relative_dir.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let target_dir = project_root.join(&relative_dir);
+    let target_dir = match target_dir.canonicalize() {
+        Ok(path) => path,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    if !target_dir.starts_with(&project_root) || !target_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    fn visit(
+        project_root: &Path,
+        directory: &Path,
+        depth: usize,
+        images: &mut Vec<ProjectImageFile>,
+    ) -> Result<(), String> {
+        if depth > 3 {
+            return Ok(());
+        }
+
+        let entries = match fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(_) => return Ok(()),
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                visit(project_root, &path, depth + 1, images)?;
+                continue;
+            }
+
+            if image_mime_for_path(&path).is_none() {
+                continue;
+            }
+
+            let relative = path
+                .strip_prefix(project_root)
+                .map(|value| norm_rel(&value.to_string_lossy()))
+                .unwrap_or_default();
+            if relative.is_empty() {
+                continue;
+            }
+
+            let modified_at = fs::metadata(&path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs().to_string());
+
+            images.push(ProjectImageFile {
+                name: path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("image")
+                    .to_string(),
+                path: relative,
+                modified_at,
+            });
+        }
+
+        Ok(())
+    }
+
+    let mut images = Vec::new();
+    visit(&project_root, &target_dir, 0, &mut images)?;
+    images.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+
+    Ok(images)
+}
+
+#[tauri::command]
 fn update_asset_status(
     project_root: String,
     asset_id: String,
@@ -820,6 +910,18 @@ fn hydrate_asset_for_snapshot(project_root: &Path, asset: &mut Value) {
 
     if asset.get("lods").and_then(Value::as_array).is_none() {
         asset["lods"] = Value::Array(Vec::new());
+    }
+
+    if json_string(asset, &["paths", "rendersDir"])
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(true)
+    {
+        if let Some(asset_folder) = json_string(asset, &["paths", "assetFolder"]) {
+            let asset_folder = norm_rel(asset_folder);
+            if !asset_folder.is_empty() {
+                set_paths_field(asset, "rendersDir", &format!("{asset_folder}/renders"));
+            }
+        }
     }
 
     let has_thumbnail = json_string(asset, &["paths", "thumbnail"])
@@ -1977,6 +2079,8 @@ fn migrate_assets_to_folders(project_root: String) -> Result<u32, String> {
             .map_err(|error| format!("Impossible de creer references: {error}"))?;
         fs::create_dir_all(folder_abs.join("textures"))
             .map_err(|error| format!("Impossible de creer textures: {error}"))?;
+        fs::create_dir_all(folder_abs.join("renders"))
+            .map_err(|error| format!("Impossible de creer renders: {error}"))?;
 
         let old_abs = rel_to_abs(&project_root, &blender);
         let new_abs = rel_to_abs(&project_root, &new_blender_rel);
@@ -1999,6 +2103,7 @@ fn migrate_assets_to_folders(project_root: String) -> Result<u32, String> {
             &format!("{folder_rel}/references"),
         );
         set_paths_field(&mut asset, "texturesDir", &format!("{folder_rel}/textures"));
+        set_paths_field(&mut asset, "rendersDir", &format!("{folder_rel}/renders"));
         write_json_file(&path, &asset)?;
         migrated += 1;
     }
@@ -2069,6 +2174,7 @@ fn rename_asset(
         &format!("{new_folder}/references"),
     );
     set_paths_field(&mut asset, "texturesDir", &format!("{new_folder}/textures"));
+    set_paths_field(&mut asset, "rendersDir", &format!("{new_folder}/renders"));
 
     // Renomme aussi les fichiers Unity (.fbx / .prefab) et leur .meta.
     if let Some(fbx) = json_string(&asset, &["paths", "fbxExport"]) {
@@ -2161,6 +2267,7 @@ fn move_asset(
     rewrite(&mut asset, "blenderSource");
     rewrite(&mut asset, "referencesDir");
     rewrite(&mut asset, "texturesDir");
+    rewrite(&mut asset, "rendersDir");
 
     // Le type d'asset depend de la categorie (dossier) dans laquelle il se trouve.
     if let Some(new_type) = type_for_folder(&project_root, &target_dir) {
@@ -2187,6 +2294,7 @@ fn move_asset(
                     "blenderSource",
                     "referencesDir",
                     "texturesDir",
+                    "rendersDir",
                 ] {
                     if let Some(current) = json_string(&asset, &["paths", key]) {
                         let current = norm_rel(current);
@@ -2319,6 +2427,7 @@ fn move_folder(
                 "blenderSource",
                 "referencesDir",
                 "texturesDir",
+                "rendersDir",
             ] {
                 if let Some(current) = json_string(&asset, &["paths", key]) {
                     let current = norm_rel(current);
@@ -2600,10 +2709,13 @@ fn create_asset(
 
     let references_rel = format!("{folder_rel}/references");
     let textures_rel = format!("{folder_rel}/textures");
+    let renders_rel = format!("{folder_rel}/renders");
     fs::create_dir_all(rel_to_abs(&project_root, &references_rel))
         .map_err(|error| format!("Impossible de creer references: {error}"))?;
     fs::create_dir_all(rel_to_abs(&project_root, &textures_rel))
         .map_err(|error| format!("Impossible de creer textures: {error}"))?;
+    fs::create_dir_all(rel_to_abs(&project_root, &renders_rel))
+        .map_err(|error| format!("Impossible de creer renders: {error}"))?;
     copy_files_into(
         &rel_to_abs(&project_root, &references_rel),
         &reference_images,
@@ -2632,7 +2744,8 @@ fn create_asset(
         "assetFolder": folder_rel,
         "blenderSource": blender_rel,
         "referencesDir": references_rel,
-        "texturesDir": textures_rel
+        "texturesDir": textures_rel,
+        "rendersDir": renders_rel
     });
     if let Some(fbx) = fbx_export.and_then(|path| non_empty_string(&path)) {
         paths["fbxExport"] = Value::String(norm_rel(&fbx));
@@ -2931,6 +3044,7 @@ fn align_asset_folder_to_display_name(
         "blenderSource",
         "referencesDir",
         "texturesDir",
+        "rendersDir",
     ] {
         if let Some(current) = json_string(asset, &["paths", key]) {
             let current = norm_rel(current);
@@ -3097,6 +3211,7 @@ fn rename_folder(
                 "blenderSource",
                 "referencesDir",
                 "texturesDir",
+                "rendersDir",
             ] {
                 if let Some(current) = json_string(&asset, &["paths", key]) {
                     let current = norm_rel(current);
@@ -3408,6 +3523,7 @@ fn main() {
             detect_local_tools,
             export_asset_to_fbx,
             read_project_file_data_url,
+            list_project_images,
             open_blend_file,
             open_project_path,
             update_asset_status,

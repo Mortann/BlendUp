@@ -186,6 +186,23 @@ export async function readProjectFileDataUrl(projectRoot: string, relativePath?:
   });
 }
 
+export interface ProjectImageFile {
+  path: string;
+  name: string;
+  modifiedAt?: string;
+}
+
+export async function listProjectImages(projectRoot: string, relativeDir?: string): Promise<ProjectImageFile[]> {
+  if (!relativeDir?.trim()) {
+    return [];
+  }
+
+  return invoke<ProjectImageFile[]>("list_project_images", {
+    projectRoot,
+    relativeDir: relativeDir.trim()
+  });
+}
+
 export async function updateAssetStatus(options: {
   actor: string;
   actorIsArtDirector: boolean;

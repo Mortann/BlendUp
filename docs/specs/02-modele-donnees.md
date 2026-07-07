@@ -264,7 +264,8 @@ Champs `paths` ajoutes :
 - `assetFolder` : dossier de l'asset (ex: `Art/Blender/Props/PROP_CubeCrate_01`) ;
 - `blenderSource` : `<assetFolder>/<nom>.blend` ;
 - `referencesDir` : `<assetFolder>/references` ;
-- `texturesDir` : `<assetFolder>/textures`.
+- `texturesDir` : `<assetFolder>/textures` ;
+- `rendersDir` : `<assetFolder>/renders`, images de rendu dediees a la visualisation de l'asset.
 
 L'emplacement de l'asset dans l'explorateur est le **parent** de `assetFolder` (ex: `Art/Blender/Props`).
 
@@ -396,18 +397,15 @@ Proposition d'evolution :
 BlendUp peut ouvrir une fenetre interne de verification pour un asset. Elle
 regroupe :
 
-- miniature/rendu ;
-- mesh exporte ;
-- dossier textures ;
-- variantes ;
-- LODs ;
-- statut d'export et chemins principaux.
+- modele 3D si `paths.fbxExport` existe ;
+- rendus si `paths.rendersDir` contient des images ;
+- textures si `paths.texturesDir` contient des images.
 
-La V1 affiche un inspecteur visuel avec navigation par section et parametres
-d'affichage contextuels. Elle ne sort pas de l'application pour visualiser ces
-donnees. Une evolution possible est un viewer 3D embarque capable de charger le
-FBX/glTF exporte, changer de variante, basculer les LODs et inspecter les
-textures reelles.
+La V1 affiche uniquement les sections qui ont du contenu. Le modele 3D est
+charge depuis le FBX exporte dans un viewer WebGL integre. Les rendus et
+textures sont affiches comme des galeries d'images grand format. Les variantes,
+LODs et chemins bruts restent hors visualisation tant que leurs workflows ne
+sont pas finalises.
 
 ## Reference
 

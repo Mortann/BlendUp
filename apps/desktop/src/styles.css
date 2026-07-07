@@ -5115,6 +5115,160 @@ body {
   background: #e7edf5;
 }
 
+.fbx-viewer-shell {
+  position: relative;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid #ccd7e5;
+  border-radius: 10px;
+  background: #e7edf5;
+}
+
+.fbx-viewer-shell.bg-studio {
+  background:
+    radial-gradient(circle at 38% 24%, rgba(255, 255, 255, 0.82), transparent 28%),
+    linear-gradient(135deg, #f6f8fb, #dce6f2 72%, #c3d1e3);
+}
+
+.fbx-viewer-shell.bg-checker {
+  background:
+    linear-gradient(45deg, rgba(20, 58, 115, 0.1) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(20, 58, 115, 0.1) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(20, 58, 115, 0.1) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(20, 58, 115, 0.1) 75%),
+    #f5f7fb;
+  background-position:
+    0 0,
+    0 12px,
+    12px -12px,
+    -12px 0;
+  background-size: 24px 24px;
+}
+
+.fbx-viewer-shell.bg-dark {
+  background:
+    radial-gradient(circle at 38% 24%, rgba(101, 122, 151, 0.5), transparent 28%),
+    linear-gradient(135deg, #151b24, #252f3d);
+}
+
+.fbx-viewer-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.fbx-viewer-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viewer-loading,
+.viewer-error {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #233149;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: 0 10px 28px rgba(36, 54, 84, 0.16);
+}
+
+.viewer-error {
+  border-color: rgba(168, 45, 45, 0.28);
+  color: #8f2424;
+}
+
+.image-gallery-viewer {
+  display: grid;
+  gap: 12px;
+}
+
+.image-gallery-stage {
+  position: relative;
+  display: grid;
+  min-height: 520px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #ccd7e5;
+  border-radius: 10px;
+  background:
+    linear-gradient(45deg, rgba(20, 58, 115, 0.08) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(20, 58, 115, 0.08) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(20, 58, 115, 0.08) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(20, 58, 115, 0.08) 75%),
+    #f8fafc;
+  background-position:
+    0 0,
+    0 14px,
+    14px -14px,
+    -14px 0;
+  background-size: 28px 28px;
+}
+
+.image-gallery-stage img {
+  display: block;
+  max-width: 86%;
+  max-height: 86%;
+  object-fit: contain;
+  transition: transform 160ms ease;
+}
+
+.gallery-arrow {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid #c7d2e2;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #143a73;
+  box-shadow: 0 10px 26px rgba(36, 54, 84, 0.18);
+}
+
+.gallery-arrow.previous {
+  left: 16px;
+  transform: translateY(-50%) rotate(90deg);
+}
+
+.gallery-arrow.next {
+  right: 16px;
+  transform: translateY(-50%) rotate(-90deg);
+}
+
+.image-gallery-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  border: 1px solid #d8e0eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #263244;
+}
+
+.image-gallery-footer strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-gallery-footer span {
+  flex: 0 0 auto;
+  color: #667285;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .viewer-main-surface.bg-studio {
   background:
     radial-gradient(circle at 38% 25%, rgba(255, 255, 255, 0.82), transparent 28%),
@@ -5475,7 +5629,9 @@ body {
   }
 
   .viewer-main-surface,
-  .viewer-hero-preview {
+  .viewer-hero-preview,
+  .fbx-viewer-shell,
+  .image-gallery-stage {
     min-height: 300px;
   }
 
