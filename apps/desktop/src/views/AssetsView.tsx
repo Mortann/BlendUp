@@ -9,6 +9,7 @@ import {
   ClipboardPaste,
   Clock,
   Copy,
+  Eye,
   ExternalLink,
   FilePlus,
   FileSearch,
@@ -24,13 +25,16 @@ import {
   Image as ImageIconFiles,
   Pencil,
   Plus,
+  RotateCcw,
   Scissors,
   Search,
   SlidersHorizontal,
   Star,
   Trash2,
   UserRound,
-  X
+  X,
+  ZoomIn,
+  ZoomOut
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
@@ -66,6 +70,8 @@ type AssetDisplayMode = "grid" | "list" | "compact";
 type AssetQuickFilter = "all" | "favorites" | "todo" | "in_progress" | "review" | "needs_art_fix" | "validated";
 type AssetThumbSize = "small" | "medium" | "large";
 type HistoryTypeFilter = "all" | "status" | "team" | "notes" | "files" | "export" | "other";
+type VisualizationSection = "overview" | "mesh" | "render" | "textures" | "variants" | "lods" | "files";
+type VisualizationBackground = "studio" | "checker" | "dark";
 
 interface AssetSettings {
   defaultDisplayMode: AssetDisplayMode;
@@ -236,9 +242,13 @@ export function AssetsView({
   const [folderRenameTarget, setFolderRenameTarget] = useState<{ path: string; currentName: string } | null>(null);
   const [folderDeleteTarget, setFolderDeleteTarget] = useState<{ path: string; name: string } | null>(null);
   const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
+  const [visualizationAssetId, setVisualizationAssetId] = useState<string | null>(null);
   const activeMember = useMemo(() => getActiveMember(projectId), [projectId]);
   const members = useMemo(() => loadTeamMembers(projectId), [projectId]);
   const actorName = activeMember?.name ?? "BlendUp";
+  const visualizationAsset = visualizationAssetId
+    ? snapshot.assets.find((asset) => asset.id === visualizationAssetId)
+    : undefined;
 
   useEffect(() => {
     const nextSettings = loadAssetSettings(projectId);
@@ -266,6 +276,12 @@ export function AssetsView({
   useEffect(() => {
     saveRecentFolders(projectId, recentFolders);
   }, [projectId, recentFolders]);
+
+  useEffect(() => {
+    if (visualizationAssetId && !snapshot.assets.some((asset) => asset.id === visualizationAssetId)) {
+      setVisualizationAssetId(null);
+    }
+  }, [snapshot.assets, visualizationAssetId]);
 
   useEffect(() => {
     if (!contextMenu) {
@@ -1022,12 +1038,21 @@ export function AssetsView({
             onOpenContentPath={onOpenContentPath}
             onRename={() => setRenameTarget({ assetId: selectedAsset.id, currentName: selectedAsset.displayName })}
             onToggleFavorite={() => toggleFavorite(selectedAsset.id)}
+            onVisualize={() => setVisualizationAssetId(selectedAsset.id)}
             problems={selectedProblems}
             activity={snapshot.activity.filter((event) => event.assetId === selectedAsset.id)}
             currentBranch={snapshot.gitStatus.branch}
             projectRoot={snapshot.projectRoot}
           />
         </div>
+      ) : null}
+
+      {visualizationAsset ? (
+        <AssetVisualizationWindow
+          asset={visualizationAsset}
+          onClose={() => setVisualizationAssetId(null)}
+          projectRoot={snapshot.projectRoot}
+        />
       ) : null}
 
       {isSpotlightOpen ? (
@@ -1232,6 +1257,7 @@ function ArtistAssetDetail({
   onOpenContentPath,
   onRename,
   onToggleFavorite,
+  onVisualize,
   problems,
   projectRoot
 }: {
@@ -1253,6 +1279,7 @@ function ArtistAssetDetail({
   onOpenContentPath: (relativePath: string) => void;
   onRename: () => void;
   onToggleFavorite: () => void;
+  onVisualize: () => void;
   problems: BlendUpProblem[];
   projectRoot?: string;
 }) {
@@ -1388,6 +1415,10 @@ function ArtistAssetDetail({
         <button disabled={!asset.paths.blenderSource} onClick={onOpenInBlender} type="button">
           <ExternalLink size={16} />
           Ouvrir dans Blender
+        </button>
+        <button className="secondary" onClick={onVisualize} type="button">
+          <Eye size={16} />
+          Visualiser
         </button>
         <button
           className={detailMode === "history" ? "secondary active" : "secondary"}
@@ -1539,10 +1570,6 @@ function ArtistAssetDetail({
           <section className="section-block">
             <h3>LODs</h3>
             <AssetLods asset={asset} onSetLods={onSetLods} />
-          </section>
-          <section className="section-block">
-            <h3>Visualisation</h3>
-            <AssetPreviewPanel asset={asset} onOpenContentPath={onOpenContentPath} projectRoot={projectRoot} />
           </section>
           <section className="section-block">
             <h3>Checklist asset</h3>
@@ -1829,80 +1856,492 @@ function AssetContentLinks({
   );
 }
 
-function AssetPreviewPanel({
+function AssetVisualizationWindow({
   asset,
-  onOpenContentPath,
+  onClose,
   projectRoot
 }: {
   asset: BlendUpAsset;
-  onOpenContentPath: (relativePath: string) => void;
+  onClose: () => void;
   projectRoot?: string;
 }) {
   const variants = asset.variants ?? [];
   const lods = asset.lods ?? [];
-  const hasTextures = Boolean(asset.paths.texturesDir);
-  const hasRender = Boolean(asset.paths.thumbnail);
-  const hasMesh = Boolean(asset.paths.fbxExport);
+  const [section, setSection] = useState<VisualizationSection>("overview");
+  const [background, setBackground] = useState<VisualizationBackground>("studio");
+  const [showGrid, setShowGrid] = useState(true);
+  const [showBounds, setShowBounds] = useState(true);
+  const [zoom, setZoom] = useState(100);
+  const [textureChannel, setTextureChannel] = useState("BaseColor");
+  const [selectedLodId, setSelectedLodId] = useState(lods[0]?.id ?? "");
+
+  useEffect(() => {
+    setSection("overview");
+    setBackground("studio");
+    setShowGrid(true);
+    setShowBounds(true);
+    setZoom(100);
+    setTextureChannel("BaseColor");
+    setSelectedLodId((asset.lods ?? [])[0]?.id ?? "");
+  }, [asset.id, asset.lods]);
+
+  const sections: { id: VisualizationSection; icon: ReactNode; label: string; meta: string }[] = [
+    { id: "overview", icon: <Grid2X2 size={16} />, label: "Vue d'ensemble", meta: formatExportStatus(asset.export.lastExportStatus) },
+    { id: "mesh", icon: <Boxes size={16} />, label: "Mesh", meta: asset.paths.fbxExport ? "FBX" : "Source" },
+    { id: "render", icon: <ImageIconFiles size={16} />, label: "Rendu", meta: asset.paths.thumbnail ? "Miniature" : "A generer" },
+    { id: "textures", icon: <ImageIcon size={16} />, label: "Textures", meta: asset.paths.texturesDir ? "Dossier" : "Aucun" },
+    { id: "variants", icon: <Layers size={16} />, label: "Variantes", meta: `${variants.length}` },
+    { id: "lods", icon: <Layers size={16} />, label: "LODs", meta: `${lods.length}` },
+    { id: "files", icon: <Files size={16} />, label: "Fichiers", meta: "Chemins" }
+  ];
 
   return (
-    <div className="asset-preview-panel">
-      <div className="asset-preview-media">
-        <AssetVisual asset={asset} projectRoot={projectRoot} />
-      </div>
-      <div className="asset-preview-grid">
-        <PreviewMetric
-          icon={<Boxes size={16} />}
-          label="Mesh"
-          value={hasMesh ? formatExportStatus(asset.export.lastExportStatus) : "Aucun FBX"}
-          actionLabel={asset.paths.fbxExport ? "Ouvrir" : undefined}
-          onAction={asset.paths.fbxExport ? () => onOpenContentPath(asset.paths.fbxExport!) : undefined}
-        />
-        <PreviewMetric
-          icon={<ImageIconFiles size={16} />}
-          label="Rendu"
-          value={hasRender ? "Miniature disponible" : "Miniature manquante"}
-          actionLabel={asset.paths.thumbnail ? "Ouvrir" : undefined}
-          onAction={asset.paths.thumbnail ? () => onOpenContentPath(asset.paths.thumbnail!) : undefined}
-        />
-        <PreviewMetric
-          icon={<FolderOpen size={16} />}
-          label="Textures"
-          value={hasTextures ? baseName(asset.paths.texturesDir) || "Dossier textures" : "Aucun dossier"}
-          actionLabel={asset.paths.texturesDir ? "Ouvrir" : undefined}
-          onAction={asset.paths.texturesDir ? () => onOpenContentPath(asset.paths.texturesDir!) : undefined}
-        />
-        <PreviewMetric icon={<Layers size={16} />} label="Variantes" value={`${variants.length} variante(s)`} />
-        <PreviewMetric icon={<Layers size={16} />} label="LODs" value={`${lods.length} niveau(x)`} />
-      </div>
+    <div className="asset-visualization-overlay" onClick={onClose} role="presentation">
+      <section
+        aria-label="Visualisation asset"
+        className="asset-visualization-window"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="asset-visualization-header">
+          <div>
+            <span className="eyebrow">Visualisation asset</span>
+            <h2>{assetLabel(asset.displayName)}</h2>
+            <small>{formatAssetType(asset.type)} - {asset.displayName}</small>
+          </div>
+          <div className="visualization-header-meta">
+            <StatusPill label={formatStatus(normalizeArtistStatus(asset.status))} tone="blue" />
+            <StatusPill
+              label={asset.export.lastExportStatus === "success" ? "Export OK" : formatExportStatus(asset.export.lastExportStatus)}
+              tone={asset.export.lastExportStatus === "success" ? "green" : "orange"}
+            />
+            <button className="icon-button" onClick={onClose} title="Fermer" type="button">
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+
+        <div className="asset-visualization-body">
+          <nav aria-label="Sections visualisation" className="visualization-nav">
+            {sections.map((item) => (
+              <button
+                className={section === item.id ? "active" : ""}
+                key={item.id}
+                onClick={() => setSection(item.id)}
+                type="button"
+              >
+                {item.icon}
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.meta}</small>
+                </span>
+              </button>
+            ))}
+          </nav>
+
+          <VisualizationStage
+            asset={asset}
+            background={background}
+            projectRoot={projectRoot}
+            section={section}
+            selectedLodId={selectedLodId}
+            showBounds={showBounds}
+            showGrid={showGrid}
+            textureChannel={textureChannel}
+            zoom={zoom}
+          />
+
+          <VisualizationSettings
+            asset={asset}
+            background={background}
+            onBackgroundChange={setBackground}
+            onReset={() => {
+              setBackground("studio");
+              setShowGrid(true);
+              setShowBounds(true);
+              setZoom(100);
+              setTextureChannel("BaseColor");
+              setSelectedLodId((asset.lods ?? [])[0]?.id ?? "");
+            }}
+            onSelectedLodChange={setSelectedLodId}
+            onShowBoundsChange={setShowBounds}
+            onShowGridChange={setShowGrid}
+            onTextureChannelChange={setTextureChannel}
+            onZoomChange={setZoom}
+            section={section}
+            selectedLodId={selectedLodId}
+            showBounds={showBounds}
+            showGrid={showGrid}
+            textureChannel={textureChannel}
+            zoom={zoom}
+          />
+        </div>
+      </section>
     </div>
   );
 }
 
-function PreviewMetric({
-  actionLabel,
+function VisualizationStage({
+  asset,
+  background,
+  projectRoot,
+  section,
+  selectedLodId,
+  showBounds,
+  showGrid,
+  textureChannel,
+  zoom
+}: {
+  asset: BlendUpAsset;
+  background: VisualizationBackground;
+  projectRoot?: string;
+  section: VisualizationSection;
+  selectedLodId: string;
+  showBounds: boolean;
+  showGrid: boolean;
+  textureChannel: string;
+  zoom: number;
+}) {
+  const variants = asset.variants ?? [];
+  const lods = asset.lods ?? [];
+  const selectedLod = lods.find((lod) => lod.id === selectedLodId) ?? lods[0];
+  const surfaceClass = `viewer-main-surface bg-${background} ${showGrid ? "with-grid" : ""}`;
+  const objectStyle = { transform: `scale(${zoom / 100})` };
+
+  if (section === "overview") {
+    return (
+      <main className="visualization-stage">
+        <div className="viewer-overview">
+          <div className="viewer-hero-preview">
+            <AssetVisual asset={asset} projectRoot={projectRoot} />
+          </div>
+          <div className="viewer-info-grid">
+            <ViewerInfoCard
+              detail={asset.paths.blenderSource ? baseName(asset.paths.blenderSource) : "Aucun .blend"}
+              icon={<Boxes size={17} />}
+              label="Source"
+              value={asset.paths.blenderSource ? "Blender" : "Manquant"}
+            />
+            <ViewerInfoCard
+              detail={asset.paths.fbxExport ? baseName(asset.paths.fbxExport) : "Pas encore exporte"}
+              icon={<ExternalLink size={17} />}
+              label="Export"
+              value={formatExportStatus(asset.export.lastExportStatus)}
+            />
+            <ViewerInfoCard
+              detail={asset.paths.texturesDir ? baseName(asset.paths.texturesDir) : "Aucun dossier"}
+              icon={<ImageIcon size={17} />}
+              label="Textures"
+              value={asset.paths.texturesDir ? "Preparees" : "A verifier"}
+            />
+            <ViewerInfoCard
+              detail={`${variants.length} variante(s), ${lods.length} LOD(s)`}
+              icon={<Layers size={17} />}
+              label="Production"
+              value={formatStatus(normalizeArtistStatus(asset.status))}
+            />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (section === "mesh") {
+    return (
+      <main className="visualization-stage">
+        <div className={surfaceClass}>
+          {asset.paths.blenderSource || asset.paths.fbxExport ? (
+            <div className={`viewer-object ${showBounds ? "show-bounds" : ""}`} style={objectStyle}>
+              <AssetVisual asset={asset} projectRoot={projectRoot} />
+              {showBounds ? <span className="viewer-bounds-label">Bounds</span> : null}
+            </div>
+          ) : (
+            <EmptyState icon={<Boxes size={28} />} label="Aucun mesh lie" />
+          )}
+          <div className="viewer-axis">
+            <span>X</span>
+            <span>Y</span>
+            <span>Z</span>
+          </div>
+        </div>
+        <div className="viewer-path-list">
+          <ViewerPath label="Blender" value={asset.paths.blenderSource} />
+          <ViewerPath label="FBX" value={asset.paths.fbxExport} />
+        </div>
+      </main>
+    );
+  }
+
+  if (section === "render") {
+    return (
+      <main className="visualization-stage">
+        <div className={surfaceClass}>
+          <div className="viewer-image-frame" style={objectStyle}>
+            <AssetVisual asset={asset} projectRoot={projectRoot} />
+          </div>
+        </div>
+        <div className="viewer-path-list">
+          <ViewerPath label="Miniature" value={asset.paths.thumbnail} />
+          <ViewerPath label="Dernier export" value={asset.export.lastExportAt ?? undefined} />
+        </div>
+      </main>
+    );
+  }
+
+  if (section === "textures") {
+    const channels = ["BaseColor", "Normal", "Roughness", "Metallic", "AO"];
+
+    return (
+      <main className="visualization-stage">
+        <div className="texture-preview-grid">
+          {channels.map((channel) => (
+            <div className={channel === textureChannel ? "texture-tile active" : "texture-tile"} key={channel}>
+              <span className={`texture-swatch channel-${channel.toLowerCase()}`} />
+              <strong>{channel}</strong>
+              <small>{asset.paths.texturesDir ? "Dossier texture" : "Non detecte"}</small>
+            </div>
+          ))}
+        </div>
+        <div className="viewer-path-list">
+          <ViewerPath label="Textures" value={asset.paths.texturesDir} />
+        </div>
+      </main>
+    );
+  }
+
+  if (section === "variants") {
+    return (
+      <main className="visualization-stage">
+        {variants.length > 0 ? (
+          <div className="viewer-card-list">
+            {variants.map((variant) => (
+              <article className="viewer-card" key={variant.id}>
+                <span className="viewer-card-icon"><Layers size={16} /></span>
+                <div>
+                  <strong>{variant.name}</strong>
+                  <small>{variantTypeLabel(variant.variantType)} - {variantStatusLabel(variant.status)}</small>
+                  {variant.notes ? <p>{variant.notes}</p> : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={<Layers size={28} />} label="Aucune variante" />
+        )}
+      </main>
+    );
+  }
+
+  if (section === "lods") {
+    return (
+      <main className="visualization-stage">
+        {lods.length > 0 ? (
+          <div className="lod-visual-list">
+            {lods.map((lod) => {
+              const ratio = lod.targetRatio ?? 100;
+              return (
+                <article className={lod.id === selectedLod?.id ? "active" : ""} key={lod.id}>
+                  <div>
+                    <strong>{lod.level}</strong>
+                    <small>{variantStatusLabel(lod.status)} - {lod.targetRatio ? `${lod.targetRatio}% du LOD0` : "Ratio libre"}</small>
+                  </div>
+                  <span className="lod-ratio-track">
+                    <span style={{ width: `${Math.max(8, Math.min(100, ratio))}%` }} />
+                  </span>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState icon={<Layers size={28} />} label="Aucun LOD" />
+        )}
+      </main>
+    );
+  }
+
+  return (
+    <main className="visualization-stage">
+      <div className="viewer-path-list large">
+        <ViewerPath label="Dossier" value={asset.paths.assetFolder} />
+        <ViewerPath label="Blender" value={asset.paths.blenderSource} />
+        <ViewerPath label="FBX" value={asset.paths.fbxExport} />
+        <ViewerPath label="Prefab Unity" value={asset.paths.unityPrefab} />
+        <ViewerPath label="Textures" value={asset.paths.texturesDir} />
+        <ViewerPath label="References" value={asset.paths.referencesDir} />
+        <ViewerPath label="Miniature" value={asset.paths.thumbnail} />
+      </div>
+    </main>
+  );
+}
+
+function VisualizationSettings({
+  asset,
+  background,
+  onBackgroundChange,
+  onReset,
+  onSelectedLodChange,
+  onShowBoundsChange,
+  onShowGridChange,
+  onTextureChannelChange,
+  onZoomChange,
+  section,
+  selectedLodId,
+  showBounds,
+  showGrid,
+  textureChannel,
+  zoom
+}: {
+  asset: BlendUpAsset;
+  background: VisualizationBackground;
+  onBackgroundChange: (background: VisualizationBackground) => void;
+  onReset: () => void;
+  onSelectedLodChange: (lodId: string) => void;
+  onShowBoundsChange: (show: boolean) => void;
+  onShowGridChange: (show: boolean) => void;
+  onTextureChannelChange: (channel: string) => void;
+  onZoomChange: (zoom: number) => void;
+  section: VisualizationSection;
+  selectedLodId: string;
+  showBounds: boolean;
+  showGrid: boolean;
+  textureChannel: string;
+  zoom: number;
+}) {
+  const lods = asset.lods ?? [];
+  const variants = asset.variants ?? [];
+  const canTuneView = section === "mesh" || section === "render" || section === "overview";
+
+  const changeZoom = (value: number) => onZoomChange(Math.max(50, Math.min(180, value)));
+
+  return (
+    <aside className="visualization-settings">
+      <div className="settings-title-row">
+        <div>
+          <span className="eyebrow">Affichage</span>
+          <h3>Parametres</h3>
+        </div>
+        <button className="icon-button" onClick={onReset} title="Reinitialiser" type="button">
+          <RotateCcw size={16} />
+        </button>
+      </div>
+
+      {canTuneView ? (
+        <>
+          <label className="viewer-setting">
+            <span>Fond</span>
+            <select
+              onChange={(event) => onBackgroundChange(event.target.value as VisualizationBackground)}
+              value={background}
+            >
+              <option value="studio">Studio</option>
+              <option value="checker">Damier</option>
+              <option value="dark">Sombre</option>
+            </select>
+          </label>
+          <div className="viewer-setting">
+            <span>Zoom</span>
+            <div className="zoom-control">
+              <button onClick={() => changeZoom(zoom - 10)} title="Dezoomer" type="button">
+                <ZoomOut size={15} />
+              </button>
+              <input
+                max={180}
+                min={50}
+                onChange={(event) => changeZoom(Number(event.target.value))}
+                type="range"
+                value={zoom}
+              />
+              <button onClick={() => changeZoom(zoom + 10)} title="Zoomer" type="button">
+                <ZoomIn size={15} />
+              </button>
+              <strong>{zoom}%</strong>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {section === "mesh" ? (
+        <div className="viewer-toggle-list">
+          <label>
+            <input checked={showGrid} onChange={(event) => onShowGridChange(event.target.checked)} type="checkbox" />
+            <span>Grille</span>
+          </label>
+          <label>
+            <input checked={showBounds} onChange={(event) => onShowBoundsChange(event.target.checked)} type="checkbox" />
+            <span>Bounds</span>
+          </label>
+        </div>
+      ) : null}
+
+      {section === "textures" ? (
+        <label className="viewer-setting">
+          <span>Canal</span>
+          <select onChange={(event) => onTextureChannelChange(event.target.value)} value={textureChannel}>
+            <option value="BaseColor">BaseColor</option>
+            <option value="Normal">Normal</option>
+            <option value="Roughness">Roughness</option>
+            <option value="Metallic">Metallic</option>
+            <option value="AO">AO</option>
+          </select>
+        </label>
+      ) : null}
+
+      {section === "lods" ? (
+        <label className="viewer-setting">
+          <span>LOD actif</span>
+          <select
+            disabled={lods.length === 0}
+            onChange={(event) => onSelectedLodChange(event.target.value)}
+            value={selectedLodId}
+          >
+            {lods.length > 0 ? (
+              lods.map((lod) => (
+                <option key={lod.id} value={lod.id}>
+                  {lod.level}
+                </option>
+              ))
+            ) : (
+              <option value="">Aucun</option>
+            )}
+          </select>
+        </label>
+      ) : null}
+
+      <div className="viewer-setting-summary">
+        <ViewerInfoCard detail={asset.paths.assetFolder ?? "Dossier non defini"} icon={<Folder size={16} />} label="Asset" value={assetLabel(asset.displayName)} />
+        <ViewerInfoCard detail={`${variants.length} variante(s)`} icon={<Layers size={16} />} label="Variantes" value={`${lods.length} LOD(s)`} />
+      </div>
+    </aside>
+  );
+}
+
+function ViewerInfoCard({
+  detail,
   icon,
   label,
-  onAction,
   value
 }: {
-  actionLabel?: string;
+  detail: string;
   icon: ReactNode;
   label: string;
-  onAction?: () => void;
   value: string;
 }) {
   return (
-    <div className="preview-metric">
-      <span className="preview-metric-icon">{icon}</span>
+    <div className="viewer-info-card">
+      <span className="viewer-info-icon">{icon}</span>
       <span>
         <strong>{label}</strong>
         <small>{value}</small>
       </span>
-      {actionLabel && onAction ? (
-        <button className="variant-remove preview-open" onClick={onAction} title={actionLabel} type="button">
-          <ExternalLink size={13} />
-        </button>
-      ) : null}
+      <em>{detail}</em>
+    </div>
+  );
+}
+
+function ViewerPath({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className={value ? "viewer-path" : "viewer-path missing"}>
+      <span>{label}</span>
+      <code>{value ?? "Manquant"}</code>
     </div>
   );
 }

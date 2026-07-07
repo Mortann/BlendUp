@@ -193,6 +193,7 @@ Implementation actuelle :
 - la vue asset propose recherche, tri et modes grille/liste ;
 - le bouton `Exporter FBX` n'est pas affiche dans la fiche artiste : l'export quotidien doit venir du workflow Blender ;
 - `Ouvrir dans Blender` appelle une commande native qui ouvre le fichier `.blend` associe via l'application par defaut du systeme ;
+- `Visualiser` ouvre une fenetre interne a BlendUp, separee de la fiche detail, pour inspecter rendu, mesh, textures, variantes, LODs et chemins sans quitter l'application ;
 - la navigation se fait en mode explorateur parent/enfant sur les vrais dossiers du projet, et l'emplacement courant est memorise (localStorage, par projet) entre les sessions ;
 - un panneau d'acces rapides a gauche regroupe favoris et collections (favoris, a valider, a retravailler) ; les favoris sont personnels a chaque utilisateur (locaux, par projet) ;
 - chaque asset affiche un visuel (thumbnail si disponible, sinon une carte generee par type) avec, dessous, son nom, son etat artiste et les personnes associees ;
@@ -383,10 +384,19 @@ Actions rapides :
 - corriger nom propose ;
 - changer statut.
 
-La fiche asset artiste expose une section Visualisation. En V1 elle rassemble
-thumbnail/rendu, statut mesh FBX, dossier textures, nombre de variantes et nombre
-de LODs. Plus tard, cette section peut devenir un viewer interactif pour changer
-de variante et basculer les LODs.
+La fiche asset artiste garde les actions de gestion et expose un bouton
+`Visualiser` pres de `Ouvrir dans Blender`, `Historique`, `Favori` et
+`Renommer`. Cette action ouvre une fenetre interne a BlendUp :
+
+- navigation a gauche : vue d'ensemble, mesh, rendu, textures, variantes, LODs, fichiers ;
+- zone centrale : apercu adapte a la section courante ;
+- panneau droit : parametres d'affichage contextuels, par exemple fond, zoom,
+  grille, bounds, canal texture ou LOD actif.
+
+En V1 cette fenetre reste un inspecteur visuel base sur les donnees disponibles
+dans la fiche asset. Une evolution possible est un viewer 3D embarque capable de
+charger le FBX/glTF exporte, changer de variante, basculer les LODs et inspecter
+les textures reelles.
 
 Les Parametres Assets peuvent exposer des preferences locales liees au travail
 artiste, par exemple afficher ou masquer l'invite de commande quand BlendUp ouvre

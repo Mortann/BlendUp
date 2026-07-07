@@ -863,3 +863,19 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - `npm run typecheck` : OK.
 - `C:\Users\morit\.cargo\bin\cargo.exe check --manifest-path apps/desktop/src-tauri/Cargo.toml` avec `CARGO_INCREMENTAL=0` : OK.
 - `npm run build` : OK.
+
+
+## 2026-07-07 - Assets : fenetre de visualisation interne
+
+### Fait
+
+- La visualisation n'est plus une section compacte dans la fiche artiste.
+- Ajout d'un bouton `Visualiser` dans la barre d'actions de la fiche asset, a cote de `Ouvrir dans Blender`, `Historique`, `Favori` et `Renommer`.
+- Nouvelle fenetre interne BlendUp : menu gauche (vue d'ensemble, mesh, rendu, textures, variantes, LODs, fichiers), zone centrale de visualisation, panneau droit de parametres contextuels.
+- Reglages V1 : fond studio/damier/sombre, zoom, grille, bounds, canal texture et LOD actif selon la section.
+- Detail asset artiste aeré : largeur augmentee, suppression du bloc Visualisation, formulaires Variantes/LODs reorganises pour eviter les debordements.
+- Documentation mise a jour : UX, modele de donnees, journal.
+
+### Verification
+
+- `npm run typecheck` : OK.

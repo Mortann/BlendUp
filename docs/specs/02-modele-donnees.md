@@ -393,7 +393,8 @@ Proposition d'evolution :
 
 ## Visualisation Asset
 
-La fiche asset peut exposer une vue de verification qui regroupe :
+BlendUp peut ouvrir une fenetre interne de verification pour un asset. Elle
+regroupe :
 
 - miniature/rendu ;
 - mesh exporte ;
@@ -402,9 +403,11 @@ La fiche asset peut exposer une vue de verification qui regroupe :
 - LODs ;
 - statut d'export et chemins principaux.
 
-La V1 affiche un recapitulatif visuel et des liens d'ouverture. Une evolution
-possible est un viewer 3D embarque capable de charger le FBX/glTF exporte,
-changer de variante, basculer les LODs et inspecter les textures.
+La V1 affiche un inspecteur visuel avec navigation par section et parametres
+d'affichage contextuels. Elle ne sort pas de l'application pour visualiser ces
+donnees. Une evolution possible est un viewer 3D embarque capable de charger le
+FBX/glTF exporte, changer de variante, basculer les LODs et inspecter les
+textures reelles.
 
 ## Reference
 
