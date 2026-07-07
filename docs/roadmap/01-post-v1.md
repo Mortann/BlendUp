@@ -42,7 +42,7 @@ Idees :
 - verrouillage Git LFS Lock si configure ;
 - proprietaires/reviewers plus visibles ;
 - notifications locales ;
-- review art/dev plus lisible ;
+- review art/validation plus lisible ;
 - journal d'activite par asset enrichi ;
 - meilleure gestion des taches internes.
 
@@ -188,7 +188,7 @@ Idees :
 
 - zones logiques ;
 - liste d'assets par zone ;
-- notes art/dev par zone ;
+- notes art/validation par zone ;
 - taches liees ;
 - statut d'integration par zone ;
 - scene Unity associee ;

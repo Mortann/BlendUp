@@ -20,7 +20,6 @@ export type AssetStatus =
   | "exported"
   | "unity_imported"
   | "needs_art_fix"
-  | "needs_dev_fix"
   | "validated"
   | "archived";
 
@@ -64,7 +63,7 @@ export interface BlendUpProject {
     roots?: string[];
     typeFolderDepth?: number;
   };
-  defaultView: "artist" | "developer";
+  defaultView: "artist";
 }
 
 export interface AssetTypePreset {
@@ -125,7 +124,6 @@ export interface BlendUpAsset {
   productionMode: ProductionMode;
   owners: {
     artist: string | string[] | null;
-    developer: string | string[] | null;
     reviewer: string | null;
   };
   assignees?: string[];
@@ -160,7 +158,6 @@ export interface BlendUpAsset {
   lods: AssetLod[];
   notes: {
     artist: string;
-    developer: string;
   };
   createdAt: string;
   updatedAt: string;

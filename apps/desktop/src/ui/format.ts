@@ -16,7 +16,6 @@ export function formatStatus(status: AssetStatus): string {
     exported: "Exported",
     unity_imported: "Unity Imported",
     needs_art_fix: "A retravailler",
-    needs_dev_fix: "Dev Fix",
     validated: "Valide",
     archived: "Archived"
   };

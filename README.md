@@ -21,7 +21,7 @@ La V1 se concentre volontairement sur un perimetre realiste :
 - assister la nomenclature et les validations ;
 - fournir un add-on Blender leger ;
 - fournir un package Unity leger ;
-- proposer une application separee sobre avec vue artiste et vue dev ;
+- proposer une application separee sobre avec experience artiste et validation par la direction artistique ;
 - garder Git, Git LFS et PureRef comme integrations utiles mais non obligatoires ;
 - garder ClickUp pour une version future, apres le systeme de taches interne.
 

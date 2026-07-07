@@ -62,14 +62,14 @@ Tous les chemins stockes dans `.blendup` doivent etre relatifs au root projet.
 ## Roles Et Vues
 
 - Il y aura une vue artiste.
-- Il y aura une vue dev.
+- Il y aura une vue validation.
 - Les deux vues liront les memes donnees, mais presenteront les informations differemment.
 - Les permissions seront douces, pas strictes, au moins au debut.
 
 ## Git
 
 - BlendUp ne doit pas remplacer Git.
-- Les developpeurs pourront continuer a utiliser Git comme ils le souhaitent.
+- Les equipe de production pourront continuer a utiliser Git comme ils le souhaitent.
 - BlendUp proposera une interface simplifiee pour les artistes.
 - Git LFS doit etre prevu des le debut.
 - Le verrouillage sera un verrouillage BlendUp avec option Git LFS Lock.

@@ -54,28 +54,22 @@ function App() {
       onCloseProject={app.forgetLastProject}
       operationMessage={app.operationMessage}
       project={app.project}
-      role={app.role}
       setActiveView={app.setActiveView}
-      setRole={app.setRole}
       shellStyle={app.shellStyle}
     >
       {app.activeView === "dashboard" ? (
         <DashboardView
           onOpenAsset={app.openAsset}
           onOpenAssets={() => app.setActiveView("assets")}
-          onOpenGit={() => app.setActiveView("git")}
           onOpenProblems={() => app.setActiveView("problems")}
           onOpenReferences={() => app.setActiveView("references")}
           onOpenTasks={() => app.setActiveView("tasks")}
-          role={app.role}
           snapshot={app.project}
         />
       ) : app.activeView === "assets" ? (
         <AssetsView
           capabilities={app.capabilities}
-          exportingAssetId={app.exportingAssetId}
           filteredAssets={app.filteredAssets}
-          onExportAsset={app.handleExportAsset}
           onChangeAssetStatus={app.changeAssetStatus}
           onRenameAsset={app.handleRenameAsset}
           onMoveAsset={app.handleMoveAsset}
@@ -83,7 +77,6 @@ function App() {
           onDeleteAsset={app.handleDeleteAsset}
           onSetAssetOwners={app.handleSetAssetOwners}
           onUpdateAssetNotes={app.handleUpdateAssetNotes}
-          onSetAssignees={app.handleSetAssignees}
           onCreateAsset={app.handleCreateAsset}
           onCreateFolder={app.handleCreateFolder}
           onDeleteFolder={app.handleDeleteFolder}
@@ -97,22 +90,18 @@ function App() {
           onOpenInBlender={app.openAssetInBlender}
           onOpenContentPath={app.openProjectContentPath}
           problems={app.project.problems}
-          query={app.query}
-          role={app.role}
           selectedAsset={app.selectedAsset}
           selectedProblems={app.selectedProblems}
-          setQuery={app.setQuery}
           showBlenderCommandPrompt={app.userSettings.showBlenderCommandPrompt}
           setShowBlenderCommandPrompt={app.setShowBlenderCommandPrompt}
           setSelectedAssetId={app.setSelectedAssetId}
           snapshot={app.project}
         />
       ) : app.activeView === "references" ? (
-        <ReferencesView onOpenAsset={app.openAsset} role={app.role} snapshot={app.project} />
+        <ReferencesView onOpenAsset={app.openAsset} snapshot={app.project} />
       ) : app.activeView === "nomenclature" ? (
         <NomenclatureView
           onSaveAssetConfiguration={app.handleSaveAssetConfiguration}
-          role={app.role}
           snapshot={app.project}
         />
       ) : app.activeView === "problems" ? (
@@ -126,7 +115,7 @@ function App() {
       ) : app.activeView === "tasks" ? (
         <TasksView onOpenAsset={app.openAsset} snapshot={app.project} />
       ) : app.activeView === "team" ? (
-        <TeamView project={app.project} setRole={app.setRole} />
+        <TeamView project={app.project} />
       ) : app.activeView === "settings" ? (
         <SettingsView
           blenderPathInput={app.blenderPathInput}
@@ -155,7 +144,7 @@ function App() {
           unityPathInput={app.unityPathInput}
         />
       ) : (
-        <GitView role={app.role} snapshot={app.project} />
+        <GitView snapshot={app.project} />
       )}
     </WorkspaceShell>
   );

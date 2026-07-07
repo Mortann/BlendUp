@@ -12,7 +12,7 @@ Le produit doit deja etre utilisable sur un vrai petit projet, meme si certaines
 
 La V1 est pensee pour une equipe de :
 
-- 2 a 3 developpeurs ;
+- un Directeur artistique ;
 - 2 a 3 artistes ;
 - un projet Unity versionne avec Git ;
 - des assets principalement crees dans Blender ;
@@ -46,11 +46,11 @@ Les personnages animes, environnements complexes, dessins et assets avances sont
 - Lister les assets.
 - Rechercher et filtrer les assets.
 - Afficher une vue artiste.
-- Afficher une vue dev.
+- Afficher une vue validation.
 - Afficher une fiche detaillee d'asset.
 - Gerer les statuts.
 - Gerer les proprietaires/responsables.
-- Gerer les notes artiste/dev.
+- Gerer les notes artiste.
 - Gerer les references.
 - Gerer les tags.
 - Afficher les problemes a resoudre.
@@ -134,7 +134,7 @@ Il doit pouvoir contenir :
 - un statut ;
 - un mode production ou brouillon ;
 - un proprietaire art ;
-- un referent dev optionnel ;
+- un referent validation artistique optionnel ;
 - un fichier source Blender ;
 - un export FBX ;
 - un prefab Unity ;
@@ -186,7 +186,7 @@ La V1 est reussie si :
 - un artiste peut creer un asset proprement sans refaire toute la structure a la main ;
 - un artiste peut exporter un static mesh Blender vers Unity ;
 - Unity peut creer ou mettre a jour un prefab simple ;
-- un dev peut voir les composants et l'etat d'integration ;
+- un validation peut voir les composants et l'etat d'integration ;
 - les erreurs principales sont visibles dans BlendUp ;
 - les noms et dossiers sont guides par les regles projet ;
 - les donnees BlendUp sont versionnees et lisibles ;
@@ -220,7 +220,7 @@ La V1 est reussie si :
 - creation de branches ;
 - profils d'export ;
 - variants simples ;
-- vue dev enrichie.
+- validation artistique enrichie.
 
 ### Priorite 3
 

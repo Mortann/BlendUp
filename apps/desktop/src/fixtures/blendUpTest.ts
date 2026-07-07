@@ -83,7 +83,6 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
       productionMode: "production",
       owners: {
         artist: null,
-        developer: null,
         reviewer: null
       },
       paths: {
@@ -118,8 +117,7 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
       variants: [],
       lods: [],
       notes: {
-        artist: "Premier asset prop de test.",
-        developer: "Doit permettre de tester export FBX, prefab simple et collider recommande."
+        artist: "Premier asset prop de test. Sert a verifier export FBX, prefab simple et collider recommande."
       },
       createdAt: "2026-06-24T00:00:00Z",
       updatedAt: "2026-06-24T00:00:00Z"
@@ -134,7 +132,6 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
       productionMode: "production",
       owners: {
         artist: null,
-        developer: null,
         reviewer: null
       },
       paths: {
@@ -169,8 +166,7 @@ export const blendUpTestSnapshot: ProjectSnapshot = {
       variants: [],
       lods: [],
       notes: {
-        artist: "Asset environnement de test. Contient un material dans le fichier Blender.",
-        developer: "Doit permettre de tester export FBX, prefab simple, material et warning collider recommande."
+        artist: "Asset environnement de test. Contient un material dans le fichier Blender et sert aux validations FBX/prefab."
       },
       createdAt: "2026-06-24T00:00:00Z",
       updatedAt: "2026-06-24T00:00:00Z"

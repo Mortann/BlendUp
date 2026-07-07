@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { Role } from "../blendup/roles";
-import {
-  capabilitiesFor,
-  defaultRoleFromProject,
-  loadStoredRole,
-  storeRole
-} from "../blendup/roles";
+import { capabilitiesFor } from "../blendup/roles";
 import type {
   AssetLod,
   AssetNamingRules,
@@ -76,8 +70,6 @@ if (initialUserSettings.lastProjectRoot) {
   }
 }
 
-const initialRole: Role = loadStoredRole() ?? (initialProject ? defaultRoleFromProject(initialProject.project) : "artist");
-
 export function useBlendUpController() {
   const [activeView, setActiveView] = useState<ActiveView>(initialProject ? "dashboard" : "assets");
   const [blenderPathInput, setBlenderPathInput] = useState(initialUserSettings.blenderPath ?? "");
@@ -96,52 +88,19 @@ export function useBlendUpController() {
     initialProject?.projectRoot ?? initialUserSettings.lastProjectRoot ?? ""
   );
   const [pureRefPathInput, setPureRefPathInput] = useState(initialUserSettings.pureRefPath ?? "");
-  const [query, setQuery] = useState("");
-  const [role, setRole] = useState<Role>(initialRole);
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [toolsSnapshot, setToolsSnapshot] = useState<LocalToolsSnapshot | null>(null);
   const [unityPathInput, setUnityPathInput] = useState(initialUserSettings.unityPath ?? "");
   const [userSettings, setUserSettings] = useState<UserSettings>(initialUserSettings);
 
-  const capabilities = capabilitiesFor(role);
+  const capabilities = capabilitiesFor("artist");
   const shellStyle = { "--role-accent": capabilities.accent } as CSSProperties;
   const selectedAsset = project
     ? project.assets.find((asset) => asset.id === selectedAssetId)
     : undefined;
-  const filteredAssets = useMemo(() => {
-    if (!project) {
-      return [];
-    }
-
-    const normalizedQuery = query.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return project.assets;
-    }
-
-    return project.assets.filter((asset) => {
-      const searchable = [
-        asset.displayName,
-        asset.type,
-        asset.status,
-        asset.paths.blenderSource,
-        asset.paths.fbxExport,
-        asset.paths.unityPrefab,
-        asset.tags.join(" ")
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return searchable.includes(normalizedQuery);
-    });
-  }, [project, query]);
+  const filteredAssets = project?.assets ?? [];
   const selectedProblems =
     project?.problems.filter((problem) => !problem.assetId || problem.assetId === selectedAsset?.id) ?? [];
-
-  useEffect(() => {
-    storeRole(role);
-  }, [role]);
 
   useEffect(() => {
     void refreshToolDetection(true);
@@ -413,7 +372,6 @@ export function useBlendUpController() {
       setProjectPathInput(nextProject.projectRoot ?? trimmedProjectRoot);
       setSelectedAssetId(requestedAsset?.id ?? "");
       setActiveView(requestedAsset ? "assets" : "dashboard");
-      setRole(loadStoredRole() ?? defaultRoleFromProject(nextProject.project));
       setOperationMessage({
         tone: "success",
         title: requestedAsset ? "Asset ouvert" : "Projet ouvert",
@@ -452,7 +410,6 @@ export function useBlendUpController() {
       setProject(nextProject);
       setSelectedAssetId("");
       setActiveView("dashboard");
-      setRole(loadStoredRole() ?? defaultRoleFromProject(nextProject.project));
       setOperationMessage({
         tone: "success",
         title: "Projet test ouvert",
@@ -814,7 +771,7 @@ export function useBlendUpController() {
 
   const handleSetAssetOwners = async (
     assetId: string,
-    owners: { artist: string[]; developer: string[]; reviewer: string | null },
+    owners: { artist: string[]; reviewer: string | null },
     actor: string
   ) => {
     await runAssetMutation(
@@ -823,7 +780,6 @@ export function useBlendUpController() {
           projectRoot: project!.projectRoot!,
           assetId,
           artist: owners.artist,
-          developer: owners.developer,
           reviewer: owners.reviewer,
           actor,
           updatedAt: new Date().toISOString()
@@ -1118,9 +1074,7 @@ export function useBlendUpController() {
     project,
     projectPathInput,
     pureRefPathInput,
-    query,
     refreshToolDetection,
-    role,
     saveLocalSettings,
     selectedAsset,
     selectedAssetId,
@@ -1135,8 +1089,6 @@ export function useBlendUpController() {
     setOperationMessage,
     setProjectPathInput,
     setPureRefPathInput,
-    setQuery,
-    setRole,
     setSelectedAssetId,
     setShowBlenderCommandPrompt,
     setUnityPathInput,

@@ -138,7 +138,7 @@ Exemple :
   "productionMode": "production",
   "owners": {
     "artist": "Alice",
-    "developer": "Mehdi",
+    "artist": "Mehdi",
     "reviewer": null
   },
   "paths": {
@@ -177,7 +177,7 @@ Exemple :
   "variants": [],
   "notes": {
     "artist": "Version bois simple pour test.",
-    "developer": "Ajouter Interactable quand le collider est valide."
+    "artist": "Ajouter Interactable quand le collider est valide."
   },
   "createdAt": "2026-06-24T00:00:00Z",
   "updatedAt": "2026-06-24T00:00:00Z"
@@ -242,7 +242,7 @@ Statuts proposes :
 - `exported`
 - `unity_imported`
 - `needs_art_fix`
-- `needs_dev_fix`
+- `needs_art_fix`
 - `validated`
 - `archived`
 
@@ -291,7 +291,7 @@ Operations natives (cote Rust), avec BlendUp comme source de verite :
 - `rename_asset` : renomme dossier + `.blend` + MAJ chemins ;
 - `move_asset` / `move_folder` : deplacent reellement les dossiers sur le disque ;
 - `delete_asset` : envoie le dossier de l'asset et sa fiche a la corbeille systeme ;
-- `set_asset_owners` : assignation des membres (artiste / dev / reviewer).
+- `set_asset_owners` : assignation des membres (artiste / reviewer).
 
 ### Etat Artiste (Vue Artiste)
 
@@ -305,7 +305,7 @@ En vue artiste, l'etat affiche et modifiable est porte par le champ `status` lui
 
 Regles de changement d'etat :
 
-- les personnes associees a l'asset (artiste/dev proprietaire) peuvent faire avancer l'etat jusqu'a `review` (demande de validation) ;
+- les personnes associees a l'asset (personne associee) peuvent faire avancer l'etat jusqu'a `review` (demande de validation) ;
 - seul le `Directeur artistique` (`art_director`) peut passer un asset a `validated` ;
 - un asset deja `validated` ne peut etre rouvert (changer d'etat) que par un `Directeur artistique`.
 

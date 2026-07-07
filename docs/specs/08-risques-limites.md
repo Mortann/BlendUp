@@ -34,7 +34,7 @@ V1 centree sur :
 - prefab Unity simple ;
 - validation ;
 - metadata ;
-- vue artiste/dev ;
+- vue artiste/validation ;
 - problemes.
 
 Le reste doit etre prepare mais pas forcement implemente completement.
@@ -154,7 +154,7 @@ Un hub peut vite devenir illisible.
 - vues simples ;
 - details dans panneaux ;
 - filtres solides ;
-- separer artiste/dev ;
+- separer artiste/validation ;
 - prioriser Problems ;
 - cacher les infos avancees dans la vue detail.
 

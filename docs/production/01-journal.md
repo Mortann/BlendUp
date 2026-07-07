@@ -446,18 +446,18 @@
 - Ajouter ensuite les actions d'ouverture de fichiers/dossiers depuis les fiches assets.
 - Continuer le flux Blender vers FBX et la premiere integration Unity.
 
-## 2026-06-27 - Socle Vues Artiste/Dev
+## 2026-06-27 - Socle experience artiste
 
 ### Contexte
 
-- Avant de reimplementer les ecrans perdus (Dashboard, Settings, accueil, creation de projet), pose du socle des deux vues artiste/dev, conformement a `docs/specs/04-interface-ux.md`.
-- Decision produit : V1 limitee a deux roles (artiste/dev) ; le role adapte l'affichage ET les actions (garde-fous doux).
+- Avant de reimplementer les ecrans perdus (Dashboard, Settings, accueil, creation de projet), pose du socle des deux experience artiste, conformement a `docs/specs/04-interface-ux.md`.
+- Decision produit : V1 limitee a deux roles (artiste/validation) ; le role adapte l'affichage ET les actions (garde-fous doux).
 
 ### Fait
 
-- Nouveau module `apps/desktop/src/blendup/roles.ts` : type `Role` (`artist` | `developer`), table de capacites par role (`RoleCapabilities`), defaut depuis `project.defaultView`, persistance locale du role actif.
-- `App.tsx` : etat `role`, selecteur Artiste/Dev dans la barre laterale, indicateur de vue dans l'en-tete.
-- Fiche asset adaptee au role : ordre des sections (Unity d'abord en dev, Fichiers/Notes d'abord en artiste), emphase des notes du role, action Export reservee a la vue artiste.
+- Nouveau module `apps/desktop/src/blendup/roles.ts` : type `Role`, table de capacites artiste (`RoleCapabilities`) et accent visuel.
+- `App.tsx` : etat `role`, selecteur artiste/validation dans la barre laterale, indicateur de vue dans l'en-tete.
+- Fiche asset centree artiste : fichiers, notes, variantes, LODs, checklist et validation.
 - Action Export filtree par capacite dans la fiche asset et dans la vue Problems.
 - CSS pour le selecteur de vue et l'emphase des notes.
 
@@ -501,7 +501,7 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 ### Etat Frontend Courant
 
-- UI active : `Assets`, `Problems`, `Tasks`, `Git` + socle de roles artiste/dev.
+- UI active : `Assets`, `Problems`, `Tasks`, `Git` + socle de roles artiste et direction artistique.
 - `npm run typecheck` : OK.
 
 ### Lecons / A Faire
@@ -509,15 +509,15 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - Committer regulierement ; ne jamais restaurer depuis Git par-dessus du non committe sans sauvegarde.
 - Ajouter un `.gitattributes` (`* text=auto`) pour stopper le bruit CRLF/LF.
 
-## 2026-06-27 - Differenciation Forte Artiste/Dev
+## 2026-06-27 - Differenciation Forte artiste/validation
 
 ### Fait
 
 - Capacites de role enrichies dans `roles.ts` (accent couleur, orientation, `showRawPaths`, `showUnityDetails`, `showExportDetails`, `showAllOwners`, `canRebuildPrefab`...).
 - Deux fiches asset distinctes :
   - `ArtistAssetDetail` : epuree, orientee Blender, peu de technique (source Blender, references, notes artiste, a corriger) ;
-  - `DevAssetDetail` : dense, orientee Unity (import/prefab, composants attendus + presents, warnings Unity, chemins bruts, details d'export, equipe, notes dev+artiste, problems, plus d'actions).
-- Difference visuelle : classe `role-*` + variable CSS `--role-accent`, badge d'orientation, bandeau d'accent en haut de fiche, densite differente, chemins en monospace cote dev.
+  - fiche de validation artistique : statut, equipe, notes, contenu, variantes, LODs et points a corriger.
+- Difference visuelle : classe `role-*` + variable CSS `--role-accent`, badge d'orientation, bandeau d'accent en haut de fiche, densite differente, chemins en monospace cote validation.
 - L'export FBX reste reserve a la vue artiste.
 
 ### Verification
@@ -528,19 +528,19 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 ### Notes
 
-- Les actions dev (rebuild prefab, definir composants, ouvrir Unity, besoin correction art) sont presentes mais desactivees ("a venir").
+- Les actions de validation (rebuild prefab, definir composants, ouvrir Unity, besoin correction art) sont presentes mais desactivees ("a venir").
 - Le theme a ensuite ete harmonise en noir/blanc/bleu nuit lors de la refonte UI.
 
 ## 2026-06-27 - Restauration App.tsx Complet Et Open-Request
 
 ### Contexte
 
-- L'utilisateur a recupere une version complete d'`App.tsx` (UI complete : accueil, Dashboard, Settings, creation de projet) deja fusionnee avec le socle de roles artiste/dev et l'amorce open-request.
+- L'utilisateur a recupere une version complete d'`App.tsx` (UI complete : accueil, Dashboard, Settings, creation de projet) deja fusionnee avec le socle de roles artiste et direction artistique et l'amorce open-request.
 - Le fichier recupere etait tronque en fin (coupe au milieu de `TasksView`).
 
 ### Fait
 
-- Reconstruction de la fin manquante d'`App.tsx` (reste de `TasksView` + composants : `TaskSummaryCard`, `TaskDetail`, `GitView`, `ProblemsView`, `SegmentedControl`, `ProblemDetail`, `AssetRow`, `AssetProblems`, `ArtistAssetDetail`, `DevAssetDetail`, etc.).
+- Reconstruction de la fin manquante d'`App.tsx` (reste de `TasksView` + composants : `TaskSummaryCard`, `TaskDetail`, `GitView`, `ProblemsView`, `SegmentedControl`, `ProblemDetail`, `AssetRow`, `AssetProblems`, `ArtistAssetDetail`, etc.).
 - Re-definition de deux helpers du dashboard perdus (`problemSummary`, `taskSummary`).
 - Completion de la fonctionnalite "ouvrir la fiche dans BlendUp" :
   - consommation d'une requete en attente a l'ouverture d'un projet (deja present) ;
@@ -579,17 +579,17 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - Refonte visuelle :
   - shell global noir ;
   - vue artiste avec surface claire ;
-  - vue dev avec surface sombre ;
+  - vue validation avec surface sombre ;
   - palette noir/blanc/bleu nuit ;
   - abandon des accents verts/teal.
 - Dashboard adapte au role :
   - artiste : taches, derniers assets travailles, References/Assets, Git en suivi secondaire ;
-  - dev : Problems, Tasks, Git en priorite, Assets/References en retrait.
+  - validation : Problems, Tasks, Git en priorite, Assets/References en retrait.
 - Page Assets revue :
   - navigation par dossiers ;
   - details masques tant qu'aucun asset n'est selectionne ;
   - cartes plus visuelles en artiste ;
-  - liste compacte en dev.
+  - liste compacte en validation.
 - Les outils locaux ne sont plus affiches dans le dashboard ; ils restent dans `Settings`.
 
 ### Verification
@@ -608,7 +608,7 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 - Suppression du bandeau technique haut du workspace pour donner plus de place a la page centrale.
 - Ajout d'une barre laterale repliable : navigation complete en mode ouvert, icones seules en mode replie.
-- Remplacement du controle Artiste/Dev par une bascule plus visuelle.
+- Remplacement du controle artiste par une bascule plus visuelle.
 - Le logo seul en haut a droite ferme le projet et renvoie a l'accueil de l'application.
 - Vue artiste adoucie : surface claire moins violente, contrastes corriges.
 - Page Assets retravaillee :
@@ -619,14 +619,14 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
   - historique minimal visible dans la fiche asset ;
   - bouton `Ouvrir dans Blender` branche sur une commande native.
 - Ajout de la commande Tauri `open_project_path` pour ouvrir un fichier projet via l'application par defaut du systeme.
-- Page `Nomenclature` ajoutee avec lecture artiste/dev.
-- Page `Equipe` ajoutee avec comptes locaux simples, owner, choix d'identite et roles artiste/dev.
+- Page `Nomenclature` ajoutee avec lecture artiste/validation.
+- Page `Equipe` ajoutee avec comptes locaux simples, owner, choix d'identite et roles artiste et direction artistique.
 - Vue Tasks remplacee par un tableau type kanban avec ajout, edition, suppression, deplacement, sous-taches et assignation locale.
 - Vue References enrichie : recherche, tri, ajout local, theme et association optionnelle a un asset.
 - Vue Problems reorganisee en colonnes par gravite pour eviter une liste infinie.
 - Vue Git differenciee :
   - artiste : etat simple et actions comprehensibles ;
-  - dev : branche, statut, fichiers et actions a brancher ensuite.
+  - validation : branche, statut, fichiers et actions a brancher ensuite.
 
 ### Verification
 
@@ -650,7 +650,7 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 - Ajout d'une transition de largeur pour rendre ce comportement moins abrupt.
 - Le bouton de retour a l'accueil devient un bouton texte discret `Accueil`, sans dupliquer le logo.
 - Ajout du role local `Directeur artistique` (`art_director`) dans la page `Equipe`.
-- Les roles d'equipe sont independants : un membre peut etre artiste, dev et/ou directeur artistique.
+- Les roles d'equipe sont independants : un membre peut etre artiste et/ou directeur artistique.
 - Le role `Owner` est fixe sur le compte local `owner` et ne peut plus etre transfere depuis l'interface.
 
 ### Notes
@@ -765,7 +765,7 @@ Le code compile de ces ecrans subsiste uniquement dans le bundle `apps/desktop/d
 
 - Mapping categorie->type duplique entre le frontend (`CATEGORY_TYPE_MAP` dans AssetsView) et le backend (`type_for_category` dans main.rs) : garder les deux synchronises si on ajoute une categorie.
 - Le drag & drop natif de fichiers depuis l'OS est desactive (`dragDropEnabled: false`) ; si on veut plus tard accepter le depot de fichiers externes, il faudra le reactiver et gerer l'evenement Tauri `drag-drop`.
-- La vue Developpeur (inventaire technique) conserve sa barre d'outils ; les changements d'UX (menu contextuel, dossiers, recherche) concernent l'explorateur Artiste.
+- L'ancien inventaire technique est retire ; les changements d'UX (menu contextuel, dossiers, recherche) concernent l'explorateur Artiste.
 
 
 ## 2026-06-29 - Assets : suite (drop, contraste, racine Blender, types dynamiques, variantes)

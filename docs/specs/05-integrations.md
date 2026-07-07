@@ -197,7 +197,7 @@ Le package Unity ne doit pas automatiquement :
 
 - supprimer un composant existant ;
 - supprimer un enfant ajoute manuellement ;
-- ecraser des valeurs modifiees manuellement par un dev ;
+- ecraser des valeurs modifiees manuellement ;
 - changer un script non gere par BlendUp ;
 - deplacer un prefab existant sans confirmation ;
 - modifier une scene Unity ;
@@ -230,7 +230,7 @@ Si un composant attendu manque, BlendUp doit :
 
 - signaler le probleme avec details ;
 - indiquer l'asset et le prefab concernes ;
-- permettre a un dev de confirmer que le composant a ete retire volontairement.
+- permettre de confirmer que le composant a ete retire volontairement.
 
 Confirmation V1 :
 

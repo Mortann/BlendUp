@@ -46,7 +46,7 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 - [ ] Filtrer assets.
 - [x] Afficher fiche asset.
 - [x] Afficher vue artiste.
-- [x] Afficher vue dev.
+- [x] Afficher la validation artistique.
 - [x] Afficher Problems.
 - [x] Afficher References.
 - [x] Afficher Project Settings.
@@ -130,11 +130,11 @@ Il ne s'agit pas encore d'un planning definitif, mais d'une base pour decouper l
 
 - [ ] Statuts de base.
 - [ ] Proprietaire artiste.
-- [ ] Referent dev.
+- [ ] Referent validation artistique.
 - [ ] Reviewer optionnel.
-- [ ] Notes artiste/dev.
+- [ ] Notes artiste/validation.
 - [ ] Marquer besoin correction art.
-- [ ] Marquer besoin correction dev.
+- [ ] Marquer besoin correction artistique.
 - [ ] Marquer valide.
 
 ## Phase 10 - Stabilisation V1

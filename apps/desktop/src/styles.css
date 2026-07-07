@@ -1582,27 +1582,20 @@ button {
   }
 
   .owner-grid,
-  .notes-grid,
-    .dashboard-summary,
-    .dashboard-grid,
-    .create-project-grid,
-    .problem-summary-grid,
-    .settings-layout,
-  .task-summary-grid,
-  .git-summary-grid,
-  .problem-layout,
-  .task-layout,
-  .problem-detail-meta,
-  .tool-status-grid {
+.notes-grid,
+.dashboard-summary,
+.dashboard-grid,
+.create-project-grid,
+.problem-summary-grid,
+.settings-layout,
+.task-summary-grid,
+.git-summary-grid,
+.problem-layout,
+.task-layout,
+.problem-detail-meta,
+.tool-status-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* Bascule de vue artiste/dev et emphase des notes selon le role */
-.role-switch {
-  display: grid;
-  gap: 6px;
-  padding: 0 4px 10px;
 }
 
 .note-block {
@@ -1620,15 +1613,6 @@ button {
   font-size: 0.82rem;
 }
 
-/* ===== Differenciation visuelle des vues Artiste / Dev ===== */
-
-/* Accent du role (injecte via --role-accent sur .app-shell) */
-.role-switch .segmented-control button.active {
-  background: var(--role-accent, #1d9e75);
-  border-color: var(--role-accent, #1d9e75);
-  color: #06120e;
-}
-
 .role-badge {
   display: inline-block;
   margin-bottom: 4px;
@@ -1641,9 +1625,7 @@ button {
   text-transform: uppercase;
 }
 
-/* Bandeau d'accent en haut de la fiche selon le role */
-.detail-panel--artist,
-.detail-panel--dev {
+.detail-panel--artist {
   border-top: 3px solid var(--role-accent, #1d9e75);
 }
 
@@ -1652,7 +1634,6 @@ button {
   padding-left: 8px;
 }
 
-/* Vue artiste : aeree, peu de technique */
 .detail-sections.airy {
   gap: 20px;
 }
@@ -1662,15 +1643,6 @@ button {
   height: 84px;
 }
 
-.notes-grid.single {
-  grid-template-columns: 1fr;
-}
-
-/* Vue dev : dense, technique */
-.detail-panel--dev .detail-sections {
-  gap: 10px;
-}
-
 .detail-header.compact {
   gap: 10px;
 }
@@ -1678,11 +1650,6 @@ button {
 .detail-thumbnail.small {
   width: 44px;
   height: 44px;
-}
-
-.detail-panel--dev .path-line code {
-  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
-  font-size: 0.8rem;
 }
 
 .asset-action-bar.wrap {
@@ -1706,7 +1673,8 @@ button {
   gap: 6px;
 }
 
-/* ===== 2026-06 UI refresh: black shell, artist light surface, dev dark surface ===== */
+/* ===== 2026-06 UI refresh: black shell,
+artist light surface ===== */
 
 :root {
   color-scheme: dark;
@@ -1792,17 +1760,8 @@ body {
   color: var(--ink-950);
 }
 
-.role-developer .role-page {
-  background: var(--night-900);
-  color: #f3f7ff;
-}
-
 .role-artist .eyebrow {
   color: var(--night-blue);
-}
-
-.role-developer .eyebrow {
-  color: #8fb5ff;
 }
 
 .role-artist .search-box,
@@ -1810,13 +1769,6 @@ body {
   border-color: var(--paper-200);
   background: #ffffff;
   color: var(--ink-950);
-}
-
-.role-developer .search-box,
-.role-developer .settings-field input {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.055);
-  color: #ffffff;
 }
 
 .surface-panel,
@@ -1843,23 +1795,6 @@ body {
   background: #ffffff;
   color: var(--ink-950);
   box-shadow: 0 12px 40px rgba(8, 18, 34, 0.08);
-}
-
-.role-developer .surface-panel,
-.role-developer .metric-panel,
-.role-developer .dashboard-hero,
-.role-developer .reference-hero,
-.role-developer .asset-focus-panel,
-.role-developer .asset-detail-placeholder,
-.role-developer .problem-detail-panel,
-.role-developer .task-detail-panel,
-.role-developer .problem-table,
-.role-developer .task-list,
-.role-developer .git-file-list {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.045);
-  color: #f3f7ff;
-  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.18);
 }
 
 .dashboard-hero,
@@ -1895,7 +1830,6 @@ body {
 }
 
 .artist-dashboard-grid,
-.developer-dashboard-grid,
 .reference-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
@@ -1903,8 +1837,7 @@ body {
   padding-top: 14px;
 }
 
-.artist-dashboard-grid,
-.developer-dashboard-grid {
+.artist-dashboard-grid {
   padding: 14px;
 }
 
@@ -1955,14 +1888,6 @@ body {
   color: var(--ink-950);
 }
 
-.role-developer .task-preview,
-.role-developer .technical-row,
-.role-developer .reference-folder,
-.role-developer .reference-row {
-  background: rgba(255, 255, 255, 0.055);
-  color: #f3f7ff;
-}
-
 .task-preview span,
 .technical-row small,
 .reference-row span,
@@ -1989,13 +1914,6 @@ body {
   background: var(--paper-100);
   color: var(--ink-950);
   text-align: left;
-}
-
-.dev-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  padding: 14px 14px 0;
 }
 
 .metric-panel {
@@ -2068,16 +1986,7 @@ body {
   color: var(--ink-950);
 }
 
-.role-developer .folder-rail button,
-.role-developer .ghost-button,
-.role-developer .compact-action {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.055);
-  color: #f3f7ff;
-}
-
 .folder-rail button.active,
-.role-switch .segmented-control button.active,
 .settings-actions button,
 .hero-actions button {
   border-color: transparent;
@@ -2099,8 +2008,7 @@ body {
   gap: 12px;
 }
 
-.artist-asset-card,
-.developer-asset-row {
+.artist-asset-card {
   border-radius: 8px;
   text-align: left;
 }
@@ -2115,8 +2023,7 @@ body {
   color: var(--ink-950);
 }
 
-.artist-asset-card.selected,
-.developer-asset-row.selected {
+.artist-asset-card.selected {
   outline: 2px solid var(--role-accent);
   outline-offset: -2px;
 }
@@ -2133,36 +2040,6 @@ body {
   display: grid;
   align-content: start;
   gap: 8px;
-}
-
-.developer-asset-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) 120px 120px 52px;
-  align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.045);
-  color: #f3f7ff;
-}
-
-.developer-asset-row div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.developer-asset-row strong,
-.developer-asset-row span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.developer-asset-row span {
-  opacity: 0.7;
-  font-size: 0.8rem;
 }
 
 .asset-focus-panel,
@@ -2186,10 +2063,6 @@ body {
 
 .role-artist .detail-disclosure {
   background: var(--paper-100);
-}
-
-.role-developer .detail-disclosure {
-  background: rgba(255, 255, 255, 0.055);
 }
 
 .detail-disclosure summary {
@@ -2216,25 +2089,6 @@ body {
   color: var(--ink-950);
 }
 
-.role-developer .section-block,
-.role-developer .detail-meta,
-.role-developer .notes-grid p,
-.role-developer .component-row,
-.role-developer .problem-row,
-.role-developer .task-row,
-.role-developer .problem-table-row,
-.role-developer .git-file-row,
-.role-developer .git-message,
-.role-developer .task-summary-card,
-.role-developer .problem-summary-card,
-.role-developer .git-summary-card,
-.role-developer .settings-panel,
-.role-developer .tool-status {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.045);
-  color: #f3f7ff;
-}
-
 .role-artist .path-line code,
 .role-artist .problem-row span,
 .role-artist .task-row-main span,
@@ -2259,12 +2113,6 @@ body {
   color: var(--ink-950);
 }
 
-.role-developer .settings-actions button.secondary,
-.role-developer .hero-actions button.secondary {
-  border-color: rgba(255, 255, 255, 0.1);
-  color: #f3f7ff;
-}
-
 .reference-count {
   display: grid;
   min-width: 116px;
@@ -2281,14 +2129,9 @@ body {
 
 @media (max-width: 1100px) {
   .artist-dashboard-grid,
-  .developer-dashboard-grid,
-  .reference-layout,
-  .asset-workspace {
+.reference-layout,
+.asset-workspace {
     grid-template-columns: 1fr;
-  }
-
-  .dev-overview-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2298,20 +2141,19 @@ body {
   }
 
   .dashboard-hero,
-  .reference-hero,
-  .asset-library-header {
+.reference-hero,
+.asset-library-header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .dev-overview-grid,
-  .recent-asset-grid,
-  .developer-asset-row {
+  .recent-asset-grid {
     grid-template-columns: 1fr;
   }
 }
 
-/* ===== 2026-06 interaction pass: compact shell, richer project pages ===== */
+/* ===== 2026-06 interaction pass: compact shell,
+richer project pages ===== */
 
 .app-shell {
   grid-template-columns: 76px minmax(0, 1fr);
@@ -2549,10 +2391,6 @@ body {
   color: #111318;
 }
 
-.role-developer .role-page {
-  background: #070b13;
-}
-
 .assets-page,
 .references-page,
 .tasks-page,
@@ -2580,7 +2418,6 @@ body {
 }
 
 .asset-view-controls,
-.git-dev-actions,
 .artist-git-actions,
 .task-create-bar,
 .reference-create-bar,
@@ -3080,18 +2917,6 @@ body {
   color: #145739;
 }
 
-.role-developer .problem-detail-actions button,
-.role-developer .asset-action-bar button {
-  background: var(--night-blue);
-  color: #ffffff;
-}
-
-.role-developer .problem-detail-actions button:disabled,
-.role-developer .asset-action-bar button:disabled {
-  background: #1b263a;
-  color: #8d9ab0;
-}
-
 .history-list,
 .path-rule-list,
 .branch-rule-list,
@@ -3392,7 +3217,6 @@ body {
 .kanban-card-actions button,
 .member-row button,
 .artist-git-actions button,
-.git-dev-actions button,
 .task-create-bar button,
 .reference-create-bar button,
 .team-create-row button {
@@ -3657,9 +3481,9 @@ body {
 
 @media (max-width: 1100px) {
   .kanban-layout,
-  .problem-board-layout,
-  .team-layout,
-  .nomenclature-grid {
+.problem-board-layout,
+.team-layout,
+.nomenclature-grid {
     grid-template-columns: 1fr;
   }
 
@@ -3670,7 +3494,7 @@ body {
 
 @media (max-width: 760px) {
   .app-shell,
-  .app-shell:not(.sidebar-collapsed) {
+.app-shell:not(.sidebar-collapsed) {
     grid-template-columns: 1fr;
   }
 
@@ -3689,11 +3513,11 @@ body {
   }
 
   .asset-tools-row,
-  .nomenclature-type-row,
-  .reference-toolbar,
-  .task-editor-grid,
-  .reference-row,
-  .member-row {
+.nomenclature-type-row,
+.reference-toolbar,
+.task-editor-grid,
+.reference-row,
+.member-row {
     grid-template-columns: 1fr;
   }
 
@@ -3710,7 +3534,7 @@ body {
   }
 
   .assignee-select,
-  .owner-assign-grid label {
+.owner-assign-grid label {
     grid-template-columns: 1fr;
   }
 
@@ -4046,7 +3870,10 @@ body {
   cursor: grab;
 }
 
-/* ===== Assets artiste : avatars, etat, creation, raccourcis (passe 3) ===== */
+/* ===== Assets artiste : avatars,
+etat,
+creation,
+raccourcis (passe 3) ===== */
 
 .assets-page.role-page {
   display: flex;
@@ -4283,7 +4110,7 @@ body {
   }
 
   .assignee-select,
-  .owner-assign-grid label {
+.owner-assign-grid label {
     grid-template-columns: 1fr;
   }
 
@@ -4301,8 +4128,12 @@ body {
 }
 
 /* ============================================================
-   Assets V2 : scrollbars discretes, spotlight, multiselect,
-   menu contextuel enrichi, recents, type par dossier
+   Assets V2 : scrollbars discretes,
+spotlight,
+multiselect,
+menu contextuel enrichi,
+recents,
+type par dossier
    ============================================================ */
 
 /* --- Scrollbars discretes (toute l'app) --- */
@@ -4562,7 +4393,9 @@ body {
   white-space: nowrap;
 }
 
-/* --- Menu contextuel : separateurs, labels, options --- */
+/* --- Menu contextuel : separateurs,
+labels,
+options --- */
 .asset-context-menu .context-divider {
   height: 1px;
   margin: 4px 6px;
@@ -5591,7 +5424,7 @@ body {
 
 @media (max-width: 760px) {
   .variant-add,
-  .lod-add {
+.lod-add {
     grid-template-columns: 1fr;
   }
 
@@ -5605,13 +5438,13 @@ body {
   }
 
   .asset-visualization-header,
-  .visualization-header-meta {
+.visualization-header-meta {
     align-items: flex-start;
     flex-wrap: wrap;
   }
 
   .asset-visualization-body,
-  .viewer-overview {
+.viewer-overview {
     grid-template-columns: 1fr;
   }
 
@@ -5629,14 +5462,14 @@ body {
   }
 
   .viewer-main-surface,
-  .viewer-hero-preview,
-  .fbx-viewer-shell,
-  .image-gallery-stage {
+.viewer-hero-preview,
+.fbx-viewer-shell,
+.image-gallery-stage {
     min-height: 300px;
   }
 
   .viewer-path,
-  .lod-visual-list article {
+.lod-visual-list article {
     grid-template-columns: 1fr;
   }
 }

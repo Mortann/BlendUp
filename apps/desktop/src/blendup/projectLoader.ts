@@ -492,7 +492,6 @@ export async function setAssetOwners(options: {
   projectRoot: string;
   assetId: string;
   artist: string[];
-  developer: string[];
   reviewer: string | null;
   actor: string;
   updatedAt: string;
@@ -501,7 +500,6 @@ export async function setAssetOwners(options: {
     projectRoot: options.projectRoot,
     assetId: options.assetId,
     artist: options.artist,
-    developer: options.developer,
     reviewer: options.reviewer,
     actor: options.actor,
     updatedAt: options.updatedAt

@@ -1,6 +1,5 @@
 import { Boxes, ExternalLink, GalleryHorizontal, Layers3, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { Role } from "../blendup/roles";
 import type { ProjectSnapshot } from "../blendup/types";
 import { EmptyState } from "../app/ui";
 
@@ -16,11 +15,9 @@ type ReferenceSortMode = "folder" | "asset" | "theme";
 
 export function ReferencesView({
   onOpenAsset,
-  role,
   snapshot
 }: {
   onOpenAsset: (assetId?: string) => void;
-  role: Role;
   snapshot: ProjectSnapshot;
 }) {
   const seedReferences = useMemo(() => {
@@ -87,16 +84,12 @@ export function ReferencesView({
   };
 
   return (
-    <section className={`references-page role-page references-page--${role}`} aria-label="References">
+    <section className="references-page role-page references-page--artist" aria-label="References">
       <div className="reference-hero">
         <div>
           <span className="eyebrow">References</span>
-          <h2>{role === "artist" ? "Direction visuelle" : "Refs liees aux assets"}</h2>
-          <p>
-            {role === "artist"
-              ? "Dossiers, themes et liens d'assets dans une vue dediee."
-              : "Vue secondaire pour verifier les liens de production."}
-          </p>
+          <h2>Direction visuelle</h2>
+          <p>Dossiers, themes et liens d'assets dans une vue dediee.</p>
         </div>
         <div className="reference-count">
           <strong>{references.length}</strong>

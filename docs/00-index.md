@@ -15,7 +15,7 @@ Ce dossier sert de base de travail pour definir BlendUp et suivre la production.
 - `specs/01-architecture-generale.md` : architecture app separee, add-on Blender, package Unity.
 - `specs/02-modele-donnees.md` : modele des donnees BlendUp et exemples de fichiers.
 - `specs/03-workflows-v1.md` : workflows principaux de la V1.
-- `specs/04-interface-ux.md` : structure de l'interface et vues artiste/dev.
+- `specs/04-interface-ux.md` : structure de l'interface et experience artiste.
 - `specs/05-integrations.md` : Blender, Unity, Git, Git LFS, ClickUp, PureRef.
 - `specs/06-validation-nomenclature.md` : nomenclature, validation, budgets qualite.
 - `specs/07-templates-presets.md` : templates et presets projet.

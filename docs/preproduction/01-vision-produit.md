@@ -59,7 +59,7 @@ Ils doivent pouvoir :
 - comprendre les erreurs de validation ;
 - envoyer leur travail sans devoir maitriser tout Git.
 
-### Developpeurs
+### Equipe de production
 
 Ils doivent pouvoir :
 
@@ -79,7 +79,7 @@ Ils doivent pouvoir :
 - voir les assets bloques ;
 - verifier les conventions projet ;
 - organiser les priorites ;
-- eviter les pertes d'informations entre art et dev.
+- eviter les pertes d'informations pendant la validation artistique.
 
 ## Positionnement
 
@@ -126,7 +126,7 @@ La V1 ne cherche pas a faire une synchronisation complete dans les deux sens. Le
 - Les conventions doivent etre configurables.
 - Les fichiers BlendUp doivent etre versionnes dans Git.
 - Les artistes ne doivent pas etre forces a comprendre toute la technique.
-- Les developpeurs ne doivent pas etre forces a abandonner leurs outils.
+- L'equipe artistique ne doit pas etre forcee a abandonner ses outils.
 - Les assets doivent avoir un ID stable independant du nom.
 - Les templates doivent faire gagner du temps sans devenir rigides.
 - Les integrations externes doivent rester optionnelles.

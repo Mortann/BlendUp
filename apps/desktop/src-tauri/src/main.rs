@@ -2511,7 +2511,6 @@ fn set_asset_owners(
     project_root: String,
     asset_id: String,
     artist: Vec<String>,
-    developer: Vec<String>,
     reviewer: Option<String>,
     actor: String,
     updated_at: String,
@@ -2536,14 +2535,10 @@ fn set_asset_owners(
         )
     };
 
-    if asset.get("owners").and_then(Value::as_object).is_none() {
-        asset["owners"] = json!({});
-    }
-    if let Some(owners) = asset.get_mut("owners").and_then(Value::as_object_mut) {
-        owners.insert("artist".to_string(), to_list_value(artist));
-        owners.insert("developer".to_string(), to_list_value(developer));
-        owners.insert("reviewer".to_string(), to_single_value(reviewer));
-    }
+    asset["owners"] = json!({
+        "artist": to_list_value(artist),
+        "reviewer": to_single_value(reviewer)
+    });
 
     asset["updatedAt"] = Value::String(updated_at.clone());
     write_json_file(&asset_file, &asset)?;
@@ -2762,7 +2757,7 @@ fn create_asset(
         "type": asset_type,
         "status": "todo",
         "productionMode": "production",
-        "owners": { "artist": Value::Null, "developer": Value::Null, "reviewer": Value::Null },
+        "owners": { "artist": Value::Null, "reviewer": Value::Null },
         "assignees": [],
         "paths": paths,
         "export": {
@@ -2784,7 +2779,7 @@ fn create_asset(
         "tasks": [],
         "variants": [],
         "lods": [],
-        "notes": { "artist": notes, "developer": "" },
+        "notes": { "artist": notes },
         "createdAt": created_at,
         "updatedAt": created_at
     });

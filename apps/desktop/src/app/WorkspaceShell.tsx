@@ -2,19 +2,16 @@ import {
   AlertTriangle,
   BadgeCheck,
   Boxes,
-  Code2,
   GalleryHorizontal,
   GitBranch,
   Home,
   KanbanSquare,
   ListTree,
   Settings,
-  Sparkles,
   UsersRound
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
-import type { Role } from "../blendup/roles";
 import type { ProjectSnapshot } from "../blendup/types";
 import { viewTitle } from "./metrics";
 import type { ActiveView, OperationMessage } from "./types";
@@ -27,7 +24,7 @@ type NavItem = {
   tone?: "muted";
 };
 
-function navigationForRole(role: Role): NavItem[] {
+function navigationItems(): NavItem[] {
   const items: Record<ActiveView, NavItem> = {
     assets: { icon: <Boxes size={18} />, key: "assets", label: "Assets" },
     dashboard: { icon: <Home size={18} />, key: "dashboard", label: "Dashboard" },
@@ -39,20 +36,6 @@ function navigationForRole(role: Role): NavItem[] {
     tasks: { icon: <KanbanSquare size={18} />, key: "tasks", label: "Taches" },
     team: { icon: <UsersRound size={18} />, key: "team", label: "Equipe" }
   };
-
-  if (role === "developer") {
-    return [
-      items.dashboard,
-      items.problems,
-      items.tasks,
-      items.git,
-      items.nomenclature,
-      items.team,
-      { ...items.assets, tone: "muted" },
-      { ...items.references, tone: "muted" },
-      items.settings
-    ];
-  }
 
   return [
     items.dashboard,
@@ -74,9 +57,7 @@ export function WorkspaceShell({
   onCloseProject,
   operationMessage,
   project,
-  role,
   setActiveView,
-  setRole,
   shellStyle
 }: {
   activeView: ActiveView;
@@ -85,20 +66,18 @@ export function WorkspaceShell({
   onCloseProject: () => void;
   operationMessage: OperationMessage | null;
   project: ProjectSnapshot;
-  role: Role;
   setActiveView: (view: ActiveView) => void;
-  setRole: (role: Role) => void;
   shellStyle: CSSProperties;
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const navItems = navigationForRole(role);
+  const navItems = navigationItems();
   const handleNavigate = (view: ActiveView) => {
     setActiveView(view);
     setIsCollapsed((current) => !current);
   };
 
   return (
-    <main className={`app-shell role-${role} ${isCollapsed ? "sidebar-collapsed" : ""}`} style={shellStyle}>
+    <main className={`app-shell role-artist ${isCollapsed ? "sidebar-collapsed" : ""}`} style={shellStyle}>
       <aside className="sidebar" aria-label="Navigation principale">
         <button
           aria-label={isCollapsed ? "Deplier la navigation" : "Replier la navigation"}
@@ -110,27 +89,6 @@ export function WorkspaceShell({
           <span className="brand-mark mini">BU</span>
           <span className="brand-wordmark">BlendUp</span>
         </button>
-
-        <div className="role-toggle" aria-label="Choisir la vue">
-          <button
-            className={role === "artist" ? "active" : ""}
-            onClick={() => setRole("artist")}
-            title="Vue Artiste"
-            type="button"
-          >
-            <Sparkles size={17} />
-            <span>Artiste</span>
-          </button>
-          <button
-            className={role === "developer" ? "active" : ""}
-            onClick={() => setRole("developer")}
-            title="Vue Dev"
-            type="button"
-          >
-            <Code2 size={17} />
-            <span>Dev</span>
-          </button>
-        </div>
 
         <nav className="nav-list">
           {navItems.map((item) => (

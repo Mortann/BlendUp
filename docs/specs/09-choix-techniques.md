@@ -191,7 +191,7 @@ Ouverture de fichiers projet :
 Comptes locaux V1 :
 
 - les comptes simples de la page `Equipe` sont stockes localement par projet via `localStorage` ;
-- ils servent a choisir une identite et des roles independants (`artist`, `developer`, `art_director`), pas a securiser l'application ;
+- ils servent a choisir une identite et des roles independants (`artist`, `art_director`), pas a securiser l'application ;
 - le compte local `owner` est fixe et represente le createur du projet ; le transfert d'owner n'est pas expose en V1 ;
 - une migration future pourra deplacer les membres d'equipe dans `.blendup` si l'equipe veut versionner cette information.
 

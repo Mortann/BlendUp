@@ -1,10 +1,4 @@
-import type { Role } from "../blendup/roles";
 import type { SeverityFilter, SourceFilter, TaskPriorityFilter, TaskStatusFilter } from "./types";
-
-export const roleFilters: Array<{ label: string; value: Role }> = [
-  { label: "Artiste", value: "artist" },
-  { label: "Dev", value: "developer" }
-];
 
 export const severityFilters: Array<{ label: string; value: SeverityFilter }> = [
   { label: "Tout", value: "all" },

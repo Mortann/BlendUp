@@ -179,7 +179,7 @@ Cela permet :
 ### Unity
 
 - [x] Definir exactement quelles modifications Unity sont autorisees automatiquement sur un prefab existant : proposition V1 ajoutee dans `specs/05-integrations.md`.
-- [x] Definir comment le dev confirme qu'un composant attendu a ete retire volontairement : bouton sur le warning.
+- [x] Definir comment le validation confirme qu'un composant attendu a ete retire volontairement : bouton sur le warning.
 
 ### Git / LFS
 

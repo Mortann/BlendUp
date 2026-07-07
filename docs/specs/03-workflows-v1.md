@@ -144,11 +144,11 @@ Resultat :
 - composants attendus appliques si possible ;
 - erreurs visibles dans BlendUp.
 
-## Workflow 7 - Vue Dev D'Un Asset
+## Workflow 7 - Validation D'Un Asset
 
 Objectif : comprendre rapidement l'etat Unity.
 
-La vue dev affiche :
+La vue validation affiche :
 
 - chemin FBX ;
 - chemin prefab ;
@@ -156,7 +156,7 @@ La vue dev affiche :
 - derniers warnings ;
 - composants presents ;
 - composants attendus ;
-- notes dev ;
+- notes de validation ;
 - scripts associes ;
 - dernier import ;
 - usages connus.
@@ -166,7 +166,7 @@ Actions possibles :
 - ouvrir prefab dans Unity ;
 - reconstruire prefab ;
 - marquer besoin correction art ;
-- ajouter note dev ;
+- ajouter note validation ;
 - modifier composants attendus si autorise.
 
 ## Workflow 8 - Mode Brouillon
@@ -241,7 +241,7 @@ Etats possibles :
 - exporte ;
 - integre Unity ;
 - besoin correction art ;
-- besoin correction dev ;
+- besoin correction validation ;
 - valide.
 
 En vue artiste, les etats sont reduits a : A faire, En cours, A valider, A retravailler, Valide.

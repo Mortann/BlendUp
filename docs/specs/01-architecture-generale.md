@@ -21,7 +21,7 @@ Responsabilites :
 
 - ouvrir ou creer un projet BlendUp ;
 - afficher les assets ;
-- afficher les vues artiste/dev ;
+- afficher les experience artiste ;
 - gerer les fiches assets ;
 - gerer notes, references, statuts, tags ;
 - afficher les problemes ;
@@ -163,7 +163,7 @@ Unity
   -> erreurs/warnings
   -> prefab path
   -> import status
-  -> BlendUp affiche dans la vue dev
+  -> BlendUp affiche dans la vue validation
 ```
 
 ## Communication Entre Outils
@@ -213,7 +213,7 @@ Le package Unity dedie n'est pas encore implemente.
 ## Contraintes Importantes
 
 - Ne pas imposer un format de projet trop rigide.
-- Ne pas casser le workflow Git des developpeurs.
+- Ne pas casser le workflow Git du projet.
 - Eviter les integrations trop profondes au debut.
 - Garder les fichiers `.blendup` stables.
 - Toujours pouvoir travailler hors ligne.

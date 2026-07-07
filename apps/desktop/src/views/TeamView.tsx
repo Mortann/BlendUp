@@ -1,6 +1,5 @@
-import { CheckCircle2, Code2, Palette, Plus, ShieldCheck, Sparkles, Trash2, UserCog, UsersRound } from "lucide-react";
+import { CheckCircle2, Palette, Plus, ShieldCheck, Sparkles, Trash2, UserCog, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { Role } from "../blendup/roles";
 import type { ProjectSnapshot } from "../blendup/types";
 import {
   createMemberId,
@@ -12,13 +11,7 @@ import {
   type TeamRole
 } from "../app/people";
 
-export function TeamView({
-  project,
-  setRole
-}: {
-  project: ProjectSnapshot;
-  setRole: (role: Role) => void;
-}) {
+export function TeamView({ project }: { project: ProjectSnapshot }) {
   const projectId = project.project.projectId;
   const [members, setMembers] = useState<TeamMember[]>(() => loadTeamMembers(projectId));
   const [activeMemberId, setActiveMemberId] = useState(() => loadActiveMemberId(projectId) ?? "owner");
@@ -87,7 +80,6 @@ export function TeamView({
                 key={member.id}
                 onClick={() => {
                   setActiveMemberId(member.id);
-                  setRole(viewRoleFromMember(member));
                 }}
                 type="button"
               >
@@ -185,15 +177,6 @@ function MemberRow({
         Artiste
       </button>
       <button
-        className={member.roles.includes("developer") ? "active" : ""}
-        disabled={!canManage}
-        onClick={() => onToggleRole("developer")}
-        type="button"
-      >
-        <Code2 size={15} />
-        Dev
-      </button>
-      <button
         className={member.roles.includes("art_director") ? "active" : ""}
         disabled={!canManage}
         onClick={() => onToggleRole("art_director")}
@@ -211,12 +194,4 @@ function MemberRow({
       </button>
     </div>
   );
-}
-
-function viewRoleFromMember(member: TeamMember): Role {
-  if (member.roles.includes("developer") && !member.roles.includes("artist")) {
-    return "developer";
-  }
-
-  return "artist";
 }

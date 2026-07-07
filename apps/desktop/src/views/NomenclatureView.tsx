@@ -1,20 +1,11 @@
-import { BadgeCheck, Code2, ListTree, Plus, Save, Sparkles, Trash2 } from "lucide-react";
+import { BadgeCheck, ListTree, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { Role } from "../blendup/roles";
 import type { AssetNamingRules, AssetTypePreset, ProjectSnapshot } from "../blendup/types";
 
 const blenderSuffixesFallback = ["_MESH", "_COL", "_LOD0", "_LOD1", "_ARM", "_RIG", "_SOCKET"];
 const forbiddenFragmentsFallback = ["final", "new", "copy", "test"];
-const branchExamples = [
-  "asset/PROP_Barrel_01-modeling",
-  "task/BU-124-door-interactable",
-  "fix/PROP_CubeCrate_01-unity-import",
-  "review/ENV_Rock_01-validation"
-];
-
 export function NomenclatureView({
   onSaveAssetConfiguration,
-  role,
   snapshot
 }: {
   onSaveAssetConfiguration: (
@@ -22,7 +13,6 @@ export function NomenclatureView({
     assetTypePresets: AssetTypePreset[],
     assetNamingRules: AssetNamingRules
   ) => void;
-  role: Role;
   snapshot: ProjectSnapshot;
 }) {
   const [typesDraft, setTypesDraft] = useState<AssetTypePreset[]>(snapshot.assetTypePresets);
@@ -74,16 +64,16 @@ export function NomenclatureView({
   };
 
   return (
-    <section className={`nomenclature-page role-page nomenclature-page--${role}`} aria-label="Nomenclature">
+    <section className="nomenclature-page role-page nomenclature-page--artist" aria-label="Nomenclature">
       <div className="nomenclature-hero surface-panel">
         <div>
           <span className="eyebrow">Nomenclature</span>
-          <h2>{role === "artist" ? "Nommer sans se tromper" : "Regles projet"}</h2>
+          <h2>Nommer sans se tromper</h2>
           <p className="soft-text">
             Les types ci-dessous pilotent le prefixe, le libelle et le type d'un asset selon son dossier.
           </p>
         </div>
-        {role === "artist" ? <Sparkles size={28} /> : <Code2 size={28} />}
+        <Sparkles size={28} />
       </div>
 
       <div className="nomenclature-grid">
@@ -185,21 +175,6 @@ export function NomenclatureView({
           </div>
         </section>
 
-        {role === "developer" ? (
-          <section className="surface-panel wide">
-            <div className="section-heading-row">
-              <div>
-                <span className="eyebrow">Git</span>
-                <h2>Branches recommandees</h2>
-              </div>
-            </div>
-            <div className="branch-rule-list">
-              {branchExamples.map((example) => (
-                <code key={example}>{example}</code>
-              ))}
-            </div>
-          </section>
-        ) : null}
       </div>
     </section>
   );

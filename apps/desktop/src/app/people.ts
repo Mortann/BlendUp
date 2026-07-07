@@ -1,6 +1,4 @@
-import type { Role } from "../blendup/roles";
-
-export type TeamRole = Role | "art_director";
+export type TeamRole = "artist" | "art_director";
 
 export type TeamMember = {
   id: string;
@@ -63,7 +61,7 @@ function defaultTeamMembers(): TeamMember[] {
     {
       id: "owner",
       name: "Createur du projet",
-      roles: ["artist", "developer", "art_director"],
+      roles: ["artist", "art_director"],
       isOwner: true
     }
   ];
@@ -77,7 +75,7 @@ function normalizeMember(member: Partial<TeamMember>): TeamMember | null {
   }
 
   const roles = (member.roles ?? []).filter(
-    (role): role is TeamRole => role === "artist" || role === "developer" || role === "art_director"
+    (role): role is TeamRole => role === "artist" || role === "art_director"
   );
 
   return {
@@ -93,7 +91,7 @@ function ensureOwner(members: TeamMember[]) {
 
   return members.map((member) => {
     if (member.id === ownerId) {
-      const ownerRoles: TeamRole[] = Array.from(new Set<TeamRole>([...member.roles, "artist", "developer", "art_director"]));
+      const ownerRoles: TeamRole[] = Array.from(new Set<TeamRole>([...member.roles, "artist", "art_director"]));
 
       return {
         ...member,
