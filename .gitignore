@@ -6,6 +6,7 @@ node_modules/
 dist/
 **/dist/
 .vite/
+*.tsbuildinfo
 
 # Tauri / Rust outputs
 target/
@@ -29,3 +30,4 @@ BlendUpTest/
 # BlendUp generated local caches
 **/.blendup/cache/
 **/.blendup/tmp/
+**/.blendup/temp/

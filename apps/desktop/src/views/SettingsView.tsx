@@ -1,238 +1,93 @@
-import { FileSearch, FolderOpen, Keyboard, RotateCcw, Save, Wrench } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { LocalToolsSnapshot, ProjectSnapshot } from "../blendup/types";
+import { ExternalLink, FolderOpen, Gamepad2, Save, Search, X } from "lucide-react";
 import { ToolStatus } from "../app/ui";
-import {
-  comboFromEvent,
-  formatCombo,
-  SHORTCUT_LABELS,
-  SHORTCUT_ORDER,
-  type ShortcutAction,
-  type ShortcutBindings
-} from "../app/shortcuts";
+import type { GameEngine, ProjectSnapshot, ToolDetection } from "../blendup/types";
 
 export function SettingsView({
+  blenderDetection,
   blenderPathInput,
-  isDetectingTools,
-  isLoadingProject,
-  onDetectTools,
-  onForgetLastProject,
-  onOpenDefaultProject,
-  onOpenProject,
+  isDetectingBlender,
+  onChangeEngine,
+  onCloseProject,
+  onDetectBlender,
+  onOpenPath,
   onSaveSettings,
-  onSelectProjectDirectory,
   project,
-  projectPathInput,
-  pureRefPathInput,
-  recentProjects,
   setBlenderPathInput,
-  setProjectPathInput,
-  setPureRefPathInput,
   setShowBlenderCommandPrompt,
-  setUnityPathInput,
-  showBlenderCommandPrompt,
-  shortcutBindings,
-  onUpdateShortcut,
-  onResetShortcuts,
-  toolsSnapshot,
-  unityPathInput
+  showBlenderCommandPrompt
 }: {
+  blenderDetection: ToolDetection | null;
   blenderPathInput: string;
-  isDetectingTools: boolean;
-  isLoadingProject: boolean;
-  onDetectTools: () => void;
-  onForgetLastProject: () => void;
-  onOpenDefaultProject: () => void;
-  onOpenProject: (projectRoot: string) => Promise<boolean>;
+  isDetectingBlender: boolean;
+  onChangeEngine: (engine: GameEngine) => void;
+  onCloseProject: () => void;
+  onDetectBlender: () => void;
+  onOpenPath: (path: string) => void;
   onSaveSettings: () => void;
-  onSelectProjectDirectory: () => void;
   project: ProjectSnapshot;
-  projectPathInput: string;
-  pureRefPathInput: string;
-  recentProjects: string[];
-  setBlenderPathInput: (blenderPath: string) => void;
-  setProjectPathInput: (projectRoot: string) => void;
-  setPureRefPathInput: (pureRefPath: string) => void;
+  setBlenderPathInput: (value: string) => void;
   setShowBlenderCommandPrompt: (show: boolean) => void;
-  setUnityPathInput: (unityPath: string) => void;
   showBlenderCommandPrompt: boolean;
-  shortcutBindings: ShortcutBindings;
-  onUpdateShortcut: (action: ShortcutAction, combo: string) => void;
-  onResetShortcuts: () => void;
-  toolsSnapshot: LocalToolsSnapshot | null;
-  unityPathInput: string;
 }) {
-  const [capturing, setCapturing] = useState<ShortcutAction | null>(null);
-
-  useEffect(() => {
-    if (!capturing) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (event.key === "Escape") {
-        setCapturing(null);
-        return;
-      }
-
-      const combo = comboFromEvent(event);
-      if (combo) {
-        onUpdateShortcut(capturing, combo);
-        setCapturing(null);
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [capturing, onUpdateShortcut]);
-
   return (
-    <section className="settings-page role-page" aria-label="Settings">
-      <div className="settings-layout">
-        <section className="settings-panel">
-          <div className="settings-heading">
-            <span className="eyebrow">Projet ouvert</span>
-            <h2>{project.project.name}</h2>
-          </div>
-          <form
-            className="settings-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void onOpenProject(projectPathInput);
-            }}
-          >
-            <label className="settings-field">
-              <span>Dossier projet</span>
-              <input onChange={(event) => setProjectPathInput(event.target.value)} value={projectPathInput} />
-            </label>
-            <div className="settings-actions">
-              <button disabled={isLoadingProject} onClick={onSelectProjectDirectory} type="button">
-                <FolderOpen size={16} />
-                {isLoadingProject ? "Ouverture" : "Choisir"}
-              </button>
-              <button className="secondary" disabled={isLoadingProject} type="submit">
-                Ouvrir ce chemin
-              </button>
-              <button className="secondary" onClick={onOpenDefaultProject} type="button">
-                <RotateCcw size={16} />
-                Projet test
-              </button>
-              <button className="secondary danger" onClick={onForgetLastProject} type="button">
-                Fermer
-              </button>
-            </div>
-          </form>
-        </section>
+    <div className="view-page narrow">
+      <header className="view-header">
+        <div>
+          <span className="eyebrow">Projet et outils</span>
+          <h1>Parametres</h1>
+          <p>Choisis le moteur et indique a BlendUp comment lancer Blender.</p>
+        </div>
+      </header>
 
-        <section className="settings-panel">
-          <div className="settings-heading">
-            <span className="eyebrow">Machine</span>
-            <h2>Chemins locaux</h2>
-          </div>
-          <div className="settings-form">
-            <label className="settings-field">
-              <span>Blender</span>
-              <input
-                onChange={(event) => setBlenderPathInput(event.target.value)}
-                placeholder="Auto ou chemin blender.exe"
-                value={blenderPathInput}
-              />
-            </label>
-            <ToolStatus label="Blender" status={toolsSnapshot?.blender} />
-            <label className="settings-toggle">
-              <input
-                checked={showBlenderCommandPrompt}
-                onChange={(event) => setShowBlenderCommandPrompt(event.target.checked)}
-                type="checkbox"
-              />
-              <span>Afficher l'invite de commande au lancement de Blender</span>
-            </label>
-            <label className="settings-field">
-              <span>Unity</span>
-              <input
-                onChange={(event) => setUnityPathInput(event.target.value)}
-                placeholder="Chemin Unity Editor"
-                value={unityPathInput}
-              />
-            </label>
-            <ToolStatus label="Unity" status={toolsSnapshot?.unity} />
-            <label className="settings-field">
-              <span>PureRef</span>
-              <input
-                onChange={(event) => setPureRefPathInput(event.target.value)}
-                placeholder="Chemin PureRef"
-                value={pureRefPathInput}
-              />
-            </label>
-            <ToolStatus label="PureRef" status={toolsSnapshot?.pureRef} />
-            <div className="settings-actions">
-              <button className="secondary" disabled={isDetectingTools} onClick={onDetectTools} type="button">
-                <Wrench size={16} />
-                {isDetectingTools ? "Detection" : "Detecter"}
-              </button>
-              <button onClick={onSaveSettings} type="button">
-                <Save size={16} />
-                Enregistrer
-              </button>
-            </div>
-          </div>
-        </section>
+      <section className="settings-section content-panel">
+        <div className="section-heading"><Gamepad2 size={20} /><div><h2>Moteur du projet</h2><p>Le changement cree la nouvelle destination sans supprimer l'ancien dossier.</p></div></div>
+        <div className="engine-cards">
+          <EngineCard active={project.project.engine === "godot"} format="GLB" label="Godot" onClick={() => onChangeEngine("godot")} />
+          <EngineCard active={project.project.engine === "unity"} format="FBX" label="Unity" onClick={() => onChangeEngine("unity")} />
+        </div>
+        <div className="path-stack">
+          <PathRow label="Sources" onOpen={() => onOpenPath(project.project.paths.artRoot)} value={project.project.paths.artRoot} />
+          <PathRow label="Projet moteur" onOpen={() => onOpenPath(project.project.paths.engineRoot)} value={project.project.paths.engineRoot} />
+          <PathRow label="Exports" onOpen={() => onOpenPath(project.project.paths.engineAssetsRoot)} value={project.project.paths.engineAssetsRoot} />
+        </div>
+      </section>
 
-        <section className="settings-panel wide">
-          <div className="settings-heading">
-            <span className="eyebrow">Historique</span>
-            <h2>Projets recents</h2>
-          </div>
-          <div className="recent-projects inline">
-            {recentProjects.length > 0 ? (
-              recentProjects.map((projectRoot) => (
-                <button key={projectRoot} onClick={() => void onOpenProject(projectRoot)} type="button">
-                  <FolderOpen size={16} />
-                  <span>{projectRoot}</span>
-                </button>
-              ))
-            ) : (
-              <div className="empty-state compact">
-                <FileSearch size={28} />
-                <span>Aucun projet recent</span>
-              </div>
-            )}
-          </div>
-        </section>
+      <section className="settings-section content-panel">
+        <div className="section-heading"><Search size={20} /><div><h2>Blender</h2><p>Le chemin est optionnel si Blender est installe dans un emplacement standard.</p></div></div>
+        <label className="field">
+          <span>Chemin vers blender.exe</span>
+          <input onChange={(event) => setBlenderPathInput(event.target.value)} placeholder="Detection automatique" value={blenderPathInput} />
+        </label>
+        <ToolStatus status={blenderDetection} />
+        <label className="check-field">
+          <input checked={showBlenderCommandPrompt} onChange={(event) => void setShowBlenderCommandPrompt(event.target.checked)} type="checkbox" />
+          <span>Afficher la fenetre de commande au lancement de Blender</span>
+        </label>
+        <div className="button-row">
+          <button className="ghost" disabled={isDetectingBlender} onClick={onDetectBlender} type="button"><Search size={16} /> {isDetectingBlender ? "Detection…" : "Detecter"}</button>
+          <button className="primary" onClick={onSaveSettings} type="button"><Save size={16} /> Enregistrer</button>
+        </div>
+      </section>
 
-        <section className="settings-panel wide">
-          <div className="settings-heading">
-            <span className="eyebrow">Raccourcis clavier</span>
-            <h2>Personnaliser</h2>
-          </div>
-          <div className="shortcut-list">
-            {SHORTCUT_ORDER.map((action) => (
-              <div className="shortcut-row" key={action}>
-                <span className="shortcut-label">
-                  <Keyboard size={15} />
-                  {SHORTCUT_LABELS[action]}
-                </span>
-                <button
-                  className={capturing === action ? "shortcut-combo capturing" : "shortcut-combo"}
-                  onClick={() => setCapturing(action)}
-                  type="button"
-                >
-                  {capturing === action ? "Appuyez sur une touche..." : formatCombo(shortcutBindings[action])}
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="settings-actions">
-            <button className="secondary" onClick={onResetShortcuts} type="button">
-              <RotateCcw size={16} />
-              Reinitialiser
-            </button>
-          </div>
-        </section>
-      </div>
-    </section>
+      <section className="settings-section content-panel">
+        <div className="section-heading"><FolderOpen size={20} /><div><h2>Projet BlendUp</h2><p>{project.projectRoot}</p></div></div>
+        <div className="button-row">
+          <button className="ghost" onClick={() => onOpenPath(".")} type="button"><ExternalLink size={16} /> Ouvrir le dossier</button>
+          <button className="danger" onClick={onCloseProject} type="button"><X size={16} /> Fermer le projet</button>
+        </div>
+      </section>
+    </div>
   );
+}
+
+function EngineCard({ active, format, label, onClick }: { active: boolean; format: string; label: string; onClick: () => void }) {
+  return (
+    <button className={active ? "active" : ""} onClick={onClick} type="button">
+      <strong>{label}</strong><span>Export {format}</span>{active ? <b>Actif</b> : null}
+    </button>
+  );
+}
+
+function PathRow({ label, onOpen, value }: { label: string; onOpen: () => void; value: string }) {
+  return <div className="path-row"><span>{label}</span><code>{value}</code><button onClick={onOpen} title={`Ouvrir ${value}`} type="button"><ExternalLink size={15} /></button></div>;
 }

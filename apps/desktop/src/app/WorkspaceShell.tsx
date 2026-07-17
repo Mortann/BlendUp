@@ -1,54 +1,14 @@
-import {
-  AlertTriangle,
-  BadgeCheck,
-  Boxes,
-  GalleryHorizontal,
-  GitBranch,
-  Home,
-  KanbanSquare,
-  ListTree,
-  Settings,
-  UsersRound
-} from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
-import { useState } from "react";
+import { AlertTriangle, Boxes, ChevronLeft, Settings } from "lucide-react";
+import type { ReactNode } from "react";
 import type { ProjectSnapshot } from "../blendup/types";
-import { viewTitle } from "./metrics";
 import type { ActiveView, OperationMessage } from "./types";
 import { OperationBanner } from "./ui";
 
-type NavItem = {
-  icon: ReactNode;
-  key: ActiveView;
-  label: string;
-  tone?: "muted";
-};
-
-function navigationItems(): NavItem[] {
-  const items: Record<ActiveView, NavItem> = {
-    assets: { icon: <Boxes size={18} />, key: "assets", label: "Assets" },
-    dashboard: { icon: <Home size={18} />, key: "dashboard", label: "Dashboard" },
-    git: { icon: <GitBranch size={18} />, key: "git", label: "Git" },
-    nomenclature: { icon: <ListTree size={18} />, key: "nomenclature", label: "Nomenclature" },
-    problems: { icon: <AlertTriangle size={18} />, key: "problems", label: "Problemes" },
-    references: { icon: <GalleryHorizontal size={18} />, key: "references", label: "References" },
-    settings: { icon: <Settings size={18} />, key: "settings", label: "Settings" },
-    tasks: { icon: <KanbanSquare size={18} />, key: "tasks", label: "Taches" },
-    team: { icon: <UsersRound size={18} />, key: "team", label: "Equipe" }
-  };
-
-  return [
-    items.dashboard,
-    items.assets,
-    items.references,
-    items.tasks,
-    items.nomenclature,
-    items.team,
-    { ...items.problems, tone: "muted" },
-    { ...items.git, tone: "muted" },
-    items.settings
-  ];
-}
+const navigation: Array<{ icon: ReactNode; key: ActiveView; label: string }> = [
+  { icon: <Boxes size={19} />, key: "assets", label: "Assets" },
+  { icon: <AlertTriangle size={19} />, key: "problems", label: "Problemes" },
+  { icon: <Settings size={19} />, key: "settings", label: "Parametres" }
+];
 
 export function WorkspaceShell({
   activeView,
@@ -57,8 +17,7 @@ export function WorkspaceShell({
   onCloseProject,
   operationMessage,
   project,
-  setActiveView,
-  shellStyle
+  setActiveView
 }: {
   activeView: ActiveView;
   children: ReactNode;
@@ -67,64 +26,42 @@ export function WorkspaceShell({
   operationMessage: OperationMessage | null;
   project: ProjectSnapshot;
   setActiveView: (view: ActiveView) => void;
-  shellStyle: CSSProperties;
 }) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const navItems = navigationItems();
-  const handleNavigate = (view: ActiveView) => {
-    setActiveView(view);
-    setIsCollapsed((current) => !current);
-  };
-
   return (
-    <main className={`app-shell role-artist ${isCollapsed ? "sidebar-collapsed" : ""}`} style={shellStyle}>
-      <aside className="sidebar" aria-label="Navigation principale">
-        <button
-          aria-label={isCollapsed ? "Deplier la navigation" : "Replier la navigation"}
-          className="sidebar-brand-toggle"
-          onClick={() => setIsCollapsed((current) => !current)}
-          title={isCollapsed ? "Deplier la navigation" : "Replier la navigation"}
-          type="button"
-        >
-          <span className="brand-mark mini">BU</span>
-          <span className="brand-wordmark">BlendUp</span>
-        </button>
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">BU</span>
+          <div>
+            <strong>BlendUp</strong>
+            <span>{project.project.name}</span>
+          </div>
+        </div>
 
-        <nav className="nav-list">
-          {navItems.map((item) => (
+        <nav className="nav-list" aria-label="Navigation principale">
+          {navigation.map((item) => (
             <button
-              aria-label={item.label}
-              className={`nav-item ${item.tone ?? ""} ${activeView === item.key ? "active" : ""}`}
+              className={activeView === item.key ? "active" : ""}
               key={item.key}
-              onClick={() => handleNavigate(item.key)}
-              title={item.label}
+              onClick={() => setActiveView(item.key)}
               type="button"
             >
-              <span className="nav-icon-shell">{item.icon}</span>
-              <span className="nav-label">{item.label}</span>
+              {item.icon}
+              <span>{item.label}</span>
               {item.key === "problems" && project.problems.length > 0 ? (
-                <span className="nav-badge">{project.problems.length}</span>
-              ) : null}
-              {item.key === "tasks" && project.tasks.length > 0 ? (
-                <span className="nav-badge neutral">{project.tasks.length}</span>
+                <b>{project.problems.length}</b>
               ) : null}
             </button>
           ))}
         </nav>
+
+        <button className="close-project" onClick={onCloseProject} type="button">
+          <ChevronLeft size={17} />
+          Changer de projet
+        </button>
       </aside>
 
-      <section className="workspace" aria-label={viewTitle(activeView)}>
-        <button
-          aria-label="Fermer le projet et revenir a l'accueil"
-          className="project-home-button"
-          onClick={onCloseProject}
-          title={`Fermer ${project.project.name}`}
-          type="button"
-        >
-          <BadgeCheck size={17} />
-          <span>Accueil</span>
-        </button>
-
+      <section className="workspace">
         {operationMessage ? <OperationBanner message={operationMessage} onClose={onCloseMessage} /> : null}
         {children}
       </section>

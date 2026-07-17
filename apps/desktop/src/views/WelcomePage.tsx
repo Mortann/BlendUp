@@ -1,11 +1,10 @@
-import { FolderOpen, Plus, RotateCcw } from "lucide-react";
+import { FolderOpen, Gamepad2, Plus, RotateCcw } from "lucide-react";
+import type { GameEngine } from "../blendup/types";
 
 export function WelcomePage({
-  createGitignore,
+  createEngine,
   createProjectName,
   createProjectRoot,
-  createUnityFolders,
-  isCreateProjectOpen,
   isCreatingProject,
   isLoadingProject,
   onCreateProject,
@@ -13,20 +12,16 @@ export function WelcomePage({
   onOpenProject,
   onSelectCreateProjectDirectory,
   onSelectProjectDirectory,
-  onToggleCreateProject,
   projectPathInput,
   recentProjects,
-  setCreateGitignore,
+  setCreateEngine,
   setCreateProjectName,
   setCreateProjectRoot,
-  setCreateUnityFolders,
   setProjectPathInput
 }: {
-  createGitignore: boolean;
+  createEngine: GameEngine;
   createProjectName: string;
   createProjectRoot: string;
-  createUnityFolders: boolean;
-  isCreateProjectOpen: boolean;
   isCreatingProject: boolean;
   isLoadingProject: boolean;
   onCreateProject: () => void;
@@ -34,183 +29,97 @@ export function WelcomePage({
   onOpenProject: (projectRoot: string) => Promise<boolean>;
   onSelectCreateProjectDirectory: () => void;
   onSelectProjectDirectory: () => void;
-  onToggleCreateProject: () => void;
   projectPathInput: string;
   recentProjects: string[];
-  setCreateGitignore: (createGitignore: boolean) => void;
-  setCreateProjectName: (projectName: string) => void;
-  setCreateProjectRoot: (projectRoot: string) => void;
-  setCreateUnityFolders: (createUnityFolders: boolean) => void;
-  setProjectPathInput: (projectRoot: string) => void;
+  setCreateEngine: (engine: GameEngine) => void;
+  setCreateProjectName: (value: string) => void;
+  setCreateProjectRoot: (value: string) => void;
+  setProjectPathInput: (value: string) => void;
 }) {
   return (
-    <section className="welcome-page" aria-label="Accueil BlendUp">
-      <div className="welcome-brand">
-        <div className="brand-mark">BU</div>
+    <section className="welcome-page">
+      <header className="welcome-brand">
+        <span className="brand-mark large">BU</span>
         <div>
-          <span className="eyebrow">BlendUp</span>
-          <h1>Ouvrir un projet</h1>
+          <span className="eyebrow">Blender vers le moteur</span>
+          <h1>BlendUp</h1>
+          <p>Un flux simple pour exporter tes assets vers Godot ou Unity.</p>
         </div>
-      </div>
+      </header>
 
-      <div className="welcome-actions">
+      <div className="welcome-grid">
         <form
-          className="settings-form"
+          className="panel"
           onSubmit={(event) => {
             event.preventDefault();
             void onOpenProject(projectPathInput);
           }}
         >
-          <label className="settings-field">
-            <span>Dossier projet</span>
-            <input
-              onChange={(event) => setProjectPathInput(event.target.value)}
-              placeholder="C:\Users\morit\Desktop\BlendUp\BlendUp_projet_Test"
-              value={projectPathInput}
-            />
+          <div className="panel-heading">
+            <FolderOpen size={20} />
+            <div><h2>Ouvrir un projet</h2><p>Choisis un dossier contenant `.blendup/project.json`.</p></div>
+          </div>
+          <label className="field">
+            <span>Dossier du projet</span>
+            <input onChange={(event) => setProjectPathInput(event.target.value)} value={projectPathInput} />
           </label>
-
-          <div className="settings-actions">
+          <div className="button-row">
             <button disabled={isLoadingProject} onClick={onSelectProjectDirectory} type="button">
-              <FolderOpen size={16} />
-              {isLoadingProject ? "Ouverture" : "Choisir"}
+              <FolderOpen size={16} /> Choisir
             </button>
-            <button className="secondary" disabled={isLoadingProject} type="submit">
-              Ouvrir ce chemin
+            <button className="primary" disabled={isLoadingProject || !projectPathInput.trim()} type="submit">
+              Ouvrir
             </button>
-            <button onClick={onToggleCreateProject} type="button">
-              <Plus size={16} />
-              Creer
-            </button>
-            <button className="secondary" onClick={onOpenDefaultProject} type="button">
-              <RotateCcw size={16} />
-              Projet test
+            <button className="ghost" onClick={onOpenDefaultProject} type="button">
+              <RotateCcw size={16} /> Projet test
             </button>
           </div>
         </form>
 
-        {isCreateProjectOpen ? (
-          <CreateProjectPanel
-            createGitignore={createGitignore}
-            createProjectName={createProjectName}
-            createProjectRoot={createProjectRoot}
-            createUnityFolders={createUnityFolders}
-            isCreatingProject={isCreatingProject}
-            onCreateProject={onCreateProject}
-            onSelectProjectDirectory={onSelectCreateProjectDirectory}
-            setCreateGitignore={setCreateGitignore}
-            setCreateProjectName={setCreateProjectName}
-            setCreateProjectRoot={setCreateProjectRoot}
-            setCreateUnityFolders={setCreateUnityFolders}
-          />
-        ) : null}
+        <form
+          className="panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCreateProject();
+          }}
+        >
+          <div className="panel-heading">
+            <Gamepad2 size={20} />
+            <div><h2>Nouveau projet</h2><p>BlendUp prepare Art et le dossier Assets du moteur.</p></div>
+          </div>
+          <label className="field">
+            <span>Nom</span>
+            <input onChange={(event) => setCreateProjectName(event.target.value)} value={createProjectName} />
+          </label>
+          <label className="field">
+            <span>Dossier racine</span>
+            <div className="input-action">
+              <input onChange={(event) => setCreateProjectRoot(event.target.value)} value={createProjectRoot} />
+              <button onClick={onSelectCreateProjectDirectory} type="button"><FolderOpen size={16} /></button>
+            </div>
+          </label>
+          <div className="engine-picker" aria-label="Moteur du projet">
+            <button className={createEngine === "godot" ? "active" : ""} onClick={() => setCreateEngine("godot")} type="button">Godot · GLB</button>
+            <button className={createEngine === "unity" ? "active" : ""} onClick={() => setCreateEngine("unity")} type="button">Unity · FBX</button>
+          </div>
+          <button className="primary full" disabled={isCreatingProject} type="submit">
+            <Plus size={16} /> {isCreatingProject ? "Creation…" : "Creer le projet"}
+          </button>
+        </form>
+      </div>
 
-        {recentProjects.length > 0 ? (
-          <section className="recent-projects" aria-label="Projets recents">
-            <h2>Recents</h2>
-            {recentProjects.map((projectRoot) => (
-              <button key={projectRoot} onClick={() => void onOpenProject(projectRoot)} type="button">
-                <FolderOpen size={16} />
-                <span>{projectRoot}</span>
+      {recentProjects.length > 0 ? (
+        <section className="recent-projects">
+          <h2>Projets recents</h2>
+          <div>
+            {recentProjects.map((root) => (
+              <button key={root} onClick={() => void onOpenProject(root)} type="button">
+                <FolderOpen size={15} /><span>{root}</span>
               </button>
             ))}
-          </section>
-        ) : null}
-      </div>
+          </div>
+        </section>
+      ) : null}
     </section>
-  );
-}
-
-function CreateProjectPanel({
-  createGitignore,
-  createProjectName,
-  createProjectRoot,
-  createUnityFolders,
-  isCreatingProject,
-  onCreateProject,
-  onSelectProjectDirectory,
-  setCreateGitignore,
-  setCreateProjectName,
-  setCreateProjectRoot,
-  setCreateUnityFolders
-}: {
-  createGitignore: boolean;
-  createProjectName: string;
-  createProjectRoot: string;
-  createUnityFolders: boolean;
-  isCreatingProject: boolean;
-  onCreateProject: () => void;
-  onSelectProjectDirectory: () => void;
-  setCreateGitignore: (createGitignore: boolean) => void;
-  setCreateProjectName: (projectName: string) => void;
-  setCreateProjectRoot: (projectRoot: string) => void;
-  setCreateUnityFolders: (createUnityFolders: boolean) => void;
-}) {
-  return (
-    <form
-      className="create-project-panel"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onCreateProject();
-      }}
-    >
-      <div className="settings-heading">
-        <span className="eyebrow">Nouveau projet</span>
-        <h2>Creation guidee</h2>
-      </div>
-
-      <div className="create-project-grid">
-        <label className="settings-field">
-          <span>Nom</span>
-          <input
-            onChange={(event) => setCreateProjectName(event.target.value)}
-            placeholder="Mon projet Unity"
-            value={createProjectName}
-          />
-        </label>
-
-        <label className="settings-field">
-          <span>Dossier racine</span>
-          <input
-            onChange={(event) => setCreateProjectRoot(event.target.value)}
-            placeholder="C:\Users\morit\Desktop\MonProjet"
-            value={createProjectRoot}
-          />
-        </label>
-      </div>
-
-      <div className="settings-actions">
-        <button className="secondary" onClick={onSelectProjectDirectory} type="button">
-          <FolderOpen size={16} />
-          Choisir dossier
-        </button>
-      </div>
-
-      <div className="create-project-options">
-        <label className="settings-check">
-          <input
-            checked={createUnityFolders}
-            onChange={(event) => setCreateUnityFolders(event.target.checked)}
-            type="checkbox"
-          />
-          <span>Preparer les dossiers Unity</span>
-        </label>
-        <label className="settings-check">
-          <input
-            checked={createGitignore}
-            onChange={(event) => setCreateGitignore(event.target.checked)}
-            type="checkbox"
-          />
-          <span>Ajouter un .gitignore adapte</span>
-        </label>
-      </div>
-
-      <div className="settings-actions">
-        <button disabled={isCreatingProject} type="submit">
-          <Plus size={16} />
-          {isCreatingProject ? "Creation" : "Creer le projet"}
-        </button>
-      </div>
-    </form>
   );
 }

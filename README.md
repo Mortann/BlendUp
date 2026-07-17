@@ -1,95 +1,51 @@
 # BlendUp
 
-BlendUp est un projet d'application de preproduction et de pipeline d'assets pour petites equipes Unity/Blender.
+BlendUp est une application desktop simple pour exporter les fichiers Blender d'un projet vers Godot ou Unity.
 
-L'objectif n'est pas de remplacer Blender, Unity, Git, ClickUp ou PureRef. L'objectif est de creer une couche commune qui rend le chemin entre creation artistique, integration technique et suivi de production plus lisible, plus fiable et plus rapide.
-
-Flux central vise pour la V1 :
+Le flux de la première version est volontairement court :
 
 ```text
-Blender source
-  -> Export FBX
-  -> Import Unity
-  -> Prefab Unity
-  -> Metadata BlendUp
+Art/**/*.blend
+  -> Godot/Assets/**/*.glb
+  ou
+  -> Unity/Assets/**/*.fbx
 ```
 
-La V1 se concentre volontairement sur un perimetre realiste :
+L'application ne contient que trois espaces :
 
-- gerer des fiches assets avec ID stable ;
-- relier chaque asset a ses fichiers Blender, exports FBX, prefabs Unity, references, notes et statuts ;
-- assister la nomenclature et les validations ;
-- fournir un add-on Blender leger ;
-- fournir un package Unity leger ;
-- proposer une application separee sobre avec experience artiste et validation par la direction artistique ;
-- garder Git, Git LFS et PureRef comme integrations utiles mais non obligatoires ;
-- garder ClickUp pour une version future, apres le systeme de taches interne.
+- **Assets** : détecter, ouvrir et exporter les fichiers Blender ;
+- **Problèmes** : voir les exports manquants, obsolètes ou en erreur ;
+- **Paramètres** : choisir Godot ou Unity et configurer Blender.
 
-## Documentation
+Les anciens systèmes Git, tâches, équipe, références, nomenclature, dashboard, widget Unity et création de prefabs ont été retirés.
 
-Les documents de preproduction sont dans `docs/`.
+## Organisation d'un projet
 
-Point d'entree recommande :
+```text
+MonProjet/
+├─ .blendup/
+│  ├─ project.json
+│  ├─ export-state.json
+│  └─ temp/
+├─ Art/
+│  └─ ... fichiers .blend
+└─ Godot/Assets/       # projet Godot
+   ou Unity/Assets/    # projet Unity
+```
 
-- `docs/00-index.md`
-- `docs/preproduction/01-vision-produit.md`
-- `docs/preproduction/02-definition-v1.md`
-- `docs/specs/01-architecture-generale.md`
-- `docs/specs/02-modele-donnees.md`
-- `docs/production/02-installation-verification.md`
+Le chemin situé sous `Art` est conservé dans le dossier `Assets`. Par exemple, `Art/Environment/Rock.blend` devient `Godot/Assets/Environment/Rock.glb`.
 
-## Etat actuel
+Changer le moteur dans les paramètres active la nouvelle organisation et conserve l'ancien dossier moteur par sécurité.
 
-Ce depot contient :
+## Développement
 
-- la documentation de preproduction et de production ;
-- une application desktop Tauri + React + TypeScript dans `apps/desktop` ;
-- un backend Tauri/Rust capable de lire et d'ecrire des donnees `.blendup` ;
-- un projet test `BlendUp_projet_Test/` (sous-module Git) avec Unity, deux fiches assets et deux taches internes ;
-- une interface avec vues `Dashboard`, `Assets`, `References`, `Problems`, `Tasks`, `Git`, `Nomenclature`, `Equipe` et `Settings` ;
-- des settings utilisateur locaux stockes hors Git (dernier projet, projets recents, chemins Blender/Unity/PureRef) ;
-- un selecteur de dossier natif pour ouvrir un projet, avec fallback par chemin manuel ;
-- une detection des outils locaux Blender, Unity et PureRef ;
-- une premiere version de creation de projet assistee depuis l'ecran d'accueil ;
-- une premiere action d'export FBX via Blender depuis l'application native ;
-- une commande native pour ouvrir un fichier projet, utilisee par `Ouvrir dans Blender` sur une fiche asset ;
-- un add-on Blender dans `apps/blender-addon` (panneau, export FBX manuel/auto, validation, templates, liaison asset).
-
-Le package Unity dedie reste en cours de construction. Cote add-on, l'action "ouvrir la fiche dans BlendUp" ecrit une requete `.blendup/temp/open-request.json`, consommee par l'application au chargement et par polling quand le projet est ouvert.
-
-## Installation Et Verification Rapide
-
-Prerequis Windows :
-
-- Node.js et npm ;
-- Rust via rustup ;
-- Visual Studio 2022 avec outils C++ ;
-- Windows SDK avec les librairies C, dont `kernel32.lib` ;
-- WebView2.
-
-Commandes principales :
+Prérequis : Node.js, npm, Rust, les outils Windows C++, WebView2 et Blender.
 
 ```powershell
 npm install
 npm run typecheck
 npm run build
-npm run dev
 npm run tauri:dev
 ```
 
-Pour verifier le backend Tauri/Rust :
-
-```powershell
-cd apps/desktop/src-tauri
-cargo check
-```
-
-Si `cargo` n'est pas encore visible dans le terminal apres installation de Rust, ouvrir un nouveau terminal ou ajouter temporairement `C:\Users\morit\.cargo\bin` au `PATH`.
-
-Le detail de la remise en route est documente dans `docs/production/02-installation-verification.md`.
-
-## Principe De Maintenance
-
-La documentation doit rester a jour pendant toute la production. Quand une decision change, quand le scope evolue, ou quand une implementation revele une contrainte, les fichiers `docs/` doivent etre ajustes au meme titre que le code.
-
-Regle de travail pour la suite : toute modification fonctionnelle, technique ou de scope doit mettre a jour la documentation correspondante avant d'etre consideree terminee.
+La documentation utile se trouve dans [docs/00-index.md](docs/00-index.md).

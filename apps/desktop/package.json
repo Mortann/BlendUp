@@ -5,28 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
   "dependencies": {
-    "@heroui/react": "latest",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
-    "framer-motion": "latest",
     "lucide-react": "latest",
     "react": "latest",
-    "react-dom": "latest",
-    "three": "^0.185.1"
+    "react-dom": "latest"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.3",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "latest",
     "typescript": "latest",
     "vite": "latest"
