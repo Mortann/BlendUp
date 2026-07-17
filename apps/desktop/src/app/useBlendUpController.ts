@@ -1,0 +1,604 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  addAssetImages,
+  clearAssetExports,
+  copyAsset,
+  createAsset,
+  createAssetVariant,
+  createFolder,
+  createProject,
+  defaultUserSettings,
+  deleteAsset,
+  deleteAssetVersion,
+  deleteFolder,
+  detectBlender,
+  duplicateAsset,
+  exportAsset,
+  exportAssetVersion,
+  exportAssetVersions,
+  generateAssetLods,
+  loadDefaultProjectSnapshot,
+  loadProjectSnapshot,
+  loadUserSettings,
+  moveAsset,
+  moveFolder,
+  openBlendFile,
+  openProjectPath,
+  organizeAsset,
+  rememberProject,
+  renameAsset,
+  renameFolder,
+  saveUserSettings,
+  selectImageFiles,
+  selectProjectDirectory,
+  setAssetThumbnail,
+  updateAssetMetadata,
+  updateProjectEngine
+} from "../blendup/projectLoader";
+import type {
+  AssetLod,
+  AssetMutationResult,
+  AssetVariant,
+  BlendUpAsset,
+  GameEngine,
+  ProjectSnapshot,
+  ToolDetection,
+  UserSettings
+} from "../blendup/types";
+import type { ActiveView, OperationMessage } from "./types";
+
+export function useBlendUpController() {
+  const [activeView, setActiveView] = useState<ActiveView>("assets");
+  const [project, setProject] = useState<ProjectSnapshot | null>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings>(defaultUserSettings);
+  const [projectPathInput, setProjectPathInput] = useState("");
+  const [createProjectName, setCreateProjectName] = useState("");
+  const [createProjectRoot, setCreateProjectRoot] = useState("");
+  const [createEngine, setCreateEngine] = useState<GameEngine>("godot");
+  const [blenderPathInput, setBlenderPathInput] = useState("");
+  const [blenderDetection, setBlenderDetection] = useState<ToolDetection | null>(null);
+  const [operationMessage, setOperationMessage] = useState<OperationMessage | null>(null);
+  const [isBooting, setIsBooting] = useState(true);
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isDetectingBlender, setIsDetectingBlender] = useState(false);
+  const [isReexporting, setIsReexporting] = useState(false);
+  const [exportingAssetIds, setExportingAssetIds] = useState<string[]>([]);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const activeProjectRoot = project?.projectRoot ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadUserSettings().then(async (settings) => {
+      if (cancelled) return;
+      setUserSettings(settings);
+      setBlenderPathInput(settings.blenderPath ?? "");
+      setProjectPathInput(settings.lastProjectRoot ?? "");
+
+      if (settings.lastProjectRoot) {
+        try {
+          const snapshot = await loadProjectSnapshot(settings.lastProjectRoot);
+          if (!cancelled) setProject(snapshot);
+        } catch {
+          // Un projet recent peut avoir ete deplace. L'accueil reste utilisable.
+        }
+      }
+
+      if (!cancelled) setIsBooting(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeProjectRoot) return;
+    let cancelled = false;
+    let refreshing = false;
+
+    const refreshFromDisk = async () => {
+      if (cancelled || refreshing || document.hidden) return;
+      refreshing = true;
+      try {
+        const snapshot = await loadProjectSnapshot(activeProjectRoot);
+        if (!cancelled) {
+          setProject((current) => {
+            if (!current || current.projectRoot !== activeProjectRoot) return current;
+            return JSON.stringify(current) === JSON.stringify(snapshot) ? current : snapshot;
+          });
+        }
+      } catch {
+        // Le prochain passage retentera silencieusement : l'utilisateur peut être en train d'enregistrer.
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    const interval = window.setInterval(() => void refreshFromDisk(), 1_400);
+    const onFocus = () => void refreshFromDisk();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [activeProjectRoot]);
+
+  const selectedAsset = useMemo(
+    () => project?.assets.find((asset) => asset.id === selectedAssetId) ?? null,
+    [project, selectedAssetId]
+  );
+
+  const showError = (title: string, error: unknown) => {
+    setOperationMessage({ detail: errorMessage(error), title, tone: "error" });
+  };
+
+  const persistSettings = async (next: UserSettings) => {
+    const saved = await saveUserSettings(next);
+    setUserSettings(saved);
+    return saved;
+  };
+
+  const openProject = async (projectRoot: string): Promise<boolean> => {
+    setIsLoadingProject(true);
+    try {
+      const snapshot = await loadProjectSnapshot(projectRoot);
+      setProject(snapshot);
+      setProjectPathInput(snapshot.projectRoot);
+      setActiveView("assets");
+      setSelectedAssetId(null);
+      await persistSettings(rememberProject(userSettings, snapshot.projectRoot));
+      return true;
+    } catch (error) {
+      showError("Impossible d'ouvrir le projet", error);
+      return false;
+    } finally {
+      setIsLoadingProject(false);
+    }
+  };
+
+  const chooseProjectDirectory = async () => {
+    const selected = await selectProjectDirectory("Ouvrir un projet BlendUp");
+    if (selected) {
+      setProjectPathInput(selected);
+      await openProject(selected);
+    }
+  };
+
+  const chooseCreateProjectDirectory = async () => {
+    const selected = await selectProjectDirectory("Choisir le dossier du nouveau projet");
+    if (selected) setCreateProjectRoot(selected);
+  };
+
+  const openDefaultProject = async () => {
+    setIsLoadingProject(true);
+    try {
+      const snapshot = await loadDefaultProjectSnapshot();
+      setProject(snapshot);
+      setProjectPathInput(snapshot.projectRoot);
+      setActiveView("assets");
+      await persistSettings(rememberProject(userSettings, snapshot.projectRoot));
+    } catch (error) {
+      showError("Projet test indisponible", error);
+    } finally {
+      setIsLoadingProject(false);
+    }
+  };
+
+  const createProjectFromWelcome = async () => {
+    setIsCreatingProject(true);
+    try {
+      const result = await createProject({
+        engine: createEngine,
+        projectName: createProjectName,
+        projectRoot: createProjectRoot
+      });
+      const opened = await openProject(result.projectRoot);
+      if (opened) {
+        setOperationMessage({ title: result.message, tone: "success" });
+        setCreateProjectName("");
+      }
+    } catch (error) {
+      showError("Impossible de creer le projet", error);
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  const refreshProject = async () => {
+    if (!project) return;
+    try {
+      setProject(await loadProjectSnapshot(project.projectRoot));
+    } catch (error) {
+      showError("Actualisation impossible", error);
+    }
+  };
+
+  const handleExportAsset = async (assetId: string, quiet = false): Promise<boolean> => {
+    if (!project || exportingAssetIds.includes(assetId)) return false;
+    setExportingAssetIds((current) => [...current, assetId]);
+    try {
+      const result = await exportAsset({
+        assetId,
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot
+      });
+      await refreshProject();
+      if (!quiet || !result.success) {
+        setOperationMessage({
+          detail: result.success ? result.outputPath : result.log,
+          title: result.message,
+          tone: result.success ? "success" : "error"
+        });
+      }
+      return result.success;
+    } catch (error) {
+      showError("Export impossible", error);
+      return false;
+    } finally {
+      setExportingAssetIds((current) => current.filter((id) => id !== assetId));
+    }
+  };
+
+  const handleExportAssetVersion = async (
+    assetId: string,
+    versionId: string,
+    versionKind: "variant" | "lod"
+  ): Promise<boolean> => {
+    if (!project || exportingAssetIds.includes(assetId)) return false;
+    setExportingAssetIds((current) => [...current, assetId]);
+    try {
+      const result = await exportAssetVersion({
+        assetId,
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot,
+        versionId,
+        versionKind
+      });
+      await refreshProject();
+      setOperationMessage({
+        detail: result.success ? result.outputPath : result.log,
+        title: result.message,
+        tone: result.success ? "success" : "error"
+      });
+      return result.success;
+    } catch (error) {
+      showError("Export de la version impossible", error);
+      return false;
+    } finally {
+      setExportingAssetIds((current) => current.filter((id) => id !== assetId));
+    }
+  };
+
+  const handleExportAssetVersions = async (assetId: string): Promise<boolean> => {
+    if (!project || exportingAssetIds.includes(assetId)) return false;
+    setExportingAssetIds((current) => [...current, assetId]);
+    try {
+      const result = await exportAssetVersions({
+        assetId,
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot
+      });
+      await refreshProject();
+      setOperationMessage({
+        detail: result.outputPath ?? result.log,
+        title: result.message,
+        tone: result.success ? "success" : "error"
+      });
+      return result.success;
+    } catch (error) {
+      showError("Export de toutes les versions impossible", error);
+      return false;
+    } finally {
+      setExportingAssetIds((current) => current.filter((id) => id !== assetId));
+    }
+  };
+
+  const reexportAllAssets = async () => {
+    if (!project || isReexporting || exportingAssetIds.length) return;
+    const assets = [...project.assets];
+    if (!assets.length) {
+      setOperationMessage({ title: "Aucun asset a exporter.", tone: "info" });
+      return;
+    }
+
+    setIsReexporting(true);
+    setExportingAssetIds(assets.map((asset) => asset.id));
+    let successCount = 0;
+    const failures: string[] = [];
+    try {
+      await clearAssetExports(project.projectRoot);
+      for (const asset of assets) {
+        try {
+          const result = await exportAssetVersions({
+            assetId: asset.id,
+            blenderPath: userSettings.blenderPath ?? undefined,
+            projectRoot: project.projectRoot
+          });
+          if (result.success) successCount += 1;
+          else failures.push(`${asset.name} : ${result.message}`);
+        } catch (error) {
+          failures.push(`${asset.name} : ${errorMessage(error)}`);
+        }
+      }
+      await refreshProject();
+      setOperationMessage({
+        detail: failures.length
+          ? `${successCount} sur ${assets.length} asset(s) reexporte(s). ${failures.join(" | ")}`
+          : `${successCount} asset(s), avec leurs variantes et LOD, ont ete reexportes.`,
+        title: successCount === assets.length ? "Reexportation terminee" : "Reexportation partiellement terminee",
+        tone: successCount === assets.length ? "success" : "error"
+      });
+    } catch (error) {
+      showError("Impossible de reconstruire les exports", error);
+    } finally {
+      setExportingAssetIds([]);
+      setIsReexporting(false);
+    }
+  };
+
+  const openAssetInBlender = async (asset: BlendUpAsset) => {
+    if (!project) return;
+    try {
+      await openBlendFile({
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot,
+        relativePath: asset.sourcePath,
+        showCommandPrompt: userSettings.showBlenderCommandPrompt
+      });
+    } catch (error) {
+      showError("Impossible d'ouvrir Blender", error);
+    }
+  };
+
+  const openAssetPathInBlender = async (relativePath: string) => {
+    if (!project) return;
+    try {
+      await openBlendFile({
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot,
+        relativePath,
+        showCommandPrompt: userSettings.showBlenderCommandPrompt
+      });
+    } catch (error) {
+      showError("Impossible d'ouvrir cette version dans Blender", error);
+    }
+  };
+
+  const openContentPath = async (relativePath: string) => {
+    if (!project) return;
+    try {
+      await openProjectPath(project.projectRoot, relativePath);
+    } catch (error) {
+      showError("Impossible d'ouvrir ce chemin", error);
+    }
+  };
+
+  const refreshBlenderDetection = async () => {
+    setIsDetectingBlender(true);
+    try {
+      setBlenderDetection(await detectBlender(blenderPathInput));
+    } catch (error) {
+      showError("Detection de Blender impossible", error);
+    } finally {
+      setIsDetectingBlender(false);
+    }
+  };
+
+  const saveLocalSettings = async () => {
+    try {
+      const next = await persistSettings({
+        ...userSettings,
+        blenderPath: blenderPathInput.trim() || null
+      });
+      setBlenderPathInput(next.blenderPath ?? "");
+      setOperationMessage({ title: "Parametres enregistres", tone: "success" });
+      await refreshBlenderDetection();
+    } catch (error) {
+      showError("Enregistrement impossible", error);
+    }
+  };
+
+  const changeProjectEngine = async (engine: GameEngine) => {
+    if (!project || engine === project.project.engine) return;
+    try {
+      const result = await updateProjectEngine(project.projectRoot, engine);
+      await refreshProject();
+      setOperationMessage({ detail: result.message, title: "Moteur modifie", tone: "success" });
+    } catch (error) {
+      showError("Impossible de modifier le moteur", error);
+    }
+  };
+
+  const runAssetMutation = async (
+    title: string,
+    action: (projectRoot: string) => Promise<AssetMutationResult>
+  ): Promise<AssetMutationResult | null> => {
+    if (!project) return null;
+    try {
+      const result = await action(project.projectRoot);
+      const snapshot = await loadProjectSnapshot(project.projectRoot);
+      setProject(snapshot);
+      if (result.assetId) setSelectedAssetId(result.assetId);
+      setOperationMessage({ title: result.message, tone: "success" });
+      return result;
+    } catch (error) {
+      showError(title, error);
+      return null;
+    }
+  };
+
+  const handleCreateFolder = (parentDir: string, name: string) =>
+    runAssetMutation("Creation du dossier impossible", (root) => createFolder(root, parentDir, name));
+
+  const handleCreateAsset = (parentDir: string, name: string) =>
+    runAssetMutation("Creation de l'asset impossible", (root) =>
+      createAsset({ blenderPath: userSettings.blenderPath ?? undefined, name, parentDir, projectRoot: root })
+    );
+
+  const handleOrganizeAsset = (assetId: string) =>
+    runAssetMutation("Organisation de l'asset impossible", (root) => organizeAsset(root, assetId));
+
+  const handleCreateAssetVariant = (assetId: string, name: string) =>
+    runAssetMutation("Creation de la variante impossible", (root) =>
+      createAssetVariant(root, assetId, name)
+    );
+
+  const handleGenerateAssetLods = (assetId: string) =>
+    runAssetMutation("Generation des LOD impossible", (root) =>
+      generateAssetLods({
+        assetId,
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: root
+      })
+    );
+
+  const handleDeleteAssetVersion = (
+    assetId: string,
+    versionId: string,
+    versionKind: "variant" | "lod"
+  ) =>
+    runAssetMutation("Suppression de la version impossible", (root) =>
+      deleteAssetVersion(root, assetId, versionId, versionKind)
+    );
+
+  const handleRenameAsset = (assetId: string, newName: string) =>
+    runAssetMutation("Renommage impossible", (root) => renameAsset(root, assetId, newName));
+
+  const handleMoveAsset = (assetId: string, targetDir: string) =>
+    runAssetMutation("Deplacement impossible", (root) => moveAsset(root, assetId, targetDir));
+
+  const handleCopyAsset = (assetId: string, targetDir: string, move: boolean) =>
+    runAssetMutation(move ? "Deplacement impossible" : "Copie impossible", (root) =>
+      copyAsset(root, assetId, targetDir, move)
+    );
+
+  const handleDuplicateAsset = (assetId: string) =>
+    runAssetMutation("Duplication impossible", (root) => duplicateAsset(root, assetId));
+
+  const handleDeleteAsset = (assetId: string) =>
+    runAssetMutation("Suppression impossible", (root) => deleteAsset(root, assetId));
+
+  const handleRenameFolder = (folder: string, newName: string) =>
+    runAssetMutation("Renommage du dossier impossible", (root) => renameFolder(root, folder, newName));
+
+  const handleMoveFolder = (folder: string, targetDir: string) =>
+    runAssetMutation("Deplacement du dossier impossible", (root) => moveFolder(root, folder, targetDir));
+
+  const handleDeleteFolder = (folder: string) =>
+    runAssetMutation("Suppression du dossier impossible", (root) => deleteFolder(root, folder));
+
+  const handleUpdateAssetMetadata = (
+    assetId: string,
+    notes: string,
+    tags: string[],
+    variants: AssetVariant[],
+    lods: AssetLod[]
+  ) =>
+    runAssetMutation("Enregistrement impossible", (root) =>
+      updateAssetMetadata({ assetId, lods, notes, projectRoot: root, tags, variants })
+    );
+
+  const handleSetAssetThumbnail = async (assetId: string) => {
+    const images = await selectImageFiles();
+    if (images[0]) {
+      await runAssetMutation("Miniature impossible", (root) => setAssetThumbnail(root, assetId, images[0]));
+    }
+  };
+
+  const handleAddAssetImages = async (assetId: string, kind: "renders" | "textures") => {
+    const images = await selectImageFiles();
+    if (images.length > 0) {
+      await runAssetMutation("Ajout des images impossible", (root) =>
+        addAssetImages(root, assetId, kind, images)
+      );
+    }
+  };
+
+  const setShowBlenderCommandPrompt = async (show: boolean) => {
+    await persistSettings({ ...userSettings, showBlenderCommandPrompt: show });
+  };
+
+  const forgetLastProject = async () => {
+    setProject(null);
+    setSelectedAssetId(null);
+    await persistSettings({ ...userSettings, lastProjectRoot: null });
+  };
+
+  const revealAsset = (assetId: string) => {
+    setSelectedAssetId(assetId);
+    setActiveView("assets");
+  };
+
+  return {
+    activeView,
+    blenderDetection,
+    blenderPathInput,
+    changeProjectEngine,
+    chooseCreateProjectDirectory,
+    chooseProjectDirectory,
+    createEngine,
+    createProjectFromWelcome,
+    createProjectName,
+    createProjectRoot,
+    exportingAssetIds,
+    forgetLastProject,
+    handleAddAssetImages,
+    handleCopyAsset,
+    handleCreateAsset,
+    handleCreateAssetVariant,
+    handleCreateFolder,
+    handleDeleteAsset,
+    handleDeleteAssetVersion,
+    handleDeleteFolder,
+    handleDuplicateAsset,
+    handleExportAsset,
+    handleExportAssetVersion,
+    handleExportAssetVersions,
+    handleGenerateAssetLods,
+    handleMoveAsset,
+    handleMoveFolder,
+    handleOrganizeAsset,
+    handleRenameAsset,
+    handleRenameFolder,
+    handleSetAssetThumbnail,
+    handleUpdateAssetMetadata,
+    isBooting,
+    isCreatingProject,
+    isDetectingBlender,
+    isLoadingProject,
+    isReexporting,
+    openAssetInBlender,
+    openAssetPathInBlender,
+    openContentPath,
+    openDefaultProject,
+    openProject,
+    operationMessage,
+    project,
+    projectPathInput,
+    refreshBlenderDetection,
+    refreshProject,
+    reexportAllAssets,
+    revealAsset,
+    saveLocalSettings,
+    selectedAsset,
+    setActiveView,
+    setBlenderPathInput,
+    setCreateEngine,
+    setCreateProjectName,
+    setCreateProjectRoot,
+    setOperationMessage,
+    setProjectPathInput,
+    setSelectedAssetId,
+    setShowBlenderCommandPrompt,
+    userSettings
+  };
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Une erreur inconnue est survenue.";
+}

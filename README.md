@@ -1,88 +1,84 @@
+<p align="center">
+  <img src="apps/desktop/public/BlendUpLogo.svg" alt="Logo BlendUp" width="112">
+</p>
+
 # BlendUp
 
-BlendUp est un projet d'application de preproduction et de pipeline d'assets pour petites equipes Unity/Blender.
+**De Blender à Godot ou Unity, sans pipeline compliqué.**
 
-L'objectif n'est pas de remplacer Blender, Unity, Git, ClickUp ou PureRef. L'objectif est de creer une couche commune qui rend le chemin entre creation artistique, integration technique et suivi de production plus lisible, plus fiable et plus rapide.
+BlendUp est une application de bureau pour organiser des assets Blender, vérifier leur état et les exporter vers le moteur du projet. Cette première version se concentre sur trois espaces : **Assets**, **Problèmes** et **Paramètres**.
 
-Flux central vise pour la V1 :
+> État du projet : première version fonctionnelle en développement. Les installateurs publiés dans les Releases GitHub sont les versions recommandées pour les tests.
+
+## Ce que fait BlendUp
+
+- conserve chaque asset dans un dossier autonome avec son `.blend`, ses textures, références et rendus ;
+- ouvre un asset dans la session Blender déjà lancée quand l'add-on est actif ;
+- exporte en `.glb` vers Godot ou en `.fbx` vers Unity en conservant l'arborescence de `Art` ;
+- affiche les dossiers réellement présents dans `Art` avec recherche, favoris, vues et glisser-déposer ;
+- montre les aperçus 3D, miniatures, images, textures, notes et tags ;
+- crée de vraies variantes `.blend`, navigables et exportables séparément ;
+- génère des LOD Blender éditables à 50 %, 25 % et 12,5 % ;
+- exporte l'asset principal, toutes ses variantes et tous ses LOD en une action ;
+- signale uniquement les problèmes utiles : export absent, obsolète ou en erreur.
+
+Les anciens modules Git, tâches, équipe, références, nomenclature, dashboard, widget Unity et génération de prefabs ont été retirés.
+
+## Flux de travail
 
 ```text
-Blender source
-  -> Export FBX
-  -> Import Unity
-  -> Prefab Unity
-  -> Metadata BlendUp
+MonProjet/
+├─ .blendup/                       configuration locale du projet
+├─ Art/
+│  └─ Props/Table/
+│     ├─ Table.blend              version principale
+│     ├─ Table.variant.red.blend  variante éditable
+│     ├─ Table.lod.lod1.blend     LOD éditable
+│     ├─ textures/
+│     ├─ references/
+│     └─ renders/
+└─ Godot/Assets/Props/Table/
+   ├─ Table.glb
+   ├─ variants/red.glb
+   ├─ lods/lod1.glb
+   └─ Table_lod.tscn
 ```
 
-La V1 se concentre volontairement sur un perimetre realiste :
+Avec Unity, le même principe est utilisé sous `Unity/Assets`, avec des exports `.fbx`. Changer de moteur dans les paramètres crée la nouvelle organisation sans supprimer l'ancien dossier.
 
-- gerer des fiches assets avec ID stable ;
-- relier chaque asset a ses fichiers Blender, exports FBX, prefabs Unity, references, notes et statuts ;
-- assister la nomenclature et les validations ;
-- fournir un add-on Blender leger ;
-- fournir un package Unity leger ;
-- proposer une application separee sobre avec vue artiste et vue dev ;
-- garder Git, Git LFS et PureRef comme integrations utiles mais non obligatoires ;
-- garder ClickUp pour une version future, apres le systeme de taches interne.
+## Utilisation rapide
 
-## Documentation
+1. Installe BlendUp depuis la page **Releases** du dépôt.
+2. Installe [`apps/blender-addon/blendup.zip`](apps/blender-addon/blendup.zip) depuis les préférences de Blender.
+3. Dans BlendUp, crée ou ouvre un projet, puis indique le chemin de Blender dans **Paramètres**.
+4. Crée un asset dans `Art`, travaille dans Blender, puis utilise **Exporter** ou **Tout exporter**.
 
-Les documents de preproduction sont dans `docs/`.
+Pour les détails, consulte [le guide d'utilisation](docs/utilisation.md) et [le guide des variantes et LOD](docs/variants-et-lod.md).
 
-Point d'entree recommande :
+## Installation et compilation
 
-- `docs/00-index.md`
-- `docs/preproduction/01-vision-produit.md`
-- `docs/preproduction/02-definition-v1.md`
-- `docs/specs/01-architecture-generale.md`
-- `docs/specs/02-modele-donnees.md`
-- `docs/production/02-installation-verification.md`
+Les instructions complètes pour Windows et Linux sont dans [Compiler et installer BlendUp](docs/BUILDING.md).
 
-## Etat actuel
+Le démarrage développeur tient en quatre commandes :
 
-Ce depot contient :
-
-- la documentation de preproduction et de production ;
-- une application desktop Tauri + React + TypeScript dans `apps/desktop` ;
-- un backend Tauri/Rust minimal capable de lire un projet `.blendup` ;
-- un projet test `BlendUpTest/` avec Unity, deux fiches assets et deux taches internes ;
-- une premiere interface avec vues `Assets`, `Problems`, `Tasks` et `Git` lecture seule ;
-- une premiere action d'export FBX via Blender depuis l'application native.
-
-L'add-on Blender dedie et le package Unity dedie ne sont pas encore implementes.
-
-## Installation Et Verification Rapide
-
-Prerequis Windows :
-
-- Node.js et npm ;
-- Rust via rustup ;
-- Visual Studio 2022 avec outils C++ ;
-- Windows SDK avec les librairies C, dont `kernel32.lib` ;
-- WebView2.
-
-Commandes principales :
-
-```powershell
+```text
 npm install
-npm run typecheck
+npm test
 npm run build
-npm run dev
+npm run tauri:dev
 ```
 
-Pour verifier le backend Tauri/Rust :
+## Publier une version
 
-```powershell
-cd apps/desktop/src-tauri
-cargo check
-```
+Le workflow GitHub construit automatiquement les installateurs Windows et Linux lors de l'envoi d'un tag `v*`. La release est créée en brouillon pour permettre une dernière vérification avant publication.
 
-Si `cargo` n'est pas encore visible dans le terminal apres installation de Rust, ouvrir un nouveau terminal ou ajouter temporairement `C:\Users\morit\.cargo\bin` au `PATH`.
+La checklist complète est dans [Publier une release](docs/RELEASE.md).
 
-Le detail de la remise en route est documente dans `docs/production/02-installation-verification.md`.
+## Architecture
 
-## Principe De Maintenance
+- `apps/desktop` : interface React et application Tauri ;
+- `apps/desktop/src-tauri` : fichiers, projets, export Blender et intégration système ;
+- `apps/blender-addon` : add-on et scripts exécutés dans Blender ;
+- `docs` : utilisation, architecture, compilation et release.
 
-La documentation doit rester a jour pendant toute la production. Quand une decision change, quand le scope evolue, ou quand une implementation revele une contrainte, les fichiers `docs/` doivent etre ajustes au meme titre que le code.
-
-Regle de travail pour la suite : toute modification fonctionnelle, technique ou de scope doit mettre a jour la documentation correspondante avant d'etre consideree terminee.
+Voir également [l'architecture technique](docs/architecture.md) et [le guide de l'add-on Blender](apps/blender-addon/README.md).

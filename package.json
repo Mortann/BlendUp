@@ -1,6 +1,6 @@
 {
   "name": "blendup",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "BlendUp production workspace.",
   "type": "module",
@@ -11,6 +11,9 @@
     "dev": "npm --workspace @blendup/desktop run dev",
     "build": "npm --workspace @blendup/desktop run build",
     "typecheck": "npm --workspace @blendup/desktop run typecheck",
+    "test": "npm run typecheck && npm run test:rust && npm run test:blender-core",
+    "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "test:blender-core": "python apps/blender-addon/tests/test_core.py",
     "preview": "npm --workspace @blendup/desktop run preview",
     "tauri:dev": "npm --workspace @blendup/desktop run tauri:dev",
     "tauri:build": "npm --workspace @blendup/desktop run tauri:build"

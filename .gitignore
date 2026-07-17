@@ -6,6 +6,9 @@ node_modules/
 dist/
 **/dist/
 .vite/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
 
 # Tauri / Rust outputs
 target/
@@ -24,8 +27,10 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
-.BlendUpTest/
+*.af~lock~
+BlendUpTest/
 
 # BlendUp generated local caches
 **/.blendup/cache/
 **/.blendup/tmp/
+**/.blendup/temp/

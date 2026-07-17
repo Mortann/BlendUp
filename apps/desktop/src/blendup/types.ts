@@ -1,156 +1,112 @@
-export type AssetType =
-  | "static_mesh"
-  | "prop"
-  | "environment_piece"
-  | "material"
-  | "texture"
-  | "ui_image"
-  | "character";
+export type GameEngine = "godot" | "unity";
 
-export type AssetStatus =
-  | "draft"
-  | "in_progress"
-  | "ready_for_export"
-  | "exported"
-  | "unity_imported"
-  | "needs_art_fix"
-  | "needs_dev_fix"
-  | "validated"
-  | "archived";
+export type AssetExportStatus = "ready" | "exported" | "outdated" | "error";
 
-export type ProductionMode = "prototype" | "production";
+export type AssetVersionStatus = AssetExportStatus | "missing";
 
-export type ComponentRequirement = "required" | "recommended";
+export interface AssetVariant {
+  id: string;
+  name: string;
+  status: AssetVersionStatus;
+  sourcePath?: string;
+  outputPath?: string;
+  sourceModifiedAt?: string;
+  outputModifiedAt?: string;
+  notes: string;
+}
 
-export type TaskPriority = "low" | "medium" | "high" | "critical";
+export interface AssetLod {
+  id: string;
+  level: string;
+  status: AssetVersionStatus;
+  targetRatio?: number;
+  triangleBudget?: number;
+  generated: boolean;
+  sourcePath?: string;
+  outputPath?: string;
+  sourceModifiedAt?: string;
+  outputModifiedAt?: string;
+  notes: string;
+}
 
-export type TaskStatus = "todo" | "in_progress" | "review" | "done" | "blocked";
+export interface AssetMetadata {
+  notes: string;
+  tags: string[];
+  thumbnailPath?: string;
+  variants: AssetVariant[];
+  lods: AssetLod[];
+}
 
 export interface BlendUpProject {
-  schemaVersion: number;
+  schemaVersion: 2;
   kind: "project";
   projectId: string;
   name: string;
+  engine: GameEngine;
   paths: {
     artRoot: string;
-    blenderRoot: string;
-    referencesRoot: string;
-    texturesRoot: string;
-    uiRoot?: string;
-    unityRoot: string;
-    unityAssetsRoot: string;
-    unityModelsRoot?: string;
-    unityPrefabsRoot?: string;
-    unityMaterialsRoot?: string;
+    engineRoot: string;
+    engineAssetsRoot: string;
   };
-  targets: {
-    blenderMinimumVersion: string;
-    unityMinimumVersion: string;
-    unityTestVersion?: string;
-  };
-  features: {
-    git: boolean;
-    gitLfs: boolean;
-    clickUp: boolean;
-    pureRef: boolean;
-  };
-  defaultView: "artist" | "developer";
-}
-
-export interface ExpectedComponent {
-  name: string;
-  requirement: ComponentRequirement;
-  confirmedRemoved: boolean;
 }
 
 export interface BlendUpAsset {
-  schemaVersion: number;
-  kind: "asset";
   id: string;
-  displayName: string;
-  type: AssetType;
-  status: AssetStatus;
-  productionMode: ProductionMode;
-  owners: {
-    artist: string | null;
-    developer: string | null;
-    reviewer: string | null;
-  };
-  paths: {
-    blenderSource?: string;
-    fbxExport?: string;
-    unityPrefab?: string;
-    thumbnail?: string;
-  };
-  export: {
-    profileId: string | null;
-    autoExport: boolean;
-    importInUnity: boolean;
-    lastExportAt: string | null;
-    lastExportStatus: "never_exported" | "success" | "warning" | "error";
-  };
-  unity: {
-    importStatus: "not_imported" | "imported" | "warning" | "error";
-    lastImportAt: string | null;
-    components: string[];
-    expectedComponents: ExpectedComponent[];
-    warnings: string[];
-  };
-  tags: string[];
-  references: string[];
-  tasks: string[];
-  variants: unknown[];
-  notes: {
-    artist: string;
-    developer: string;
-  };
-  createdAt: string;
-  updatedAt: string;
+  name: string;
+  folder: string;
+  sourcePath: string;
+  outputPath: string;
+  format: "fbx" | "glb";
+  status: AssetExportStatus;
+  sourceModifiedAt?: string;
+  outputModifiedAt?: string;
+  lastError?: string;
+  sizeBytes: number;
+  metadata: AssetMetadata;
 }
 
 export interface BlendUpProblem {
   id: string;
-  severity: "info" | "warning" | "error" | "critical";
-  source: "blendup" | "blender" | "unity" | "git";
+  severity: "info" | "warning" | "error";
+  source: "blendup" | "blender";
   assetId?: string;
   title: string;
   detail: string;
-  actionLabel?: string;
-}
-
-export interface BlendUpTask {
-  schemaVersion: number;
-  kind: "task";
-  id: string;
-  title: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  owner: string | null;
-  assetIds: string[];
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface GitStatusFile {
-  status: string;
-  path: string;
-}
-
-export interface GitStatusSnapshot {
-  available: boolean;
-  branch?: string;
-  files: GitStatusFile[];
-  message: string;
+  actionLabel?: "Exporter" | "Ouvrir";
 }
 
 export interface ProjectSnapshot {
-  projectRoot?: string;
+  projectRoot: string;
   project: BlendUpProject;
+  assetFolders: string[];
   assets: BlendUpAsset[];
-  tasks: BlendUpTask[];
-  gitStatus: GitStatusSnapshot;
   problems: BlendUpProblem[];
+}
+
+export interface UserSettings {
+  schemaVersion: 2;
+  kind: "user_settings";
+  lastProjectRoot: string | null;
+  recentProjects: string[];
+  blenderPath: string | null;
+  showBlenderCommandPrompt: boolean;
+}
+
+export interface ToolDetection {
+  found: boolean;
+  path?: string;
+  message: string;
+}
+
+export interface CreateProjectOptions {
+  projectRoot: string;
+  projectName: string;
+  engine: GameEngine;
+}
+
+export interface CreateProjectResult {
+  projectRoot: string;
+  message: string;
 }
 
 export interface ExportAssetResult {
@@ -160,4 +116,14 @@ export interface ExportAssetResult {
   outputPath?: string;
   blenderPath?: string;
   log: string;
+}
+
+export interface UpdateProjectEngineResult {
+  project: BlendUpProject;
+  message: string;
+}
+
+export interface AssetMutationResult {
+  message: string;
+  assetId?: string;
 }

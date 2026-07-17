@@ -1,0 +1,10 @@
+schema_version = "1.0.0"
+id = "blendup"
+version = "0.4.1"
+name = "BlendUp"
+tagline = "Export assets from BlendUp to Godot or Unity"
+maintainer = "BlendUp"
+type = "add-on"
+tags = ["Import-Export", "Pipeline"]
+blender_version_min = "4.2.0"
+license = ["SPDX:MIT"]
