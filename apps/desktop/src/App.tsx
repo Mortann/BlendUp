@@ -1,4 +1,5 @@
 import { OperationBanner } from "./app/ui";
+import { BrandLogo } from "./app/BrandLogo";
 import { useBlendUpController } from "./app/useBlendUpController";
 import { WorkspaceShell } from "./app/WorkspaceShell";
 import { AssetsView } from "./views/AssetsView";
@@ -10,7 +11,7 @@ function App() {
   const app = useBlendUpController();
 
   if (app.isBooting) {
-    return <main className="loading-screen">Chargement de BlendUp…</main>;
+    return <main className="loading-screen"><BrandLogo large /><span>Chargement de BlendUp…</span></main>;
   }
 
   if (!app.project) {
@@ -91,11 +92,14 @@ function App() {
         <SettingsView
           blenderDetection={app.blenderDetection}
           blenderPathInput={app.blenderPathInput}
+          exportBusy={app.exportingAssetIds.length > 0}
           isDetectingBlender={app.isDetectingBlender}
+          isReexporting={app.isReexporting}
           onChangeEngine={app.changeProjectEngine}
           onCloseProject={app.forgetLastProject}
           onDetectBlender={app.refreshBlenderDetection}
           onOpenPath={app.openContentPath}
+          onReexportAll={app.reexportAllAssets}
           onSaveSettings={app.saveLocalSettings}
           project={app.project}
           setBlenderPathInput={app.setBlenderPathInput}

@@ -1,6 +1,5 @@
 import {
   ArchiveRestore,
-  ChevronDown,
   ChevronRight,
   Clipboard,
   Copy,
@@ -134,7 +133,6 @@ export function AssetsView({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [dialog, setDialog] = useState<AssetDialogState>(null);
   const [clipboard, setClipboard] = useState<ClipboardEntry | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const selectedAsset = snapshot.assets.find((asset) => asset.id === selectedAssetId) ?? null;
 
   useEffect(() => {
@@ -229,9 +227,8 @@ export function AssetsView({
     <div className={`assets-workspace ${selectedAsset ? "has-detail" : ""}`}>
       <div className="view-page assets-page">
         <section className="asset-explorer content-panel" onContextMenu={(event) => openMenu(event, { kind: "background" })}>
-          <aside className={`asset-browser-sidebar ${sidebarOpen ? "open" : "closed"}`}>
-            <button className="sidebar-collapse" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? "Réduire" : "Déplier"} type="button">{sidebarOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}<span>Navigation</span></button>
-            {sidebarOpen ? <>
+          <aside className="asset-browser-sidebar">
+            <div className="asset-sidebar-title">Navigation</div>
               <SidebarSection label="Bibliothèque">
                 <SidebarButton active={filter === "all"} icon={<FileBox size={15} />} label="Tous les assets" onClick={() => { setFilter("all"); navigate(explorerRoot); }} count={snapshot.assets.length} />
                 <SidebarButton active={filter === "favorites"} icon={<Heart size={15} />} label="Favoris" onClick={() => setFilter("favorites")} count={favorites.length} />
@@ -242,7 +239,6 @@ export function AssetsView({
                 {folders.map((folder) => <button className={`folder-tree-row ${currentPath === folder && filter === "all" ? "active" : ""}`} draggable={folder !== explorerRoot} key={folder} onClick={() => { setFilter("all"); navigate(folder); }} onContextMenu={(event) => folder !== explorerRoot && openMenu(event, { kind: "folder", path: folder })} onDragOver={(event) => event.preventDefault()} onDragStart={(event) => beginFolderDrag(event, folder)} onDrop={(event) => dropOnFolder(event, folder)} style={{ paddingLeft: `${10 + Math.max(0, folder.split("/").length - explorerRoot.split("/").length) * 13}px` }} type="button"><FolderOpen size={14} /><span>{baseName(folder)}</span><b>{folderAssetCount(snapshot.assets, folder)}</b></button>)}
               </SidebarSection>
               {recentFolders.some((folder) => folders.includes(folder)) ? <SidebarSection label="Récents">{recentFolders.filter((folder) => folders.includes(folder)).slice(0, 4).map((folder) => <button className="recent-folder" key={folder} onClick={() => navigate(folder)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnFolder(event, folder)} type="button"><ArchiveRestore size={13} /><span>{folder}</span></button>)}</SidebarSection> : null}
-            </> : null}
           </aside>
 
           <div className="asset-browser-main">
@@ -273,7 +269,7 @@ export function AssetsView({
             {visibleFolders.length || visibleAssets.length ? (
               <div className={`asset-items ${settings.displayMode} thumb-${settings.thumbnailSize}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnFolder(event, currentPath)}>
                 {visibleFolders.map((folder) => <FolderCard assetCount={folderAssetCount(snapshot.assets, folder)} displayMode={settings.displayMode} key={folder} name={baseName(folder)} onContextMenu={(event) => openMenu(event, { kind: "folder", path: folder })} onDropAsset={(assetId) => void onMoveAsset(assetId, folder)} onDropFolder={(source) => void onMoveFolder(source, folder)} onOpen={() => navigate(folder)} path={folder} previewAssets={snapshot.assets.filter((asset) => assetBrowserFolder(asset) === folder || assetBrowserFolder(asset).startsWith(`${folder}/`)).slice(0, 4)} projectRoot={snapshot.projectRoot} thumbnailSize={settings.thumbnailSize} />)}
-                {visibleAssets.map((asset) => <AssetCard asset={asset} displayMode={settings.displayMode} exporting={exportingAssetIds.includes(asset.id)} favorite={favorites.includes(asset.id)} key={asset.id} onContextMenu={(event) => openMenu(event, { kind: "asset", assetId: asset.id })} onExport={() => void onExportAsset(asset.id)} onOpen={() => onOpenAsset(asset)} onSelect={() => setSelectedAssetId(asset.id)} onToggleFavorite={() => toggleFavorite(asset.id)} projectRoot={snapshot.projectRoot} selected={asset.id === selectedAssetId} thumbnailSize={settings.thumbnailSize} />)}
+                {visibleAssets.map((asset) => <AssetCard asset={asset} displayMode={settings.displayMode} exporting={exportingAssetIds.includes(asset.id)} favorite={favorites.includes(asset.id)} key={asset.id} onContextMenu={(event) => openMenu(event, { kind: "asset", assetId: asset.id })} onExport={() => void onExportAssetVersions(asset.id)} onOpen={() => onOpenAsset(asset)} onSelect={() => setSelectedAssetId(asset.id)} onToggleFavorite={() => toggleFavorite(asset.id)} projectRoot={snapshot.projectRoot} selected={asset.id === selectedAssetId} thumbnailSize={settings.thumbnailSize} />)}
               </div>
             ) : (
               <div className="empty-state"><FileBox size={35} /><h2>{query || filter !== "all" ? "Aucun résultat" : "Ce dossier est vide"}</h2><p>{query ? "Essaie une recherche plus large." : "Crée un asset Blender ou un dossier pour commencer."}</p>{!query && filter === "all" ? <div className="button-row"><button onClick={() => setDialog({ kind: "createFolder", parent: currentPath })} type="button"><FolderPlus size={15} /> Dossier</button><button className="primary" onClick={() => setDialog({ kind: "createAsset", parent: currentPath })} type="button"><Plus size={15} /> Asset</button></div> : null}</div>

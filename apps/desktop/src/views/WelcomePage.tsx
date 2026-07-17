@@ -1,4 +1,5 @@
 import { FolderOpen, Gamepad2, Plus, RotateCcw } from "lucide-react";
+import { BrandLogo } from "../app/BrandLogo";
 import type { GameEngine } from "../blendup/types";
 
 export function WelcomePage({
@@ -39,7 +40,7 @@ export function WelcomePage({
   return (
     <section className="welcome-page">
       <header className="welcome-brand">
-        <span className="brand-mark large">BU</span>
+        <BrandLogo large />
         <div>
           <span className="eyebrow">Blender vers le moteur</span>
           <h1>BlendUp</h1>

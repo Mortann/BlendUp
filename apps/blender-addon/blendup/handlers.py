@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import bpy
@@ -19,6 +20,8 @@ _BRIDGE_INTERVAL = 0.25
 @persistent
 def export_after_save(_filepath):
     global _exporting
+    if os.environ.get("BLENDUP_LOD_GENERATION") == "1":
+        return
     prefs = preferences()
     if _exporting or not prefs or not prefs.auto_export or not bpy.data.filepath:
         return

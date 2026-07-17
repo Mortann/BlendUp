@@ -101,7 +101,8 @@ def locate_asset(blend_file: str | Path, project: ProjectInfo | None = None) -> 
     except ValueError as error:
         raise ValueError(f"Le fichier doit être placé dans {project.art_root}.") from error
     export_format = "glb" if project.engine == "godot" else "fbx"
-    output = (project.root / project.engine_assets_root / inside_art).with_suffix(f".{export_format}")
+    output_relative = managed_output_relative(inside_art, export_format)
+    output = project.root / project.engine_assets_root / output_relative
     source_relative = relative_string(project.root, source)
     return AssetLocation(
         project=project,
@@ -112,6 +113,20 @@ def locate_asset(blend_file: str | Path, project: ProjectInfo | None = None) -> 
         asset_id=asset_id_for_path(source_relative),
         export_format=export_format,
     )
+
+
+def managed_output_relative(source_relative: Path, export_format: str) -> Path:
+    """Range les copies gérées dans leur dossier variants/ ou lods/."""
+    stem = source_relative.stem
+    folded_stem = stem.casefold()
+    for marker, directory in ((".variant.", "variants"), (".lod.", "lods")):
+        marker_index = folded_stem.rfind(marker)
+        if marker_index <= 0:
+            continue
+        key = stem[marker_index + len(marker):].strip()
+        if key:
+            return source_relative.parent / directory / f"{key}.{export_format}"
+    return source_relative.with_suffix(f".{export_format}")
 
 
 def asset_id_for_path(path: str) -> str:

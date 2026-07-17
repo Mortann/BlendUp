@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/desktop/public/BlendUpLogo.svg" alt="Logo BlendUp" width="112">
+</p>
+
 # BlendUp
 
 **De Blender à Godot ou Unity, sans pipeline compliqué.**

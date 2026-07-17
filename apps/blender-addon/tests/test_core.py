@@ -77,6 +77,25 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(asset.export_format, "fbx")
             self.assertEqual(asset.output_relative, "Unity/Assets/Props/Crate.fbx")
 
+    def test_managed_variants_and_lods_export_to_their_own_folders(self):
+        with test_directory() as root:
+            self.make_project(root)
+            workspace = root / "Art" / "Props" / "Lamp"
+            workspace.mkdir(parents=True)
+            variant = workspace / "Lamp.variant.blue.blend"
+            lod = workspace / "Lamp.lod.lod2.blend"
+            variant.touch()
+            lod.touch()
+
+            self.assertEqual(
+                locate_asset(variant).output_relative,
+                "Godot/Assets/Props/Lamp/variants/blue.glb",
+            )
+            self.assertEqual(
+                locate_asset(lod).output_relative,
+                "Godot/Assets/Props/Lamp/lods/lod2.glb",
+            )
+
     def test_reads_legacy_paths(self):
         with test_directory() as root:
             (root / ".blendup").mkdir()

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   addAssetImages,
+  clearAssetExports,
   copyAsset,
   createAsset,
   createAssetVariant,
@@ -61,6 +62,7 @@ export function useBlendUpController() {
   const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isDetectingBlender, setIsDetectingBlender] = useState(false);
+  const [isReexporting, setIsReexporting] = useState(false);
   const [exportingAssetIds, setExportingAssetIds] = useState<string[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const activeProjectRoot = project?.projectRoot ?? null;
@@ -294,23 +296,47 @@ export function useBlendUpController() {
     }
   };
 
-  const exportAllAssets = async () => {
-    if (!project) return;
-    const pending = project.assets.filter((asset) => asset.status !== "exported");
-    if (pending.length === 0) {
-      setOperationMessage({ title: "Tous les assets sont deja a jour.", tone: "info" });
+  const reexportAllAssets = async () => {
+    if (!project || isReexporting || exportingAssetIds.length) return;
+    const assets = [...project.assets];
+    if (!assets.length) {
+      setOperationMessage({ title: "Aucun asset a exporter.", tone: "info" });
       return;
     }
 
+    setIsReexporting(true);
+    setExportingAssetIds(assets.map((asset) => asset.id));
     let successCount = 0;
-    for (const asset of pending) {
-      if (await handleExportAsset(asset.id, true)) successCount += 1;
+    const failures: string[] = [];
+    try {
+      await clearAssetExports(project.projectRoot);
+      for (const asset of assets) {
+        try {
+          const result = await exportAssetVersions({
+            assetId: asset.id,
+            blenderPath: userSettings.blenderPath ?? undefined,
+            projectRoot: project.projectRoot
+          });
+          if (result.success) successCount += 1;
+          else failures.push(`${asset.name} : ${result.message}`);
+        } catch (error) {
+          failures.push(`${asset.name} : ${errorMessage(error)}`);
+        }
+      }
+      await refreshProject();
+      setOperationMessage({
+        detail: failures.length
+          ? `${successCount} sur ${assets.length} asset(s) reexporte(s). ${failures.join(" | ")}`
+          : `${successCount} asset(s), avec leurs variantes et LOD, ont ete reexportes.`,
+        title: successCount === assets.length ? "Reexportation terminee" : "Reexportation partiellement terminee",
+        tone: successCount === assets.length ? "success" : "error"
+      });
+    } catch (error) {
+      showError("Impossible de reconstruire les exports", error);
+    } finally {
+      setExportingAssetIds([]);
+      setIsReexporting(false);
     }
-    setOperationMessage({
-      detail: `${successCount} sur ${pending.length} export(s) termine(s).`,
-      title: successCount === pending.length ? "Export termine" : "Export partiellement termine",
-      tone: successCount === pending.length ? "success" : "error"
-    });
   };
 
   const openAssetInBlender = async (asset: BlendUpAsset) => {
@@ -517,7 +543,6 @@ export function useBlendUpController() {
     createProjectFromWelcome,
     createProjectName,
     createProjectRoot,
-    exportAllAssets,
     exportingAssetIds,
     forgetLastProject,
     handleAddAssetImages,
@@ -544,6 +569,7 @@ export function useBlendUpController() {
     isCreatingProject,
     isDetectingBlender,
     isLoadingProject,
+    isReexporting,
     openAssetInBlender,
     openAssetPathInBlender,
     openContentPath,
@@ -554,6 +580,7 @@ export function useBlendUpController() {
     projectPathInput,
     refreshBlenderDetection,
     refreshProject,
+    reexportAllAssets,
     revealAsset,
     saveLocalSettings,
     selectedAsset,

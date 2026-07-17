@@ -2,6 +2,7 @@ import { AlertTriangle, Boxes, ChevronLeft, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ProjectSnapshot } from "../blendup/types";
 import type { ActiveView, OperationMessage } from "./types";
+import { BrandLogo } from "./BrandLogo";
 import { OperationBanner } from "./ui";
 
 const navigation: Array<{ icon: ReactNode; key: ActiveView; label: string }> = [
@@ -31,7 +32,7 @@ export function WorkspaceShell({
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">BU</span>
+          <BrandLogo />
           <div>
             <strong>BlendUp</strong>
             <span>{project.project.name}</span>

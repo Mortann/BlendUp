@@ -75,7 +75,9 @@ h1, h2, p { margin-top: 0; }
 .loading-screen {
   display: grid;
   min-height: 100vh;
-  place-items: center;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
   color: #9caaa4;
 }
 
@@ -97,11 +99,12 @@ h1, h2, p { margin-top: 0; }
   place-items: center;
   border-radius: 11px;
   color: #effff9;
-  background: linear-gradient(145deg, #4ea18c, #2f6f61);
-  box-shadow: 0 8px 24px rgba(41, 116, 96, 0.22);
+  background: #0a0b0b;
+  box-shadow: 0 8px 24px rgba(10, 11, 11, 0.2);
   font-weight: 800;
   letter-spacing: -0.04em;
 }
+.brand-mark img { width: 72%; height: 72%; object-fit: contain; filter: invert(1); }
 
 .brand-mark.large { width: 58px; height: 58px; border-radius: 15px; font-size: 1.1rem; }
 .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -255,10 +258,7 @@ h1, h2, p { margin-top: 0; }
 
 .asset-explorer { display: grid; min-height: 620px; grid-template-columns: 220px minmax(0, 1fr); overflow: hidden; }
 .asset-browser-sidebar { min-width: 0; border-right: 1px solid #29332f; padding: 10px; background: #151a18; }
-.asset-browser-sidebar.closed { width: 43px; padding-inline: 6px; }
-.asset-browser-sidebar.closed + .asset-browser-main { margin-left: -177px; }
-.sidebar-collapse { width: 100%; min-height: 31px; justify-content: flex-start; border-color: transparent; padding: 0 8px; color: #718079; background: transparent; font-size: 0.7rem; }
-.asset-browser-sidebar.closed .sidebar-collapse { width: 31px; padding: 0; }
+.asset-sidebar-title { min-height: 31px; padding: 7px 8px 0; color: #718079; font-size: 0.7rem; font-weight: 650; }
 .asset-sidebar-section { margin-top: 15px; }
 .asset-sidebar-section > strong { display: block; margin: 0 8px 5px; color: #65736d; font-size: 0.61rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .asset-sidebar-section > div { display: grid; gap: 2px; }
@@ -459,7 +459,7 @@ h1, h2, p { margin-top: 0; }
   .asset-detail { position: fixed; inset: 0 0 0 72px; height: 100vh; }
   .asset-explorer { grid-template-columns: 1fr; }
   .asset-browser-sidebar { display: none; }
-  .asset-browser-sidebar + .asset-browser-main, .asset-browser-sidebar.closed + .asset-browser-main { margin: 0; }
+  .asset-browser-sidebar + .asset-browser-main { margin: 0; }
   .asset-browser-toolbar { align-items: stretch; flex-direction: column; }
   .browser-actions .search-field { width: 100%; }
   .asset-view-options { align-items: flex-start; flex-wrap: wrap; }
@@ -538,7 +538,7 @@ h1, h2, p { margin-top: 0; }
 .view-page { color: #252827; }
 .assets-page { gap: 0; padding: 24px clamp(18px, 2.6vw, 36px) 30px; }
 .eyebrow { color: #659bc9; }
-.welcome-brand .brand-mark { background: linear-gradient(145deg, #7ab1df, #5e96c8); }
+.welcome-brand .brand-mark { background: #0a0b0b; }
 .engine-picker button { border-color: #e3e7e9; color: #626965; background: #ffffff; }
 .engine-picker button.active { border-color: #70a9dc; color: #356f9f; background: #eaf4fc; }
 
@@ -559,7 +559,7 @@ h1, h2, p { margin-top: 0; }
   padding: 18px 12px;
   background: #fafbfc;
 }
-.sidebar-collapse { color: #989e9b; }
+.asset-sidebar-title { color: #989e9b; }
 .asset-sidebar-section > strong { color: #a0a6a3; }
 .asset-sidebar-section button, .folder-tree-row, .recent-folder { color: #707673; }
 .asset-sidebar-section button:hover, .folder-tree-row:hover, .recent-folder:hover { background: #f0f3f5; }
@@ -719,6 +719,8 @@ h1, h2, p { margin-top: 0; }
 .asset-version-card > footer { display: grid; grid-template-columns: 1fr 1fr 32px; gap: 6px; }
 .asset-version-card > footer button { min-height: 31px; padding-inline: 7px; font-size: 0.64rem; }
 .asset-version-card > footer .icon-button { padding: 0; }
+.asset-version-card.original-version { border-color: #c9ddeb; background: #ffffff; }
+.asset-version-card.original-version > footer { grid-template-columns: 1fr 1fr; }
 .asset-detail-loading { display: grid; place-content: center; justify-items: center; gap: 10px; color: #68716d; font-size: 0.72rem; }
 .godot-lod-tip { display: grid; gap: 3px; border: 1px solid #dbe9df; border-radius: 11px; padding: 10px; background: #eff8f2; }
 .godot-lod-tip strong { color: #397a54; font-size: 0.7rem; }

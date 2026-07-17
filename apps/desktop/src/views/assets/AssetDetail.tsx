@@ -102,7 +102,7 @@ export function AssetDetail({
 
       <nav className="detail-tabs" aria-label="Sections de l'asset">
         {([
-          ["overview", "Informations"], ["preview", "Aperçu"], ["variants", `Variantes ${variants.length || ""}`],
+          ["overview", "Informations"], ["preview", "Aperçu"], ["variants", `Variantes ${variants.length + 1}`],
           ["lods", `LOD ${lods.length || ""}`], ["files", "Fichiers"]
         ] as Array<[DetailTab, string]>).map(([id, label]) => (
           <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)} type="button">{label}</button>
@@ -143,7 +143,12 @@ export function AssetDetail({
             onCreate={onCreateVariant}
             onDelete={(versionId) => onDeleteVersion(versionId, "variant")}
             onExport={(versionId) => onExportVersion(versionId, "variant")}
+            onExportOriginal={onExport}
             onOpen={onOpenVersion}
+            onOpenOriginal={onOpen}
+            originalOutputPath={asset.outputPath}
+            originalSourcePath={asset.sourcePath}
+            originalStatus={asset.status}
           />
         ) : null}
 
@@ -183,7 +188,12 @@ function VariantManager({
   onCreate,
   onDelete,
   onExport,
-  onOpen
+  onExportOriginal,
+  onOpen,
+  onOpenOriginal,
+  originalOutputPath,
+  originalSourcePath,
+  originalStatus
 }: {
   exporting: boolean;
   items: AssetVariant[];
@@ -191,7 +201,12 @@ function VariantManager({
   onCreate: (name: string) => Promise<unknown>;
   onDelete: (versionId: string) => Promise<unknown>;
   onExport: (versionId: string) => void;
+  onExportOriginal: () => void;
   onOpen: (path: string) => void;
+  onOpenOriginal: () => void;
+  originalOutputPath: string;
+  originalSourcePath: string;
+  originalStatus: BlendUpAsset["status"];
 }) {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -208,12 +223,20 @@ function VariantManager({
 
   return (
     <div className="asset-version-manager">
-      <div className="version-intro"><Copy size={22} /><div><strong>Copies Blender indépendantes</strong><span>Chaque variante partage le dossier de textures, mais possède son propre fichier .blend et son propre export.</span></div></div>
+      <div className="version-intro"><Copy size={22} /><div><strong>Versions Blender indépendantes</strong><span>L'original compte comme première version. Chaque copie partage le dossier de textures, avec son propre fichier .blend et son propre export.</span></div></div>
       <div className="version-create-row">
         <input onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void create(); }} placeholder="Ex. Rouge, Endommagée…" value={name} />
         <button className="primary" disabled={creating || !name.trim()} onClick={() => void create()} type="button">{creating ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />} Créer la copie</button>
       </div>
-      {!items.length ? <VersionEmpty icon={<Layers3 size={25} />} text="Aucune variante Blender pour cet asset." /> : null}
+      <OriginalVersionCard
+        exporting={exporting}
+        onExport={onExportOriginal}
+        onOpen={onOpenOriginal}
+        outputPath={originalOutputPath}
+        sourcePath={originalSourcePath}
+        status={originalStatus}
+      />
+      {!items.length ? <VersionEmpty icon={<Layers3 size={25} />} text="Aucune variante supplémentaire pour cet asset." /> : null}
       {items.map((variant, index) => (
         <VersionCard
           exporting={exporting}
@@ -230,6 +253,33 @@ function VariantManager({
         />
       ))}
     </div>
+  );
+}
+
+function OriginalVersionCard({
+  exporting,
+  onExport,
+  onOpen,
+  outputPath,
+  sourcePath,
+  status
+}: {
+  exporting: boolean;
+  onExport: () => void;
+  onOpen: () => void;
+  outputPath: string;
+  sourcePath: string;
+  status: BlendUpAsset["status"];
+}) {
+  return (
+    <article className="asset-version-card original-version">
+      <header><div><strong>Originale</strong><span>Asset de base</span></div><b className={`asset-status ${status}`}>{statusLabel(status)}</b></header>
+      <div className="version-paths"><code title={sourcePath}>{sourcePath}</code><code title={outputPath}>{outputPath}</code></div>
+      <footer>
+        <button onClick={onOpen} type="button"><ExternalLink size={14} /> Blender</button>
+        <button className="primary" disabled={exporting} onClick={onExport} type="button"><Upload size={14} /> Exporter</button>
+      </footer>
+    </article>
   );
 }
 

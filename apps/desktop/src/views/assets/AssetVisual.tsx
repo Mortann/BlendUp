@@ -166,11 +166,11 @@ export function AssetCard({
           type="button"
         ><Heart fill={favorite ? "currentColor" : "none"} size={15} /></button>
         <button
-          aria-label="Exporter"
+          aria-label="Exporter toutes les versions"
           className="icon-button"
           disabled={exporting}
           onClick={(event) => { event.stopPropagation(); onExport(); }}
-          title="Exporter"
+          title="Exporter l'original, les variantes et les LOD"
           type="button"
         ><Upload size={15} /></button>
         <button

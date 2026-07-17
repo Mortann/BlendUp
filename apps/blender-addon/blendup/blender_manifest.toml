@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "blendup"
-version = "0.4.0"
+version = "0.4.1"
 name = "BlendUp"
 tagline = "Export assets from BlendUp to Godot or Unity"
 maintainer = "BlendUp"

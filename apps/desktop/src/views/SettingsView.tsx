@@ -1,15 +1,18 @@
-import { ExternalLink, FolderOpen, Gamepad2, Save, Search, X } from "lucide-react";
+import { ExternalLink, FolderOpen, Gamepad2, LoaderCircle, RefreshCw, Save, Search, X } from "lucide-react";
 import { ToolStatus } from "../app/ui";
 import type { GameEngine, ProjectSnapshot, ToolDetection } from "../blendup/types";
 
 export function SettingsView({
   blenderDetection,
   blenderPathInput,
+  exportBusy,
   isDetectingBlender,
+  isReexporting,
   onChangeEngine,
   onCloseProject,
   onDetectBlender,
   onOpenPath,
+  onReexportAll,
   onSaveSettings,
   project,
   setBlenderPathInput,
@@ -18,11 +21,14 @@ export function SettingsView({
 }: {
   blenderDetection: ToolDetection | null;
   blenderPathInput: string;
+  exportBusy: boolean;
   isDetectingBlender: boolean;
+  isReexporting: boolean;
   onChangeEngine: (engine: GameEngine) => void;
   onCloseProject: () => void;
   onDetectBlender: () => void;
   onOpenPath: (path: string) => void;
+  onReexportAll: () => Promise<void>;
   onSaveSettings: () => void;
   project: ProjectSnapshot;
   setBlenderPathInput: (value: string) => void;
@@ -49,6 +55,20 @@ export function SettingsView({
           <PathRow label="Sources" onOpen={() => onOpenPath(project.project.paths.artRoot)} value={project.project.paths.artRoot} />
           <PathRow label="Projet moteur" onOpen={() => onOpenPath(project.project.paths.engineRoot)} value={project.project.paths.engineRoot} />
           <PathRow label="Exports" onOpen={() => onOpenPath(project.project.paths.engineAssetsRoot)} value={project.project.paths.engineAssetsRoot} />
+        </div>
+      </section>
+
+      <section className="settings-section content-panel">
+        <div className="section-heading"><RefreshCw size={20} /><div><h2>Reconstruire les exports</h2><p>Place les exports générés dans la corbeille, puis réexporte chaque asset, ses variantes et ses LOD.</p></div></div>
+        <div className="button-row">
+          <button
+            className="danger"
+            disabled={exportBusy || isReexporting || !project.assets.length}
+            onClick={() => {
+              if (window.confirm("Placer tous les exports gérés par BlendUp dans la corbeille, puis tout réexporter ?")) void onReexportAll();
+            }}
+            type="button"
+          >{isReexporting ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />} {isReexporting ? "Réexportation…" : "Tout réexporter"}</button>
         </div>
       </section>
 

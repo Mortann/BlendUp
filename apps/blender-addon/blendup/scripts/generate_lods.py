@@ -6,13 +6,23 @@ Le modificateur reste éditable dans chaque copie et sera appliqué à l'export.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 
 import bpy
 
 
+def disable_blendup_auto_export() -> None:
+    """Empêche un add-on déjà installé d'exporter chaque copie pendant sa création."""
+    os.environ["BLENDUP_LOD_GENERATION"] = "1"
+    for callback in list(bpy.app.handlers.save_post):
+        if callback.__name__ == "export_after_save" and callback.__module__.startswith("blendup"):
+            bpy.app.handlers.save_post.remove(callback)
+
+
 def generate(source: Path, targets: list[tuple[Path, float]]) -> None:
+    disable_blendup_auto_export()
     for target, ratio in targets:
         bpy.ops.wm.open_mainfile(filepath=str(source))
         for obj in bpy.data.objects:

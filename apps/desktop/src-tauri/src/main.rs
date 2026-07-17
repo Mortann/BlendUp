@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
+
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -401,6 +406,9 @@ fn read_project_snapshot(project_root: String) -> Result<ProjectSnapshot, String
     validate_project_paths(&project)?;
     let export_state = read_export_state(&root);
     let assets = scan_assets(&root, &project, &export_state)?;
+    for asset in &assets {
+        let _ = cleanup_legacy_version_outputs(&root, asset);
+    }
     let asset_folders = collect_asset_folders(&root, &project)?;
     let problems = collect_problems(&root, &project, &assets);
 
@@ -618,6 +626,9 @@ fn export_asset_version(
         &asset.format,
         blender_path.as_deref(),
     )?;
+    if success {
+        cleanup_legacy_version_output(&root, &asset, &source_path, &output_path)?;
+    }
 
     Ok(ExportAssetResult {
         success,
@@ -669,6 +680,7 @@ fn export_asset_versions(
         )?;
         if success {
             success_count += 1;
+            cleanup_legacy_version_output(&root, &asset, &source, &output)?;
         }
         if blender_display.is_none() {
             blender_display = detected_blender;
@@ -694,6 +706,62 @@ fn export_asset_versions(
             .or_else(|| Some(root.join(&asset.output_path).to_string_lossy().to_string())),
         blender_path: blender_display,
         log: logs.join("\n\n---\n\n"),
+    })
+}
+
+#[tauri::command]
+fn clear_asset_exports(project_root: String) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let export_state = read_export_state(&root);
+    let assets = scan_assets(&root, &project, &export_state)?;
+    let export_root = root.join(safe_relative_path(&project.paths.engine_assets_root)?);
+    let mut targets = HashSet::new();
+
+    for asset in &assets {
+        targets.insert(root.join(safe_relative_path(&asset.output_path)?));
+        for variant in &asset.metadata.variants {
+            if let Some(output) = &variant.output_path {
+                targets.insert(root.join(safe_relative_path(output)?));
+            }
+            if let Some(source) = &variant.source_path {
+                targets.insert(legacy_version_output_path(&root, asset, source)?);
+            }
+        }
+        for lod in &asset.metadata.lods {
+            if let Some(output) = &lod.output_path {
+                targets.insert(root.join(safe_relative_path(output)?));
+            }
+            if let Some(source) = &lod.source_path {
+                targets.insert(legacy_version_output_path(&root, asset, source)?);
+            }
+        }
+        if project.engine == "godot" {
+            let base_output = root.join(safe_relative_path(&asset.output_path)?);
+            if let Some(parent) = base_output.parent() {
+                targets.insert(parent.join(format!("{}_lod.tscn", asset.name)));
+            }
+        }
+    }
+    if project.engine == "godot" {
+        targets.insert(export_root.join("BlendUp").join("blendup_lod_group.gd"));
+    }
+
+    let mut removed = 0;
+    for target in targets {
+        if !target.starts_with(&export_root) {
+            return Err("Un export gere sort du dossier Assets du moteur.".to_string());
+        }
+        if target.is_file() {
+            trash_path(&target)?;
+            removed += 1;
+        }
+    }
+    write_json(&export_state_file(&root), &ExportState::default())?;
+
+    Ok(AssetMutationResult {
+        message: format!("{removed} fichier(s) exporte(s) place(s) dans la corbeille."),
+        asset_id: None,
     })
 }
 
@@ -1225,6 +1293,7 @@ fn generate_asset_lods(
         .map_err(|error| format!("Impossible de preparer Blender: {error}"))?;
     let mut command = Command::new(&blender);
     command
+        .env("BLENDUP_LOD_GENERATION", "1")
         .arg("--background")
         .arg("--python")
         .arg(&script)
@@ -1316,6 +1385,10 @@ fn delete_asset_version(
     } else {
         return Err("Type de version invalide.".to_string());
     };
+
+    if let (Some(source), Some(output)) = (source_path.as_deref(), output_path.as_deref()) {
+        cleanup_legacy_version_output(&root, &asset, source, output)?;
+    }
 
     if let Some(relative) = source_path {
         let target = root.join(safe_relative_path(&relative)?);
@@ -1834,6 +1907,53 @@ fn version_output_path(
     Ok(parent
         .join(directory)
         .join(format!("{key}.{}", asset.format)))
+}
+
+fn legacy_version_output_path(
+    root: &Path,
+    asset: &BlendUpAsset,
+    source_path: &str,
+) -> Result<PathBuf, String> {
+    let source = safe_relative_path(source_path)?;
+    let source_stem = source
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Nom de version invalide.".to_string())?;
+    let base_output = root.join(safe_relative_path(&asset.output_path)?);
+    let output_parent = base_output
+        .parent()
+        .ok_or_else(|| "Dossier d'export invalide.".to_string())?;
+    Ok(output_parent.join(format!("{source_stem}.{}", asset.format)))
+}
+
+fn cleanup_legacy_version_output(
+    root: &Path,
+    asset: &BlendUpAsset,
+    source_path: &str,
+    output_path: &str,
+) -> Result<bool, String> {
+    let legacy_output = legacy_version_output_path(root, asset, source_path)?;
+    let managed_output = root.join(safe_relative_path(output_path)?);
+    if legacy_output != managed_output && legacy_output.is_file() {
+        trash_path(&legacy_output)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn cleanup_legacy_version_outputs(root: &Path, asset: &BlendUpAsset) -> Result<usize, String> {
+    let mut cleaned = 0;
+    for variant in &asset.metadata.variants {
+        if let (Some(source), Some(output)) = (&variant.source_path, &variant.output_path) {
+            cleaned += usize::from(cleanup_legacy_version_output(root, asset, source, output)?);
+        }
+    }
+    for lod in &asset.metadata.lods {
+        if let (Some(source), Some(output)) = (&lod.source_path, &lod.output_path) {
+            cleaned += usize::from(cleanup_legacy_version_output(root, asset, source, output)?);
+        }
+    }
+    Ok(cleaned)
 }
 
 fn rename_managed_version_sources(
@@ -3369,6 +3489,7 @@ fn main() {
             export_asset,
             export_asset_version,
             export_asset_versions,
+            clear_asset_exports,
             open_project_path,
             open_blend_file,
             read_project_file_data_url,
@@ -3797,6 +3918,47 @@ mod tests {
         assert_eq!(
             assets[0].metadata.variants[0].output_path.as_deref(),
             Some("Godot/Assets/Props/Table/variants/bois_rouge.glb")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn clearing_exports_keeps_unmanaged_godot_files() {
+        let root = test_root("clear_exports");
+        let project = new_project_config("Test", "godot");
+        let source = root.join("Art/Props/Lamp/Lamp.blend");
+        let managed = root.join("Godot/Assets/Props/Lamp/Lamp.glb");
+        let unmanaged = root.join("Godot/Assets/gameplay.gd");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::create_dir_all(managed.parent().unwrap()).unwrap();
+        fs::write(&source, b"blend").unwrap();
+        fs::write(&managed, b"glb").unwrap();
+        fs::write(&unmanaged, b"extends Node").unwrap();
+        write_json(&project_file(&root), &project).unwrap();
+        write_json(&export_state_file(&root), &ExportState::default()).unwrap();
+
+        clear_asset_exports(root.to_string_lossy().to_string()).unwrap();
+
+        assert!(!managed.exists());
+        assert!(unmanaged.is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_version_exports_are_identified_next_to_the_base_export() {
+        let root = test_root("legacy_version_output");
+        let project = new_project_config("Test", "godot");
+        let workspace = root.join("Art").join("Props").join("Lamp");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(workspace.join("Lamp.blend"), b"blend").unwrap();
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+
+        assert_eq!(
+            legacy_version_output_path(&root, &asset, "Art/Props/Lamp/Lamp.lod.lod2.blend")
+                .unwrap(),
+            root.join("Godot/Assets/Props/Lamp/Lamp.lod.lod2.glb")
         );
         fs::remove_dir_all(root).unwrap();
     }

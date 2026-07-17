@@ -134,6 +134,10 @@ export async function exportAssetVersions(options: {
   });
 }
 
+export async function clearAssetExports(projectRoot: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("clear_asset_exports", { projectRoot });
+}
+
 export async function openProjectPath(projectRoot: string, relativePath: string): Promise<void> {
   return invoke("open_project_path", { projectRoot, relativePath });
 }
