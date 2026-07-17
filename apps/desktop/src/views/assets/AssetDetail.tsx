@@ -52,7 +52,7 @@ export function AssetDetail({
     setTags(asset.metadata.tags.join(", "));
     setVariants(asset.metadata.variants);
     setLods(asset.metadata.lods);
-  }, [asset.id, asset.metadata]);
+  }, [asset.id]);
 
   const save = async () => {
     setSaving(true);

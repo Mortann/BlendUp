@@ -70,3 +70,24 @@ export function folderAssetCount(assets: BlendUpAsset[], folder: string) {
   const normalized = normalizePath(folder);
   return assets.filter((asset) => asset.folder === normalized || asset.folder.startsWith(`${normalized}/`)).length;
 }
+
+export function isOwnedAssetFolder(asset: BlendUpAsset) {
+  return baseName(asset.folder).localeCompare(asset.name, undefined, { sensitivity: "accent" }) === 0;
+}
+
+export function assetBrowserFolder(asset: BlendUpAsset) {
+  return isOwnedAssetFolder(asset) ? parentPath(asset.folder) : normalizePath(asset.folder);
+}
+
+export function explorerFolders(allFolders: string[], assets: BlendUpAsset[], artRoot: string) {
+  const normalizedFolders = Array.from(new Set(allFolders.map(normalizePath)));
+  const normalizedArtRoot = normalizePath(artRoot);
+  const blenderRoot = `${normalizedArtRoot}/Blender`;
+  const root = normalizedFolders.includes(blenderRoot) ? blenderRoot : normalizedArtRoot;
+  const owned = assets.filter(isOwnedAssetFolder).map((asset) => normalizePath(asset.folder));
+  const folders = normalizedFolders.filter((folder) => {
+    if (folder !== root && !folder.startsWith(`${root}/`)) return false;
+    return !owned.some((assetFolder) => folder === assetFolder || folder.startsWith(`${assetFolder}/`));
+  });
+  return { folders: Array.from(new Set([root, ...folders])).sort(), root };
+}

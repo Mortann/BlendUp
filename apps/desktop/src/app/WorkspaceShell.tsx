@@ -44,6 +44,7 @@ export function WorkspaceShell({
               className={activeView === item.key ? "active" : ""}
               key={item.key}
               onClick={() => setActiveView(item.key)}
+              title={item.label}
               type="button"
             >
               {item.icon}
@@ -55,7 +56,7 @@ export function WorkspaceShell({
           ))}
         </nav>
 
-        <button className="close-project" onClick={onCloseProject} type="button">
+        <button className="close-project" onClick={onCloseProject} title="Changer de projet" type="button">
           <ChevronLeft size={17} />
           Changer de projet
         </button>

@@ -12,6 +12,7 @@ ADDON_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ADDON_ROOT))
 
 from blendup.core.export_state import export_status, read_state, record_export
+from blendup.core.bridge import acknowledge_open, clear_open_request, read_open_request, requested_blend_file
 from blendup.core.project import asset_id_for_path, find_project_root, load_project, locate_asset
 from blendup.core.validation import validate_meshes
 
@@ -102,6 +103,30 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(len(issues), 4)
         self.assertTrue(any("Échelle" in issue.message for issue in issues))
         self.assertTrue(any("non-manifold" in issue.message for issue in issues))
+
+
+class BridgeTests(unittest.TestCase):
+    def test_reads_validates_and_acknowledges_open_request(self):
+        with tempfile.TemporaryDirectory(dir=ADDON_ROOT / "tests") as directory:
+            root = Path(directory)
+            target = root / "Art" / "Rock" / "Rock.blend"
+            target.parent.mkdir(parents=True)
+            target.touch()
+            bridge = root / ".blendup" / "blender-bridge"
+            bridge.mkdir(parents=True)
+            (bridge / "open-request.json").write_text(json.dumps({
+                "id": "request_test",
+                "blendPath": "Art/Rock/Rock.blend",
+                "expiresAtMs": int(time.time() * 1_000) + 5_000,
+            }), encoding="utf-8")
+            request = read_open_request(root)
+            self.assertIsNotNone(request)
+            self.assertEqual(requested_blend_file(root, request), target.resolve())
+            acknowledge_open(root, request.id, True)
+            acknowledgement = json.loads((bridge / "open-ack.json").read_text(encoding="utf-8"))
+            self.assertTrue(acknowledgement["opened"])
+            clear_open_request(root, request.id)
+            self.assertFalse((bridge / "open-request.json").exists())
 
 
 if __name__ == "__main__":

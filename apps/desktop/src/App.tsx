@@ -60,13 +60,12 @@ function App() {
           onDeleteAsset={app.handleDeleteAsset}
           onDeleteFolder={app.handleDeleteFolder}
           onDuplicateAsset={app.handleDuplicateAsset}
-          onExportAll={app.exportAllAssets}
           onExportAsset={app.handleExportAsset}
           onMoveAsset={app.handleMoveAsset}
           onMoveFolder={app.handleMoveFolder}
           onOpenAsset={app.openAssetInBlender}
           onOpenPath={app.openContentPath}
-          onRefresh={app.refreshProject}
+          onOrganizeAsset={app.handleOrganizeAsset}
           onRenameAsset={app.handleRenameAsset}
           onRenameFolder={app.handleRenameFolder}
           onSetAssetThumbnail={app.handleSetAssetThumbnail}

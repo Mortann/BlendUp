@@ -6,7 +6,8 @@ use std::{
     env, fs,
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
-    time::{SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const EXPORT_SCRIPT: &str = r#"
@@ -62,6 +63,8 @@ target.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=False)
 bpy.ops.wm.save_as_mainfile(filepath=str(target))
 "#;
+
+const ASSET_SUPPORT_DIRECTORIES: [&str; 3] = ["textures", "references", "renders"];
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -168,6 +171,21 @@ struct AssetMutationResult {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     asset_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenBlendRequest {
+    id: String,
+    blend_path: String,
+    expires_at_ms: u128,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenBlendAcknowledgement {
+    id: String,
+    opened: bool,
 }
 
 #[derive(Serialize)]
@@ -548,6 +566,11 @@ fn open_blend_file(
     if !target.is_file() {
         return Err(format!("Fichier Blender introuvable: {}", target.display()));
     }
+
+    if request_open_in_running_blender(&root, &target).unwrap_or(false) {
+        return Ok(());
+    }
+
     let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
         "Blender est introuvable. Configure son chemin dans Parametres.".to_string()
     })?;
@@ -558,6 +581,49 @@ fn open_blend_file(
         .spawn()
         .map_err(|error| format!("Impossible de lancer {}: {error}", blender.display()))?;
     Ok(())
+}
+
+fn request_open_in_running_blender(root: &Path, target: &Path) -> Result<bool, String> {
+    let bridge = root.join(".blendup").join("blender-bridge");
+    let request_file = bridge.join("open-request.json");
+    let acknowledgement_file = bridge.join("open-ack.json");
+    let now = unix_time_ms();
+    let request = OpenBlendRequest {
+        id: format!("open_{}_{}", std::process::id(), now),
+        blend_path: relative_string(root, target)?,
+        expires_at_ms: now + 1_300,
+    };
+    write_json(&request_file, &request)?;
+
+    for _ in 0..16 {
+        thread::sleep(Duration::from_millis(80));
+        let acknowledgement = fs::read_to_string(&acknowledgement_file)
+            .ok()
+            .and_then(|content| serde_json::from_str::<OpenBlendAcknowledgement>(&content).ok());
+        if acknowledgement
+            .as_ref()
+            .is_some_and(|value| value.id == request.id && value.opened)
+        {
+            return Ok(true);
+        }
+    }
+
+    let is_current_request = fs::read_to_string(&request_file)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_string))
+        .is_some_and(|id| id == request.id);
+    if is_current_request {
+        let _ = fs::remove_file(request_file);
+    }
+    Ok(false)
+}
+
+fn unix_time_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -666,13 +732,15 @@ fn create_asset(
     let project = read_project_config(&root)?;
     validate_item_name(&name)?;
     let parent = validated_art_directory(&root, &project, &parent_dir, true)?;
-    let target = parent.join(format!("{}.blend", name.trim()));
-    if target.exists() {
-        return Err(format!("{} existe deja.", target.display()));
+    let asset_directory = parent.join(name.trim());
+    let target = asset_directory.join(format!("{}.blend", name.trim()));
+    if asset_directory.exists() {
+        return Err(format!("{} existe deja.", asset_directory.display()));
     }
     let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
         "Blender est introuvable. Configure son chemin dans Parametres.".to_string()
     })?;
+    prepare_asset_directories(&asset_directory)?;
     let temp_dir = root.join(".blendup").join("temp");
     fs::create_dir_all(&temp_dir)
         .map_err(|error| format!("Impossible de preparer la creation: {error}"))?;
@@ -688,6 +756,7 @@ fn create_asset(
         .output()
         .map_err(|error| format!("Impossible de lancer Blender: {error}"))?;
     if !output.status.success() || !target.is_file() {
+        let _ = fs::remove_dir_all(&asset_directory);
         return Err(format!(
             "Blender n'a pas cree l'asset. {}",
             command_log(&output.stdout, &output.stderr)
@@ -713,6 +782,76 @@ fn create_asset(
 }
 
 #[tauri::command]
+fn organize_asset(project_root: String, asset_id: String) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let source = root.join(&asset.source_path);
+
+    if asset_owns_workspace(&root, &project, &asset) {
+        prepare_asset_directories(
+            source
+                .parent()
+                .ok_or_else(|| "Dossier source invalide.".to_string())?,
+        )?;
+        return Ok(AssetMutationResult {
+            message: format!("Le dossier de {} est deja pret.", asset.name),
+            asset_id: Some(asset.id),
+        });
+    }
+
+    let parent = source
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?
+        .to_path_buf();
+    let workspace = parent.join(&asset.name);
+    if workspace.exists() {
+        return Err(format!("{} existe deja.", workspace.display()));
+    }
+    let direct_blend_count = fs::read_dir(&parent)
+        .map_err(|error| format!("Impossible de lire {}: {error}", parent.display()))?
+        .flatten()
+        .filter(|entry| {
+            entry.path().is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("blend"))
+        })
+        .count();
+
+    write_asset_metadata(&root, &metadata_for_asset(&root, &asset))?;
+    relocate_asset(
+        &root,
+        &project,
+        &asset,
+        &workspace.join(format!("{}.blend", asset.name)),
+    )?;
+
+    if direct_blend_count == 1 {
+        for directory_name in ASSET_SUPPORT_DIRECTORIES {
+            let existing = parent.join(directory_name);
+            let destination = workspace.join(directory_name);
+            if existing.is_dir() && !destination.exists() {
+                fs::rename(&existing, &destination).map_err(|error| {
+                    format!("Impossible de ranger {}: {error}", existing.display())
+                })?;
+            }
+        }
+    }
+    prepare_asset_directories(&workspace)?;
+
+    Ok(AssetMutationResult {
+        message: format!(
+            "{} et ses fichiers sont maintenant ranges ensemble.",
+            asset.name
+        ),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
 fn rename_asset(
     project_root: String,
     asset_id: String,
@@ -723,11 +862,30 @@ fn rename_asset(
     let project = read_project_config(&root)?;
     let asset = find_asset(&root, &project, &asset_id)?;
     let source = root.join(&asset.source_path);
-    let target = source
-        .parent()
-        .ok_or_else(|| "Dossier source invalide.".to_string())?
-        .join(format!("{}.blend", new_name.trim()));
-    relocate_asset(&root, &project, &asset, &target)?;
+    if asset_owns_workspace(&root, &project, &asset) {
+        let source_directory = source
+            .parent()
+            .ok_or_else(|| "Dossier source invalide.".to_string())?;
+        let target_directory = source_directory
+            .parent()
+            .ok_or_else(|| "Dossier parent invalide.".to_string())?
+            .join(new_name.trim());
+        write_asset_metadata(&root, &metadata_for_asset(&root, &asset))?;
+        relocate_folder(&root, &project, source_directory, &target_directory)?;
+        let moved = find_asset(&root, &project, &asset.id)?;
+        relocate_asset(
+            &root,
+            &project,
+            &moved,
+            &target_directory.join(format!("{}.blend", new_name.trim())),
+        )?;
+    } else {
+        let target = source
+            .parent()
+            .ok_or_else(|| "Dossier source invalide.".to_string())?
+            .join(format!("{}.blend", new_name.trim()));
+        relocate_asset(&root, &project, &asset, &target)?;
+    }
     Ok(AssetMutationResult {
         message: format!("L'asset s'appelle maintenant {}.", new_name.trim()),
         asset_id: Some(asset.id),
@@ -744,12 +902,7 @@ fn move_asset(
     let project = read_project_config(&root)?;
     let asset = find_asset(&root, &project, &asset_id)?;
     let target_directory = validated_art_directory(&root, &project, &target_dir, true)?;
-    let target = target_directory.join(
-        Path::new(&asset.source_path)
-            .file_name()
-            .ok_or_else(|| "Nom de fichier invalide.".to_string())?,
-    );
-    relocate_asset(&root, &project, &asset, &target)?;
+    relocate_asset_to_directory(&root, &project, &asset, &target_directory)?;
     Ok(AssetMutationResult {
         message: format!("{} a ete deplace.", asset.name),
         asset_id: Some(asset.id),
@@ -761,11 +914,18 @@ fn duplicate_asset(project_root: String, asset_id: String) -> Result<AssetMutati
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
     let asset = find_asset(&root, &project, &asset_id)?;
-    let parent = root
-        .join(&asset.source_path)
+    let source = root.join(&asset.source_path);
+    let source_parent = source
         .parent()
-        .ok_or_else(|| "Dossier source invalide.".to_string())?
-        .to_path_buf();
+        .ok_or_else(|| "Dossier source invalide.".to_string())?;
+    let parent = if asset_owns_workspace(&root, &project, &asset) {
+        source_parent
+            .parent()
+            .ok_or_else(|| "Dossier parent invalide.".to_string())?
+            .to_path_buf()
+    } else {
+        source_parent.to_path_buf()
+    };
     copy_asset_into(&root, &project, &asset, &parent)
 }
 
@@ -781,12 +941,7 @@ fn copy_asset(
     let asset = find_asset(&root, &project, &asset_id)?;
     let target = validated_art_directory(&root, &project, &target_dir, true)?;
     if move_asset_file {
-        let destination = target.join(
-            Path::new(&asset.source_path)
-                .file_name()
-                .ok_or_else(|| "Nom de fichier invalide.".to_string())?,
-        );
-        relocate_asset(&root, &project, &asset, &destination)?;
+        relocate_asset_to_directory(&root, &project, &asset, &target)?;
         Ok(AssetMutationResult {
             message: format!("{} a ete deplace.", asset.name),
             asset_id: Some(asset.id),
@@ -801,10 +956,24 @@ fn delete_asset(project_root: String, asset_id: String) -> Result<AssetMutationR
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
     let asset = find_asset(&root, &project, &asset_id)?;
-    trash_path(&root.join(&asset.source_path))?;
+    let owns_workspace = asset_owns_workspace(&root, &project, &asset);
+    let source = root.join(&asset.source_path);
+    let source_target = if owns_workspace {
+        source
+            .parent()
+            .ok_or_else(|| "Dossier source invalide.".to_string())?
+    } else {
+        source.as_path()
+    };
+    trash_path(source_target)?;
     let output = root.join(&asset.output_path);
     if output.exists() {
-        trash_path(&output)?;
+        let output_target = if owns_workspace {
+            output.parent().unwrap_or(output.as_path())
+        } else {
+            output.as_path()
+        };
+        trash_path(output_target)?;
     }
     let metadata = asset_metadata_file(&root, &asset.id);
     if metadata.exists() {
@@ -1121,16 +1290,101 @@ fn relocate_asset(
     write_json(&export_state_file(root), &state)
 }
 
+fn asset_owns_workspace(root: &Path, project: &ProjectConfig, asset: &BlendUpAsset) -> bool {
+    let source = root.join(&asset.source_path);
+    let Some(directory) = source.parent() else {
+        return false;
+    };
+    directory != root.join(&project.paths.art_root)
+        && directory
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case(&asset.name))
+        && source
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case(&asset.name))
+}
+
+fn prepare_asset_directories(workspace: &Path) -> Result<(), String> {
+    fs::create_dir_all(workspace)
+        .map_err(|error| format!("Impossible de creer {}: {error}", workspace.display()))?;
+    for name in ASSET_SUPPORT_DIRECTORIES {
+        let directory = workspace.join(name);
+        fs::create_dir_all(&directory)
+            .map_err(|error| format!("Impossible de creer {}: {error}", directory.display()))?;
+    }
+    Ok(())
+}
+
+fn relocate_asset_to_directory(
+    root: &Path,
+    project: &ProjectConfig,
+    asset: &BlendUpAsset,
+    target_directory: &Path,
+) -> Result<(), String> {
+    let source_file = root.join(&asset.source_path);
+    let source_directory = source_file
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?;
+    let owns_directory = source_directory != root.join(&project.paths.art_root)
+        && source_directory
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case(&asset.name));
+
+    if owns_directory {
+        write_asset_metadata(root, &metadata_for_asset(root, asset))?;
+        let target = target_directory.join(
+            source_directory
+                .file_name()
+                .ok_or_else(|| "Nom de dossier invalide.".to_string())?,
+        );
+        relocate_folder(root, project, source_directory, &target)
+    } else {
+        let target = target_directory.join(
+            source_file
+                .file_name()
+                .ok_or_else(|| "Nom de fichier invalide.".to_string())?,
+        );
+        relocate_asset(root, project, asset, &target)
+    }
+}
+
 fn copy_asset_into(
     root: &Path,
-    _project: &ProjectConfig,
+    project: &ProjectConfig,
     asset: &BlendUpAsset,
     target_directory: &Path,
 ) -> Result<AssetMutationResult, String> {
     let source = root.join(&asset.source_path);
-    let target = unique_copy_path(target_directory, &asset.name, "blend");
-    fs::copy(&source, &target)
-        .map_err(|error| format!("Impossible de copier {}: {error}", source.display()))?;
+    let target = if asset_owns_workspace(root, project, asset) {
+        let source_directory = source
+            .parent()
+            .ok_or_else(|| "Dossier source invalide.".to_string())?;
+        let (copy_name, target_workspace) = unique_asset_workspace(target_directory, &asset.name);
+        copy_directory_recursive(source_directory, &target_workspace)?;
+        let copied_source = target_workspace.join(
+            source
+                .file_name()
+                .ok_or_else(|| "Nom de fichier invalide.".to_string())?,
+        );
+        let renamed_source = target_workspace.join(format!("{copy_name}.blend"));
+        if copied_source != renamed_source {
+            fs::rename(&copied_source, &renamed_source).map_err(|error| {
+                format!(
+                    "Impossible de renommer {}: {error}",
+                    copied_source.display()
+                )
+            })?;
+        }
+        renamed_source
+    } else {
+        let target = unique_copy_path(target_directory, &asset.name, "blend");
+        fs::copy(&source, &target)
+            .map_err(|error| format!("Impossible de copier {}: {error}", source.display()))?;
+        target
+    };
     let source_path = relative_string(root, &target)?;
     let id = asset_id_for_path(&source_path);
     let mut metadata = metadata_for_asset(root, asset);
@@ -1248,6 +1502,46 @@ fn unique_copy_path(directory: &Path, base_name: &str, extension: &str) -> PathB
         }
     }
     directory.join(format!("{base_name} Copy unique.{extension}"))
+}
+
+fn unique_asset_workspace(directory: &Path, base_name: &str) -> (String, PathBuf) {
+    let first_name = format!("{base_name} Copy");
+    let first = directory.join(&first_name);
+    if !first.exists() {
+        return (first_name, first);
+    }
+    for index in 2..10_000 {
+        let name = format!("{base_name} Copy {index}");
+        let candidate = directory.join(&name);
+        if !candidate.exists() {
+            return (name, candidate);
+        }
+    }
+    let name = format!("{base_name} Copy unique");
+    (name.clone(), directory.join(name))
+}
+
+fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination)
+        .map_err(|error| format!("Impossible de creer {}: {error}", destination.display()))?;
+    for entry in fs::read_dir(source)
+        .map_err(|error| format!("Impossible de lire {}: {error}", source.display()))?
+    {
+        let entry = entry.map_err(|error| format!("Fichier illisible: {error}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("Type de fichier illisible: {error}"))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let target = destination.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_directory_recursive(&entry.path(), &target)?;
+        } else {
+            copy_file(&entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 fn unique_file_path(path: &Path) -> PathBuf {
@@ -2047,6 +2341,14 @@ fn common_blender_locations() -> Vec<PathBuf> {
             }
         }
         candidates.reverse();
+        candidates.insert(
+            0,
+            PathBuf::from(r"C:\Program Files\Steam\steamapps\common\Blender\blender.exe"),
+        );
+        candidates.insert(
+            0,
+            PathBuf::from(r"C:\Program Files (x86)\Steam\steamapps\common\Blender\blender.exe"),
+        );
     } else if cfg!(target_os = "macos") {
         candidates.push(PathBuf::from(
             "/Applications/Blender.app/Contents/MacOS/Blender",
@@ -2133,6 +2435,7 @@ fn main() {
             list_project_images,
             create_folder,
             create_asset,
+            organize_asset,
             rename_asset,
             move_asset,
             copy_asset,
@@ -2247,6 +2550,156 @@ mod tests {
         assert_eq!(assets[0].metadata.tags, vec!["prop", "wood"]);
         assert_eq!(assets[0].metadata.variants[0].status, "working");
         assert_eq!(assets[0].metadata.lods[0].status, "ready");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dragging_an_asset_moves_its_complete_working_folder() {
+        let root = test_root("drag_asset_folder");
+        let asset_folder = root
+            .join("Art")
+            .join("Blender")
+            .join("Environment")
+            .join("Rock");
+        fs::create_dir_all(asset_folder.join("references")).unwrap();
+        fs::write(asset_folder.join("Rock.blend"), b"blend").unwrap();
+        fs::write(asset_folder.join("references").join("rock.png"), b"image").unwrap();
+        let output_folder = root
+            .join("Godot")
+            .join("Assets")
+            .join("Blender")
+            .join("Environment")
+            .join("Rock");
+        fs::create_dir_all(&output_folder).unwrap();
+        fs::write(output_folder.join("Rock.glb"), b"glb").unwrap();
+        let target = root.join("Art").join("Blender").join("Props");
+        fs::create_dir_all(&target).unwrap();
+
+        let project = new_project_config("Test", "godot");
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        let original_id = asset.id.clone();
+        relocate_asset_to_directory(&root, &project, &asset, &target).unwrap();
+
+        assert!(target.join("Rock").join("Rock.blend").is_file());
+        assert!(target
+            .join("Rock")
+            .join("references")
+            .join("rock.png")
+            .is_file());
+        assert!(root
+            .join("Godot")
+            .join("Assets")
+            .join("Blender")
+            .join("Props")
+            .join("Rock")
+            .join("Rock.glb")
+            .is_file());
+        let moved = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        assert_eq!(moved.id, original_id);
+        assert_eq!(moved.folder, "Art/Blender/Props/Rock");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn organizing_a_loose_asset_groups_its_support_files() {
+        let root = test_root("organize_loose_asset");
+        let project = new_project_config("Test", "godot");
+        fs::create_dir_all(root.join("Art").join("Characters").join("textures")).unwrap();
+        fs::create_dir_all(root.join("Godot").join("Assets").join("Characters")).unwrap();
+        fs::create_dir_all(root.join(".blendup")).unwrap();
+        fs::write(
+            root.join("Art").join("Characters").join("Bob.blend"),
+            b"blend",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Art")
+                .join("Characters")
+                .join("textures")
+                .join("body.png"),
+            b"image",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Godot")
+                .join("Assets")
+                .join("Characters")
+                .join("Bob.glb"),
+            b"glb",
+        )
+        .unwrap();
+        write_json(&project_file(&root), &project).unwrap();
+        write_json(&export_state_file(&root), &ExportState::default()).unwrap();
+
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        let result = organize_asset(root.to_string_lossy().to_string(), asset.id.clone()).unwrap();
+
+        assert_eq!(result.asset_id.as_deref(), Some(asset.id.as_str()));
+        assert!(root
+            .join("Art")
+            .join("Characters")
+            .join("Bob")
+            .join("Bob.blend")
+            .is_file());
+        assert!(root
+            .join("Art")
+            .join("Characters")
+            .join("Bob")
+            .join("textures")
+            .join("body.png")
+            .is_file());
+        assert!(root
+            .join("Art")
+            .join("Characters")
+            .join("Bob")
+            .join("references")
+            .is_dir());
+        assert!(root
+            .join("Godot")
+            .join("Assets")
+            .join("Characters")
+            .join("Bob")
+            .join("Bob.glb")
+            .is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicating_an_asset_workspace_copies_its_textures() {
+        let root = test_root("duplicate_asset_workspace");
+        let project = new_project_config("Test", "godot");
+        let workspace = root.join("Art").join("Props").join("Crate");
+        fs::create_dir_all(workspace.join("textures")).unwrap();
+        fs::write(workspace.join("Crate.blend"), b"blend").unwrap();
+        fs::write(workspace.join("textures").join("wood.png"), b"image").unwrap();
+        fs::create_dir_all(root.join("Godot").join("Assets")).unwrap();
+
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        let result =
+            copy_asset_into(&root, &project, &asset, &root.join("Art").join("Props")).unwrap();
+
+        assert!(root
+            .join("Art")
+            .join("Props")
+            .join("Crate Copy")
+            .join("Crate Copy.blend")
+            .is_file());
+        assert!(root
+            .join("Art")
+            .join("Props")
+            .join("Crate Copy")
+            .join("textures")
+            .join("wood.png")
+            .is_file());
+        assert!(result.asset_id.is_some());
         fs::remove_dir_all(root).unwrap();
     }
 }

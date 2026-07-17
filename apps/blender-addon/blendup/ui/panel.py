@@ -76,6 +76,7 @@ class BLENDUP_PT_asset(bpy.types.Panel):
         source.location = "SOURCE"
         output = row.operator("blendup.open_location", text="Assets", icon="FILE_FOLDER")
         output.location = "OUTPUT"
+        layout.operator("blendup.prepare_workspace", text="Préparer les dossiers", icon="NEWFOLDER")
 
 
 def split_text(value: str, width: int) -> list[str]:

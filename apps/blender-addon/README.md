@@ -4,6 +4,9 @@ Add-on léger pour relier un fichier `.blend` placé dans `Art` à son projet Bl
 
 ## Fonctions
 
+L'add-on 0.3 ouvre les assets dans la session Blender active, prépare les dossiers
+`textures`, `references` et `renders`, puis synchronise les exports avec BlendUp.
+
 - détection automatique du projet à partir du fichier Blender ouvert ;
 - export GLB vers Godot ou FBX vers Unity en respectant les sous-dossiers de `Art` ;
 - état `À exporter`, `À réexporter` ou `À jour` directement dans Blender ;

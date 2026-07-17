@@ -94,7 +94,7 @@ export function AssetViewer({ asset, projectRoot }: { asset: BlendUpAsset; proje
       renderer.dispose();
       element.replaceChildren();
     };
-  }, [asset.format, asset.outputPath, asset.status, projectRoot]);
+  }, [asset.format, asset.outputModifiedAt, asset.outputPath, asset.status, projectRoot]);
 
   return (
     <div className="asset-viewer-wrap">
@@ -134,7 +134,7 @@ export function AssetImageGallery({
       if (!cancelled) setImages(loaded);
     }).catch(() => { if (!cancelled) setImages([]); });
     return () => { cancelled = true; };
-  }, [directory, projectRoot, asset.metadata.thumbnailPath]);
+  }, [directory, projectRoot, asset.metadata.thumbnailPath, asset.sourceModifiedAt]);
 
   return (
     <div className="asset-gallery-section">

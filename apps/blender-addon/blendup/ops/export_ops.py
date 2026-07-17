@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
+import sys
 import traceback
 
 import bpy
@@ -84,8 +87,18 @@ class BLENDUP_OT_open_location(bpy.types.Operator):
             asset = current_asset()
             path = asset.source.parent if self.location == "SOURCE" else asset.output.parent
             path.mkdir(parents=True, exist_ok=True)
-            bpy.ops.wm.path_open(filepath=str(Path(path)))
+            open_directory(Path(path))
             return {"FINISHED"}
         except Exception as error:
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
+
+
+def open_directory(path: Path) -> None:
+    """Ouvre un dossier sans dépendre du contexte d'une fenêtre Blender."""
+    if sys.platform == "win32":
+        os.startfile(str(path))
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])

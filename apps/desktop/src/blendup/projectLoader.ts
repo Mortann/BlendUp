@@ -160,6 +160,10 @@ export async function createAsset(options: {
   });
 }
 
+export async function organizeAsset(projectRoot: string, assetId: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("organize_asset", { projectRoot, assetId });
+}
+
 export async function renameAsset(projectRoot: string, assetId: string, newName: string): Promise<AssetMutationResult> {
   return invoke<AssetMutationResult>("rename_asset", { projectRoot, assetId, newName });
 }

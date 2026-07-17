@@ -1,7 +1,7 @@
 bl_info = {
     "name": "BlendUp",
     "author": "BlendUp",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (4, 2, 0),
     "location": "Vue 3D > Barre latérale > BlendUp",
     "description": "Valide et exporte les assets d'un projet BlendUp vers Godot ou Unity",

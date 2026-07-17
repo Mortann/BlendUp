@@ -18,6 +18,7 @@ import {
   moveFolder,
   openBlendFile,
   openProjectPath,
+  organizeAsset,
   rememberProject,
   renameAsset,
   renameFolder,
@@ -57,6 +58,7 @@ export function useBlendUpController() {
   const [isDetectingBlender, setIsDetectingBlender] = useState(false);
   const [exportingAssetIds, setExportingAssetIds] = useState<string[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const activeProjectRoot = project?.projectRoot ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +85,39 @@ export function useBlendUpController() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeProjectRoot) return;
+    let cancelled = false;
+    let refreshing = false;
+
+    const refreshFromDisk = async () => {
+      if (cancelled || refreshing || document.hidden) return;
+      refreshing = true;
+      try {
+        const snapshot = await loadProjectSnapshot(activeProjectRoot);
+        if (!cancelled) {
+          setProject((current) => {
+            if (!current || current.projectRoot !== activeProjectRoot) return current;
+            return JSON.stringify(current) === JSON.stringify(snapshot) ? current : snapshot;
+          });
+        }
+      } catch {
+        // Le prochain passage retentera silencieusement : l'utilisateur peut être en train d'enregistrer.
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    const interval = window.setInterval(() => void refreshFromDisk(), 1_400);
+    const onFocus = () => void refreshFromDisk();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [activeProjectRoot]);
 
   const selectedAsset = useMemo(
     () => project?.assets.find((asset) => asset.id === selectedAssetId) ?? null,
@@ -304,6 +339,9 @@ export function useBlendUpController() {
       createAsset({ blenderPath: userSettings.blenderPath ?? undefined, name, parentDir, projectRoot: root })
     );
 
+  const handleOrganizeAsset = (assetId: string) =>
+    runAssetMutation("Organisation de l'asset impossible", (root) => organizeAsset(root, assetId));
+
   const handleRenameAsset = (assetId: string, newName: string) =>
     runAssetMutation("Renommage impossible", (root) => renameAsset(root, assetId, newName));
 
@@ -396,6 +434,7 @@ export function useBlendUpController() {
     handleExportAsset,
     handleMoveAsset,
     handleMoveFolder,
+    handleOrganizeAsset,
     handleRenameAsset,
     handleRenameFolder,
     handleSetAssetThumbnail,

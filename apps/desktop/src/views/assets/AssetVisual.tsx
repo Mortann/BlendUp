@@ -1,5 +1,8 @@
 import { Box, Folder, Heart, Image as ImageIcon, MoreHorizontal, Upload } from "lucide-react";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import * as THREE from "three";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { readProjectFileDataUrl } from "../../blendup/projectLoader";
 import type { BlendUpAsset } from "../../blendup/types";
 import type { AssetDisplayMode, AssetThumbSize } from "./model";
@@ -18,7 +21,88 @@ export function AssetThumbnail({ asset, projectRoot }: { asset: BlendUpAsset; pr
     return () => { cancelled = true; };
   }, [asset.metadata.thumbnailPath, projectRoot]);
 
-  return source ? <img alt={`Miniature de ${asset.name}`} src={source} /> : <Box aria-hidden="true" size={34} />;
+  if (source) return <img alt={`Miniature de ${asset.name}`} src={source} />;
+  if (asset.outputModifiedAt) return <ModelThumbnail asset={asset} projectRoot={projectRoot} />;
+  return <Box aria-hidden="true" size={34} />;
+}
+
+function ModelThumbnail({ asset, projectRoot }: { asset: BlendUpAsset; projectRoot: string }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const element = canvas.current;
+    if (!element) return;
+    let disposed = false;
+    setFailed(false);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x202322);
+    const camera = new THREE.PerspectiveCamera(38, 16 / 10, 0.01, 10_000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: element });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setSize(320, 200, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x1b2430, 2.8));
+    const key = new THREE.DirectionalLight(0xffffff, 3.4);
+    key.position.set(4, 7, 5);
+    scene.add(key);
+
+    const fitAndRender = (object: THREE.Object3D) => {
+      if (disposed) {
+        disposeObject(object);
+        return;
+      }
+      scene.add(object);
+      const bounds = new THREE.Box3().setFromObject(object);
+      if (bounds.isEmpty()) {
+        setFailed(true);
+        return;
+      }
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      const max = Math.max(size.x, size.y, size.z, 0.1);
+      object.position.sub(center);
+      camera.position.set(max * 1.55, max * 1.05, max * 1.55);
+      camera.lookAt(0, 0, 0);
+      camera.near = Math.max(max / 1_000, 0.001);
+      camera.far = max * 100;
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+    };
+
+    void readProjectFileDataUrl(projectRoot, asset.outputPath)
+      .then((url) => {
+        if (disposed || !url) return;
+        if (asset.format === "glb") {
+          new GLTFLoader().load(url, (result) => fitAndRender(result.scene), undefined, () => { if (!disposed) setFailed(true); });
+        } else {
+          new FBXLoader().load(url, fitAndRender, undefined, () => { if (!disposed) setFailed(true); });
+        }
+      })
+      .catch(() => { if (!disposed) setFailed(true); });
+
+    return () => {
+      disposed = true;
+      disposeObject(scene);
+      renderer.dispose();
+    };
+  }, [asset.format, asset.outputModifiedAt, asset.outputPath, projectRoot]);
+
+  return failed ? <Box aria-hidden="true" size={34} /> : <canvas aria-label={`Aperçu 3D de ${asset.name}`} ref={canvas} />;
+}
+
+function disposeObject(object: THREE.Object3D) {
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.geometry?.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      Object.values(material).forEach((value) => {
+        if (value instanceof THREE.Texture) value.dispose();
+      });
+      material.dispose();
+    });
+  });
 }
 
 export function AssetCard({
@@ -102,8 +186,11 @@ export function FolderCard({
   name,
   onContextMenu,
   onDropAsset,
+  onDropFolder,
   onOpen,
   path,
+  previewAssets,
+  projectRoot,
   thumbnailSize
 }: {
   assetCount: number;
@@ -111,30 +198,46 @@ export function FolderCard({
   name: string;
   onContextMenu: (event: MouseEvent) => void;
   onDropAsset: (assetId: string) => void;
+  onDropFolder: (folder: string) => void;
   onOpen: () => void;
   path: string;
+  previewAssets: BlendUpAsset[];
+  projectRoot: string;
   thumbnailSize: AssetThumbSize;
 }) {
   const [dragOver, setDragOver] = useState(false);
+  const previews = previewAssets.slice(0, displayMode === "grid" ? 4 : 1);
   return (
     <article
       className={`explorer-folder ${displayMode} thumb-${thumbnailSize} ${dragOver ? "drag-over" : ""}`}
+      draggable
       onClick={onOpen}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
+      onDragStart={(event) => {
+        event.stopPropagation();
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-blendup-folder", path);
+      }}
       onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
       onDrop={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         setDragOver(false);
         const assetId = event.dataTransfer.getData("application/x-blendup-asset");
+        const folder = event.dataTransfer.getData("application/x-blendup-folder");
         if (assetId) onDropAsset(assetId);
+        else if (folder && folder !== path) onDropFolder(folder);
       }}
       tabIndex={0}
       title={path}
     >
-      <div className="folder-visual"><Folder aria-hidden="true" fill="currentColor" size={38} /></div>
+      <div className={`folder-visual ${previews.length ? "has-previews" : ""}`}>
+        {previews.length ? <div className={`folder-preview-grid count-${previews.length}`}>{previews.map((asset) => <AssetThumbnail asset={asset} key={asset.id} projectRoot={projectRoot} />)}</div> : <Folder aria-hidden="true" fill="currentColor" size={38} />}
+        {previews.length ? <span className="folder-preview-badge"><Folder aria-hidden="true" fill="currentColor" size={17} /></span> : null}
+      </div>
       <div className="asset-card-main"><strong>{name}</strong><span>{assetCount} asset{assetCount > 1 ? "s" : ""}</span></div>
       <ImageIcon className="folder-corner" size={14} />
     </article>
