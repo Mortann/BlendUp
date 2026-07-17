@@ -1,7 +1,8 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env, fs,
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
@@ -47,6 +48,21 @@ def main():
 main()
 "#;
 
+const CREATE_BLEND_SCRIPT: &str = r#"
+import pathlib
+import sys
+import bpy
+
+marker = "--"
+if marker not in sys.argv:
+    raise RuntimeError("BlendUp target path is missing.")
+
+target = pathlib.Path(sys.argv[sys.argv.index(marker) + 1])
+target.parent.mkdir(parents=True, exist_ok=True)
+bpy.ops.wm.read_factory_settings(use_empty=False)
+bpy.ops.wm.save_as_mainfile(filepath=str(target))
+"#;
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectPaths {
@@ -71,6 +87,7 @@ struct ProjectConfig {
 struct ProjectSnapshot {
     project_root: String,
     project: ProjectConfig,
+    asset_folders: Vec<String>,
     assets: Vec<BlendUpAsset>,
     problems: Vec<BlendUpProblem>,
 }
@@ -91,6 +108,75 @@ struct BlendUpAsset {
     output_modified_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_error: Option<String>,
+    size_bytes: u64,
+    metadata: AssetMetadataView,
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetMetadataView {
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thumbnail_path: Option<String>,
+    #[serde(default)]
+    variants: Vec<AssetVariant>,
+    #[serde(default)]
+    lods: Vec<AssetLod>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetMetadata {
+    schema_version: u32,
+    kind: String,
+    id: String,
+    source_path: String,
+    #[serde(flatten)]
+    details: AssetMetadataView,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetVariant {
+    id: String,
+    name: String,
+    status: String,
+    #[serde(default)]
+    notes: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetLod {
+    id: String,
+    level: String,
+    status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_ratio: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    triangle_budget: Option<u64>,
+    #[serde(default)]
+    notes: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetMutationResult {
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    asset_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectImageFile {
+    path: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    modified_at: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -242,11 +328,13 @@ fn read_project_snapshot(project_root: String) -> Result<ProjectSnapshot, String
     validate_project_paths(&project)?;
     let export_state = read_export_state(&root);
     let assets = scan_assets(&root, &project, &export_state)?;
+    let asset_folders = collect_asset_folders(&root, &project)?;
     let problems = collect_problems(&root, &project, &assets);
 
     Ok(ProjectSnapshot {
         project_root: root.to_string_lossy().to_string(),
         project,
+        asset_folders,
         assets,
         problems,
     })
@@ -472,6 +560,777 @@ fn open_blend_file(
     Ok(())
 }
 
+#[tauri::command]
+fn read_project_file_data_url(
+    project_root: String,
+    relative_path: String,
+) -> Result<String, String> {
+    let root = validated_project_root(&project_root)?;
+    let target = root.join(safe_relative_path(&relative_path)?);
+    if !target.is_file() {
+        return Err(format!("Fichier introuvable: {}", target.display()));
+    }
+    let bytes = fs::read(&target)
+        .map_err(|error| format!("Impossible de lire {}: {error}", target.display()))?;
+    let mime = file_mime(&target);
+    Ok(format!(
+        "data:{mime};base64,{}",
+        general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+#[tauri::command]
+fn list_project_images(
+    project_root: String,
+    relative_dir: String,
+) -> Result<Vec<ProjectImageFile>, String> {
+    let root = validated_project_root(&project_root)?;
+    let directory = root.join(safe_relative_path(&relative_dir)?);
+    if !directory.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    fn visit(
+        root: &Path,
+        directory: &Path,
+        depth: usize,
+        images: &mut Vec<ProjectImageFile>,
+    ) -> Result<(), String> {
+        if depth > 3 {
+            return Ok(());
+        }
+        for entry in fs::read_dir(directory)
+            .map_err(|error| format!("Impossible de lire {}: {error}", directory.display()))?
+        {
+            let entry = entry.map_err(|error| format!("Image illisible: {error}"))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|error| format!("Type de fichier illisible: {error}"))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if file_type.is_dir() {
+                visit(root, &path, depth + 1, images)?;
+            } else if is_image_file(&path) {
+                images.push(ProjectImageFile {
+                    path: relative_string(root, &path)?,
+                    name: path
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .unwrap_or("Image")
+                        .to_string(),
+                    modified_at: modified_time(&path).map(time_label),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    let mut images = Vec::new();
+    visit(&root, &directory, 0, &mut images)?;
+    images.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(images)
+}
+
+#[tauri::command]
+fn create_folder(
+    project_root: String,
+    parent_dir: String,
+    name: String,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    validate_item_name(&name)?;
+    let parent = validated_art_directory(&root, &project, &parent_dir, true)?;
+    let target = parent.join(name.trim());
+    if target.exists() {
+        return Err(format!("{} existe deja.", target.display()));
+    }
+    fs::create_dir_all(&target)
+        .map_err(|error| format!("Impossible de creer {}: {error}", target.display()))?;
+    Ok(AssetMutationResult {
+        message: format!("Le dossier {} a ete cree.", name.trim()),
+        asset_id: None,
+    })
+}
+
+#[tauri::command]
+fn create_asset(
+    project_root: String,
+    parent_dir: String,
+    name: String,
+    blender_path: Option<String>,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    validate_item_name(&name)?;
+    let parent = validated_art_directory(&root, &project, &parent_dir, true)?;
+    let target = parent.join(format!("{}.blend", name.trim()));
+    if target.exists() {
+        return Err(format!("{} existe deja.", target.display()));
+    }
+    let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
+        "Blender est introuvable. Configure son chemin dans Parametres.".to_string()
+    })?;
+    let temp_dir = root.join(".blendup").join("temp");
+    fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Impossible de preparer la creation: {error}"))?;
+    let script = temp_dir.join("create_asset.py");
+    fs::write(&script, CREATE_BLEND_SCRIPT)
+        .map_err(|error| format!("Impossible de preparer Blender: {error}"))?;
+    let output = Command::new(&blender)
+        .arg("--background")
+        .arg("--python")
+        .arg(&script)
+        .arg("--")
+        .arg(&target)
+        .output()
+        .map_err(|error| format!("Impossible de lancer Blender: {error}"))?;
+    if !output.status.success() || !target.is_file() {
+        return Err(format!(
+            "Blender n'a pas cree l'asset. {}",
+            command_log(&output.stdout, &output.stderr)
+        ));
+    }
+
+    let source_path = relative_string(&root, &target)?;
+    let id = asset_id_for_path(&source_path);
+    write_asset_metadata(
+        &root,
+        &AssetMetadata {
+            schema_version: 2,
+            kind: "asset_metadata".to_string(),
+            id: id.clone(),
+            source_path,
+            details: AssetMetadataView::default(),
+        },
+    )?;
+    Ok(AssetMutationResult {
+        message: format!("L'asset {} a ete cree.", name.trim()),
+        asset_id: Some(id),
+    })
+}
+
+#[tauri::command]
+fn rename_asset(
+    project_root: String,
+    asset_id: String,
+    new_name: String,
+) -> Result<AssetMutationResult, String> {
+    validate_item_name(&new_name)?;
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let source = root.join(&asset.source_path);
+    let target = source
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?
+        .join(format!("{}.blend", new_name.trim()));
+    relocate_asset(&root, &project, &asset, &target)?;
+    Ok(AssetMutationResult {
+        message: format!("L'asset s'appelle maintenant {}.", new_name.trim()),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
+fn move_asset(
+    project_root: String,
+    asset_id: String,
+    target_dir: String,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let target_directory = validated_art_directory(&root, &project, &target_dir, true)?;
+    let target = target_directory.join(
+        Path::new(&asset.source_path)
+            .file_name()
+            .ok_or_else(|| "Nom de fichier invalide.".to_string())?,
+    );
+    relocate_asset(&root, &project, &asset, &target)?;
+    Ok(AssetMutationResult {
+        message: format!("{} a ete deplace.", asset.name),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
+fn duplicate_asset(project_root: String, asset_id: String) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let parent = root
+        .join(&asset.source_path)
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?
+        .to_path_buf();
+    copy_asset_into(&root, &project, &asset, &parent)
+}
+
+#[tauri::command]
+fn copy_asset(
+    project_root: String,
+    asset_id: String,
+    target_dir: String,
+    move_asset_file: bool,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let target = validated_art_directory(&root, &project, &target_dir, true)?;
+    if move_asset_file {
+        let destination = target.join(
+            Path::new(&asset.source_path)
+                .file_name()
+                .ok_or_else(|| "Nom de fichier invalide.".to_string())?,
+        );
+        relocate_asset(&root, &project, &asset, &destination)?;
+        Ok(AssetMutationResult {
+            message: format!("{} a ete deplace.", asset.name),
+            asset_id: Some(asset.id),
+        })
+    } else {
+        copy_asset_into(&root, &project, &asset, &target)
+    }
+}
+
+#[tauri::command]
+fn delete_asset(project_root: String, asset_id: String) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    trash_path(&root.join(&asset.source_path))?;
+    let output = root.join(&asset.output_path);
+    if output.exists() {
+        trash_path(&output)?;
+    }
+    let metadata = asset_metadata_file(&root, &asset.id);
+    if metadata.exists() {
+        trash_path(&metadata)?;
+    }
+    let mut state = read_export_state(&root);
+    state.exports.remove(&asset.id);
+    write_json(&export_state_file(&root), &state)?;
+    Ok(AssetMutationResult {
+        message: format!("{} a ete place dans la corbeille.", asset.name),
+        asset_id: None,
+    })
+}
+
+#[tauri::command]
+fn rename_folder(
+    project_root: String,
+    folder: String,
+    new_name: String,
+) -> Result<AssetMutationResult, String> {
+    validate_item_name(&new_name)?;
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let source = validated_art_directory(&root, &project, &folder, false)?;
+    let target = source
+        .parent()
+        .ok_or_else(|| "Dossier parent invalide.".to_string())?
+        .join(new_name.trim());
+    relocate_folder(&root, &project, &source, &target)?;
+    Ok(AssetMutationResult {
+        message: format!("Le dossier s'appelle maintenant {}.", new_name.trim()),
+        asset_id: None,
+    })
+}
+
+#[tauri::command]
+fn move_folder(
+    project_root: String,
+    folder: String,
+    target_dir: String,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let source = validated_art_directory(&root, &project, &folder, false)?;
+    let target_parent = validated_art_directory(&root, &project, &target_dir, true)?;
+    let target = target_parent.join(
+        source
+            .file_name()
+            .ok_or_else(|| "Nom de dossier invalide.".to_string())?,
+    );
+    relocate_folder(&root, &project, &source, &target)?;
+    Ok(AssetMutationResult {
+        message: "Le dossier a ete deplace.".to_string(),
+        asset_id: None,
+    })
+}
+
+#[tauri::command]
+fn delete_folder(project_root: String, folder: String) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let directory = validated_art_directory(&root, &project, &folder, false)?;
+    let folder_rel = relative_string(&root, &directory)?;
+    let assets = scan_assets(&root, &project, &read_export_state(&root))?;
+    trash_path(&directory)?;
+    let output_folder = output_folder_for_art_path(&root, &project, Path::new(&folder_rel))?;
+    if output_folder.exists() {
+        trash_path(&output_folder)?;
+    }
+    let mut state = read_export_state(&root);
+    for asset in assets
+        .iter()
+        .filter(|asset| path_is_inside(&asset.source_path, &folder_rel))
+    {
+        let metadata = asset_metadata_file(&root, &asset.id);
+        if metadata.exists() {
+            trash_path(&metadata)?;
+        }
+        state.exports.remove(&asset.id);
+    }
+    write_json(&export_state_file(&root), &state)?;
+    Ok(AssetMutationResult {
+        message: "Le dossier a ete place dans la corbeille.".to_string(),
+        asset_id: None,
+    })
+}
+
+#[tauri::command]
+fn update_asset_metadata(
+    project_root: String,
+    asset_id: String,
+    notes: String,
+    tags: Vec<String>,
+    variants: Vec<AssetVariant>,
+    lods: Vec<AssetLod>,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let mut metadata = metadata_for_asset(&root, &asset);
+    metadata.details.notes = notes.trim().to_string();
+    metadata.details.tags = normalize_tags(tags);
+    metadata.details.variants = variants
+        .into_iter()
+        .filter(|item| !item.name.trim().is_empty())
+        .map(|mut item| {
+            item.name = item.name.trim().to_string();
+            item.status = normalize_item_status(&item.status);
+            item
+        })
+        .collect();
+    metadata.details.lods = lods
+        .into_iter()
+        .filter(|item| !item.level.trim().is_empty())
+        .map(|mut item| {
+            item.level = item.level.trim().to_string();
+            item.status = normalize_item_status(&item.status);
+            item
+        })
+        .collect();
+    write_asset_metadata(&root, &metadata)?;
+    Ok(AssetMutationResult {
+        message: "Les informations de l'asset ont ete enregistrees.".to_string(),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
+fn set_asset_thumbnail(
+    project_root: String,
+    asset_id: String,
+    source_path: String,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let source = PathBuf::from(source_path);
+    if !source.is_file() || !is_image_file(&source) {
+        return Err("Choisis une image valide.".to_string());
+    }
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png");
+    let destination = root
+        .join(".blendup")
+        .join("previews")
+        .join(&asset.id)
+        .join(format!("thumbnail.{extension}"));
+    copy_file(&source, &destination)?;
+    let mut metadata = metadata_for_asset(&root, &asset);
+    metadata.details.thumbnail_path = Some(relative_string(&root, &destination)?);
+    write_asset_metadata(&root, &metadata)?;
+    Ok(AssetMutationResult {
+        message: "La miniature a ete mise a jour.".to_string(),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
+fn add_asset_images(
+    project_root: String,
+    asset_id: String,
+    kind: String,
+    source_paths: Vec<String>,
+) -> Result<AssetMutationResult, String> {
+    if kind != "renders" && kind != "textures" {
+        return Err("Le type d'image est invalide.".to_string());
+    }
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let destination = root
+        .join(&asset.source_path)
+        .parent()
+        .ok_or_else(|| "Dossier asset invalide.".to_string())?
+        .join(&kind);
+    fs::create_dir_all(&destination)
+        .map_err(|error| format!("Impossible de creer {}: {error}", destination.display()))?;
+    let mut copied = 0;
+    for value in source_paths {
+        let source = PathBuf::from(value);
+        if !source.is_file() || !is_image_file(&source) {
+            continue;
+        }
+        let file_name = source
+            .file_name()
+            .ok_or_else(|| "Nom d'image invalide.".to_string())?;
+        let target = unique_file_path(&destination.join(file_name));
+        copy_file(&source, &target)?;
+        copied += 1;
+    }
+    Ok(AssetMutationResult {
+        message: format!("{copied} image(s) ajoutee(s) dans {kind}."),
+        asset_id: Some(asset.id),
+    })
+}
+
+fn find_asset(
+    root: &Path,
+    project: &ProjectConfig,
+    asset_id: &str,
+) -> Result<BlendUpAsset, String> {
+    scan_assets(root, project, &read_export_state(root))?
+        .into_iter()
+        .find(|asset| asset.id == asset_id)
+        .ok_or_else(|| "Cet asset n'existe plus dans Art.".to_string())
+}
+
+fn metadata_for_asset(root: &Path, asset: &BlendUpAsset) -> AssetMetadata {
+    read_asset_metadata(root)
+        .remove(&normalize_relative_string(&asset.source_path))
+        .unwrap_or_else(|| AssetMetadata {
+            schema_version: 2,
+            kind: "asset_metadata".to_string(),
+            id: asset.id.clone(),
+            source_path: asset.source_path.clone(),
+            details: asset.metadata.clone(),
+        })
+}
+
+fn write_asset_metadata(root: &Path, metadata: &AssetMetadata) -> Result<(), String> {
+    write_json(&asset_metadata_file(root, &metadata.id), metadata)
+}
+
+fn asset_metadata_file(root: &Path, asset_id: &str) -> PathBuf {
+    root.join(".blendup")
+        .join("assets")
+        .join(format!("{asset_id}.json"))
+}
+
+fn validated_art_directory(
+    root: &Path,
+    project: &ProjectConfig,
+    value: &str,
+    allow_art_root: bool,
+) -> Result<PathBuf, String> {
+    let relative = safe_relative_path(value)?;
+    let art_relative = Path::new(&project.paths.art_root);
+    if !relative.starts_with(art_relative) || (!allow_art_root && relative == art_relative) {
+        return Err("Ce dossier ne peut pas etre modifie ici.".to_string());
+    }
+    let directory = root.join(&relative);
+    if !directory.is_dir() {
+        return Err(format!("Dossier introuvable: {}", directory.display()));
+    }
+    Ok(directory)
+}
+
+fn validate_item_name(value: &str) -> Result<(), String> {
+    let name = value.trim();
+    if name.is_empty() {
+        return Err("Donne un nom.".to_string());
+    }
+    if name == "."
+        || name == ".."
+        || name.chars().any(|character| {
+            character.is_control()
+                || matches!(
+                    character,
+                    '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                )
+        })
+    {
+        return Err("Ce nom contient un caractere interdit.".to_string());
+    }
+    Ok(())
+}
+
+fn relocate_asset(
+    root: &Path,
+    project: &ProjectConfig,
+    asset: &BlendUpAsset,
+    target: &Path,
+) -> Result<(), String> {
+    let source = root.join(&asset.source_path);
+    if source == target {
+        return Ok(());
+    }
+    let art_root = root.join(&project.paths.art_root);
+    if !target.starts_with(&art_root) {
+        return Err("La destination doit rester dans Art.".to_string());
+    }
+    if target.exists() {
+        return Err(format!("{} existe deja.", target.display()));
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+    }
+    let new_output = output_path_for_source(root, project, target)?;
+    let old_output = root.join(&asset.output_path);
+    fs::rename(&source, target)
+        .map_err(|error| format!("Impossible de deplacer {}: {error}", source.display()))?;
+    if old_output.is_file() {
+        if let Some(parent) = new_output.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+        }
+        if !new_output.exists() {
+            fs::rename(&old_output, &new_output).map_err(|error| {
+                format!("Impossible de deplacer {}: {error}", old_output.display())
+            })?;
+        }
+    }
+
+    let mut metadata = metadata_for_asset(root, asset);
+    metadata.source_path = relative_string(root, target)?;
+    write_asset_metadata(root, &metadata)?;
+    let mut state = read_export_state(root);
+    if let Some(record) = state.exports.get_mut(&asset.id) {
+        record.output_path = relative_string(root, &new_output)?;
+    }
+    write_json(&export_state_file(root), &state)
+}
+
+fn copy_asset_into(
+    root: &Path,
+    _project: &ProjectConfig,
+    asset: &BlendUpAsset,
+    target_directory: &Path,
+) -> Result<AssetMutationResult, String> {
+    let source = root.join(&asset.source_path);
+    let target = unique_copy_path(target_directory, &asset.name, "blend");
+    fs::copy(&source, &target)
+        .map_err(|error| format!("Impossible de copier {}: {error}", source.display()))?;
+    let source_path = relative_string(root, &target)?;
+    let id = asset_id_for_path(&source_path);
+    let mut metadata = metadata_for_asset(root, asset);
+    metadata.id = id.clone();
+    metadata.source_path = source_path;
+    metadata.details.thumbnail_path = None;
+    write_asset_metadata(root, &metadata)?;
+    Ok(AssetMutationResult {
+        message: format!("Une copie de {} a ete creee.", asset.name),
+        asset_id: Some(id),
+    })
+}
+
+fn relocate_folder(
+    root: &Path,
+    project: &ProjectConfig,
+    source: &Path,
+    target: &Path,
+) -> Result<(), String> {
+    let art_root = root.join(&project.paths.art_root);
+    if source == art_root || !target.starts_with(&art_root) || target.starts_with(source) {
+        return Err("Ce deplacement de dossier n'est pas autorise.".to_string());
+    }
+    if target.exists() {
+        return Err(format!("{} existe deja.", target.display()));
+    }
+    let old_rel = relative_string(root, source)?;
+    let new_rel = relative_string(root, target)?;
+    let old_output = output_folder_for_art_path(root, project, Path::new(&old_rel))?;
+    let new_output = output_folder_for_art_path(root, project, Path::new(&new_rel))?;
+
+    fs::rename(source, target)
+        .map_err(|error| format!("Impossible de deplacer {}: {error}", source.display()))?;
+    if old_output.is_dir() && !new_output.exists() {
+        if let Some(parent) = new_output.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+        }
+        fs::rename(&old_output, &new_output)
+            .map_err(|error| format!("Impossible de deplacer {}: {error}", old_output.display()))?;
+    }
+
+    let mut state = read_export_state(root);
+    for mut metadata in read_asset_metadata(root).into_values() {
+        if path_is_inside(&metadata.source_path, &old_rel) {
+            metadata.source_path = replace_path_prefix(&metadata.source_path, &old_rel, &new_rel);
+            if let Some(record) = state.exports.get_mut(&metadata.id) {
+                let output =
+                    output_path_for_source(root, project, &root.join(&metadata.source_path))?;
+                record.output_path = relative_string(root, &output)?;
+            }
+            write_asset_metadata(root, &metadata)?;
+        }
+    }
+    write_json(&export_state_file(root), &state)
+}
+
+fn output_path_for_source(
+    root: &Path,
+    project: &ProjectConfig,
+    source: &Path,
+) -> Result<PathBuf, String> {
+    let relative = source
+        .strip_prefix(root.join(&project.paths.art_root))
+        .map_err(|_| "La source doit rester dans Art.".to_string())?;
+    let mut output = root.join(&project.paths.engine_assets_root).join(relative);
+    output.set_extension(if project.engine == "godot" {
+        "glb"
+    } else {
+        "fbx"
+    });
+    Ok(output)
+}
+
+fn output_folder_for_art_path(
+    root: &Path,
+    project: &ProjectConfig,
+    art_path: &Path,
+) -> Result<PathBuf, String> {
+    let relative = art_path
+        .strip_prefix(Path::new(&project.paths.art_root))
+        .map_err(|_| "Le dossier doit rester dans Art.".to_string())?;
+    Ok(root.join(&project.paths.engine_assets_root).join(relative))
+}
+
+fn path_is_inside(path: &str, directory: &str) -> bool {
+    let path = normalize_relative_string(path);
+    let directory = normalize_relative_string(directory);
+    path == directory || path.starts_with(&format!("{directory}/"))
+}
+
+fn replace_path_prefix(path: &str, old_prefix: &str, new_prefix: &str) -> String {
+    let path = normalize_relative_string(path);
+    let old_prefix = normalize_relative_string(old_prefix);
+    let new_prefix = normalize_relative_string(new_prefix);
+    if path == old_prefix {
+        new_prefix
+    } else {
+        format!(
+            "{new_prefix}/{}",
+            path.trim_start_matches(&format!("{old_prefix}/"))
+        )
+    }
+}
+
+fn unique_copy_path(directory: &Path, base_name: &str, extension: &str) -> PathBuf {
+    let first = directory.join(format!("{base_name} Copy.{extension}"));
+    if !first.exists() {
+        return first;
+    }
+    for index in 2..10_000 {
+        let candidate = directory.join(format!("{base_name} Copy {index}.{extension}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    directory.join(format!("{base_name} Copy unique.{extension}"))
+}
+
+fn unique_file_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image");
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png");
+    for index in 2..10_000 {
+        let candidate = parent.join(format!("{stem} {index}.{extension}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    path.to_path_buf()
+}
+
+fn copy_file(source: &Path, destination: &Path) -> Result<(), String> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+    }
+    fs::copy(source, destination)
+        .map(|_| ())
+        .map_err(|error| format!("Impossible de copier {}: {error}", source.display()))
+}
+
+fn trash_path(path: &Path) -> Result<(), String> {
+    trash::delete(path).map_err(|error| {
+        format!(
+            "Impossible de placer {} dans la corbeille: {error}",
+            path.display()
+        )
+    })
+}
+
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    tags.into_iter()
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty() && seen.insert(tag.to_lowercase()))
+        .take(20)
+        .collect()
+}
+
+fn is_image_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tga"
+            )
+        })
+}
+
+fn file_mime(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "glb" => "model/gltf-binary",
+        "gltf" => "model/gltf+json",
+        "fbx" => "application/octet-stream",
+        _ => "application/octet-stream",
+    }
+}
+
 fn scan_assets(
     root: &Path,
     project: &ProjectConfig,
@@ -484,6 +1343,7 @@ fn scan_assets(
 
     let mut blend_files = Vec::new();
     collect_blend_files(&art_root, &mut blend_files)?;
+    let metadata_by_source = read_asset_metadata(root);
     let format = if project.engine == "godot" {
         "glb"
     } else {
@@ -502,7 +1362,13 @@ fn scan_assets(
 
         let source_path = relative_string(root, &source)?;
         let output_path = relative_string(root, &output)?;
-        let id = asset_id_for_path(&source_path);
+        let metadata = metadata_by_source
+            .get(&normalize_relative_string(&source_path))
+            .cloned();
+        let id = metadata
+            .as_ref()
+            .map(|item| item.id.clone())
+            .unwrap_or_else(|| asset_id_for_path(&source_path));
         let source_time = modified_time(&source);
         let output_time = modified_time(&output);
         let failed_record = export_state
@@ -520,7 +1386,7 @@ fn scan_assets(
             _ => "ready",
         };
 
-        let folder = source_relative_to_art
+        let folder = Path::new(&source_path)
             .parent()
             .map(normalize_path)
             .unwrap_or_default();
@@ -529,6 +1395,22 @@ fn scan_assets(
             .and_then(|value| value.to_str())
             .unwrap_or("Asset")
             .to_string();
+
+        let mut details = metadata.map(|item| item.details).unwrap_or_default();
+        if details.thumbnail_path.is_none() {
+            let legacy_thumbnail = root
+                .join(".blendup")
+                .join("thumbnails")
+                .join(format!("{id}.png"));
+            let sidecar_thumbnail = source.with_extension("png");
+            details.thumbnail_path = if legacy_thumbnail.is_file() {
+                relative_string(root, &legacy_thumbnail).ok()
+            } else if sidecar_thumbnail.is_file() {
+                relative_string(root, &sidecar_thumbnail).ok()
+            } else {
+                None
+            };
+        }
 
         assets.push(BlendUpAsset {
             id,
@@ -541,11 +1423,167 @@ fn scan_assets(
             source_modified_at: source_time.map(time_label),
             output_modified_at: output_time.map(time_label),
             last_error: failed_record.map(|record| record.message.clone()),
+            size_bytes: fs::metadata(&source).map(|item| item.len()).unwrap_or(0),
+            metadata: details,
         });
     }
 
     assets.sort_by(|left, right| left.source_path.cmp(&right.source_path));
     Ok(assets)
+}
+
+fn collect_asset_folders(root: &Path, project: &ProjectConfig) -> Result<Vec<String>, String> {
+    fn visit(root: &Path, directory: &Path, folders: &mut Vec<String>) -> Result<(), String> {
+        folders.push(relative_string(root, directory)?);
+        let entries = fs::read_dir(directory)
+            .map_err(|error| format!("Impossible de lire {}: {error}", directory.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("Dossier Art illisible: {error}"))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|error| format!("Type de fichier illisible: {error}"))?;
+            if file_type.is_dir() && !file_type.is_symlink() {
+                visit(root, &entry.path(), folders)?;
+            }
+        }
+        Ok(())
+    }
+
+    let art_root = root.join(&project.paths.art_root);
+    if !art_root.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut folders = Vec::new();
+    visit(root, &art_root, &mut folders)?;
+    folders.sort();
+    Ok(folders)
+}
+
+fn read_asset_metadata(root: &Path) -> HashMap<String, AssetMetadata> {
+    let directory = root.join(".blendup").join("assets");
+    let mut items = HashMap::new();
+    let Ok(entries) = fs::read_dir(directory) else {
+        return items;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(metadata) = fs::read_to_string(&path)
+            .ok()
+            .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+            .and_then(|value| normalize_asset_metadata(&value))
+        else {
+            continue;
+        };
+        items.insert(normalize_relative_string(&metadata.source_path), metadata);
+    }
+    items
+}
+
+fn normalize_asset_metadata(value: &Value) -> Option<AssetMetadata> {
+    let source_path = json_string(value, "sourcePath").or_else(|| {
+        value
+            .get("paths")
+            .and_then(|paths| json_string(paths, "blenderSource"))
+    })?;
+    let id = json_string(value, "id").unwrap_or_else(|| asset_id_for_path(&source_path));
+    let notes = value
+        .get("notes")
+        .and_then(|notes| {
+            notes
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| json_string(notes, "artist"))
+        })
+        .unwrap_or_default();
+    let tags = value
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let thumbnail_path = json_string(value, "thumbnailPath").or_else(|| {
+        value
+            .get("paths")
+            .and_then(|paths| json_string(paths, "thumbnail"))
+    });
+    let variants = value
+        .get("variants")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .enumerate()
+                .filter_map(|(index, item)| {
+                    Some(AssetVariant {
+                        id: json_string(item, "id").unwrap_or_else(|| format!("variant_{index}")),
+                        name: json_string(item, "name")?,
+                        status: normalize_item_status(
+                            item.get("status")
+                                .and_then(Value::as_str)
+                                .unwrap_or("planned"),
+                        ),
+                        notes: json_string(item, "notes").unwrap_or_default(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let lods = value
+        .get("lods")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .enumerate()
+                .filter_map(|(index, item)| {
+                    Some(AssetLod {
+                        id: json_string(item, "id").unwrap_or_else(|| format!("lod_{index}")),
+                        level: json_string(item, "level")?,
+                        status: normalize_item_status(
+                            item.get("status")
+                                .and_then(Value::as_str)
+                                .unwrap_or("planned"),
+                        ),
+                        target_ratio: item.get("targetRatio").and_then(Value::as_f64),
+                        triangle_budget: item.get("triangleBudget").and_then(Value::as_u64),
+                        notes: json_string(item, "notes").unwrap_or_default(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(AssetMetadata {
+        schema_version: 2,
+        kind: "asset_metadata".to_string(),
+        id,
+        source_path: normalize_relative_string(&source_path),
+        details: AssetMetadataView {
+            notes,
+            tags,
+            thumbnail_path,
+            variants,
+            lods,
+        },
+    })
+}
+
+fn normalize_item_status(value: &str) -> String {
+    match value {
+        "working" | "in_blender" | "in_progress" => "working",
+        "ready" | "exported" | "in_unity" | "validated" => "ready",
+        _ => "planned",
+    }
+    .to_string()
 }
 
 fn collect_blend_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -1090,7 +2128,22 @@ fn main() {
             detect_blender,
             export_asset,
             open_project_path,
-            open_blend_file
+            open_blend_file,
+            read_project_file_data_url,
+            list_project_images,
+            create_folder,
+            create_asset,
+            rename_asset,
+            move_asset,
+            copy_asset,
+            duplicate_asset,
+            delete_asset,
+            rename_folder,
+            move_folder,
+            delete_folder,
+            update_asset_metadata,
+            set_asset_thumbnail,
+            add_asset_images
         ])
         .run(tauri::generate_context!())
         .expect("error while running BlendUp");
@@ -1161,6 +2214,39 @@ mod tests {
         assert_eq!(result.project.engine, "godot");
         assert!(root.join("Godot").join("Assets").is_dir());
         assert!(root.join("Unity").join("Assets").is_dir());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_asset_metadata_is_kept_in_the_advanced_explorer() {
+        let root = test_root("metadata");
+        let source = root.join("Art").join("Props").join("Crate.blend");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, b"blend").unwrap();
+        let metadata_dir = root.join(".blendup").join("assets");
+        fs::create_dir_all(&metadata_dir).unwrap();
+        fs::write(
+            metadata_dir.join("crate.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "id": "asset_crate_legacy",
+                "paths": { "blenderSource": "Art/Props/Crate.blend" },
+                "notes": { "artist": "Garder les proportions." },
+                "tags": ["prop", "wood"],
+                "variants": [{ "id": "clean", "name": "Propre", "status": "in_progress" }],
+                "lods": [{ "id": "lod0", "level": "LOD 0", "status": "validated", "targetRatio": 100 }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let project = new_project_config("Test", "godot");
+        let assets = scan_assets(&root, &project, &ExportState::default()).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].id, "asset_crate_legacy");
+        assert_eq!(assets[0].metadata.notes, "Garder les proportions.");
+        assert_eq!(assets[0].metadata.tags, vec!["prop", "wood"]);
+        assert_eq!(assets[0].metadata.variants[0].status, "working");
+        assert_eq!(assets[0].metadata.lods[0].status, "ready");
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -8,8 +8,11 @@ Depuis l'accueil, indique un nom, choisis un dossier vide et sélectionne Godot 
 
 1. Place un fichier `.blend` n'importe où sous `Art`.
 2. Actualise la vue Assets si elle est déjà ouverte.
-3. Ouvre le fichier dans Blender ou lance directement son export.
-4. Utilise **Exporter** dans l'en-tête pour traiter tous les assets manquants ou obsolètes.
+3. Classe-le dans les dossiers, ajoute si besoin une miniature, des tags, des notes, des variantes ou des LOD.
+4. Ouvre le fichier dans Blender ou lance directement son export.
+5. Utilise **Exporter** dans l'en-tête pour traiter tous les assets manquants ou obsolètes.
+
+L'explorateur propose une grille, une liste et une vue compacte. La recherche couvre le nom, le dossier et les tags. Les favoris, filtres et tris sont mémorisés localement. Un clic ouvre la fiche détaillée ; un double-clic ouvre le fichier dans Blender. Les assets peuvent être copiés, déplacés, dupliqués ou déposés sur un dossier.
 
 ## États
 
@@ -22,3 +25,6 @@ Depuis l'accueil, indique un nom, choisis un dossier vide et sélectionne Godot 
 
 Dans Paramètres, choisis Godot ou Unity. BlendUp crée la nouvelle destination et considère les assets comme non exportés pour ce moteur. L'ancien dossier reste intact.
 
+## Dans Blender
+
+Installe l'add-on situé dans `apps/blender-addon/blendup`. Après avoir ouvert un fichier sous `Art`, le panneau **BlendUp** de la vue 3D indique le projet, le moteur, la destination et l'état de l'export. Il permet aussi de contrôler les UV, matériaux, échelles et arêtes non-manifold. L'option d'export automatique se trouve dans les préférences de l'add-on.

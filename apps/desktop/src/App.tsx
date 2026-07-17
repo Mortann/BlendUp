@@ -53,11 +53,24 @@ function App() {
       {app.activeView === "assets" ? (
         <AssetsView
           exportingAssetIds={app.exportingAssetIds}
+          onAddAssetImages={app.handleAddAssetImages}
+          onCopyAsset={app.handleCopyAsset}
+          onCreateAsset={app.handleCreateAsset}
+          onCreateFolder={app.handleCreateFolder}
+          onDeleteAsset={app.handleDeleteAsset}
+          onDeleteFolder={app.handleDeleteFolder}
+          onDuplicateAsset={app.handleDuplicateAsset}
           onExportAll={app.exportAllAssets}
           onExportAsset={app.handleExportAsset}
+          onMoveAsset={app.handleMoveAsset}
+          onMoveFolder={app.handleMoveFolder}
           onOpenAsset={app.openAssetInBlender}
           onOpenPath={app.openContentPath}
           onRefresh={app.refreshProject}
+          onRenameAsset={app.handleRenameAsset}
+          onRenameFolder={app.handleRenameFolder}
+          onSetAssetThumbnail={app.handleSetAssetThumbnail}
+          onUpdateAssetMetadata={app.handleUpdateAssetMetadata}
           selectedAssetId={app.selectedAsset?.id ?? null}
           setSelectedAssetId={app.setSelectedAssetId}
           snapshot={app.project}

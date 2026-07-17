@@ -2,6 +2,32 @@ export type GameEngine = "godot" | "unity";
 
 export type AssetExportStatus = "ready" | "exported" | "outdated" | "error";
 
+export type AssetItemStatus = "planned" | "working" | "ready";
+
+export interface AssetVariant {
+  id: string;
+  name: string;
+  status: AssetItemStatus;
+  notes: string;
+}
+
+export interface AssetLod {
+  id: string;
+  level: string;
+  status: AssetItemStatus;
+  targetRatio?: number;
+  triangleBudget?: number;
+  notes: string;
+}
+
+export interface AssetMetadata {
+  notes: string;
+  tags: string[];
+  thumbnailPath?: string;
+  variants: AssetVariant[];
+  lods: AssetLod[];
+}
+
 export interface BlendUpProject {
   schemaVersion: 2;
   kind: "project";
@@ -26,6 +52,8 @@ export interface BlendUpAsset {
   sourceModifiedAt?: string;
   outputModifiedAt?: string;
   lastError?: string;
+  sizeBytes: number;
+  metadata: AssetMetadata;
 }
 
 export interface BlendUpProblem {
@@ -41,6 +69,7 @@ export interface BlendUpProblem {
 export interface ProjectSnapshot {
   projectRoot: string;
   project: BlendUpProject;
+  assetFolders: string[];
   assets: BlendUpAsset[];
   problems: BlendUpProblem[];
 }
@@ -83,4 +112,9 @@ export interface ExportAssetResult {
 export interface UpdateProjectEngineResult {
   project: BlendUpProject;
   message: string;
+}
+
+export interface AssetMutationResult {
+  message: string;
+  assetId?: string;
 }

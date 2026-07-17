@@ -1,20 +1,43 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  addAssetImages,
+  copyAsset,
+  createAsset,
+  createFolder,
   createProject,
   defaultUserSettings,
+  deleteAsset,
+  deleteFolder,
   detectBlender,
+  duplicateAsset,
   exportAsset,
   loadDefaultProjectSnapshot,
   loadProjectSnapshot,
   loadUserSettings,
+  moveAsset,
+  moveFolder,
   openBlendFile,
   openProjectPath,
   rememberProject,
+  renameAsset,
+  renameFolder,
   saveUserSettings,
+  selectImageFiles,
   selectProjectDirectory,
+  setAssetThumbnail,
+  updateAssetMetadata,
   updateProjectEngine
 } from "../blendup/projectLoader";
-import type { BlendUpAsset, GameEngine, ProjectSnapshot, ToolDetection, UserSettings } from "../blendup/types";
+import type {
+  AssetLod,
+  AssetMutationResult,
+  AssetVariant,
+  BlendUpAsset,
+  GameEngine,
+  ProjectSnapshot,
+  ToolDetection,
+  UserSettings
+} from "../blendup/types";
 import type { ActiveView, OperationMessage } from "./types";
 
 export function useBlendUpController() {
@@ -255,6 +278,85 @@ export function useBlendUpController() {
     }
   };
 
+  const runAssetMutation = async (
+    title: string,
+    action: (projectRoot: string) => Promise<AssetMutationResult>
+  ): Promise<AssetMutationResult | null> => {
+    if (!project) return null;
+    try {
+      const result = await action(project.projectRoot);
+      const snapshot = await loadProjectSnapshot(project.projectRoot);
+      setProject(snapshot);
+      if (result.assetId) setSelectedAssetId(result.assetId);
+      setOperationMessage({ title: result.message, tone: "success" });
+      return result;
+    } catch (error) {
+      showError(title, error);
+      return null;
+    }
+  };
+
+  const handleCreateFolder = (parentDir: string, name: string) =>
+    runAssetMutation("Creation du dossier impossible", (root) => createFolder(root, parentDir, name));
+
+  const handleCreateAsset = (parentDir: string, name: string) =>
+    runAssetMutation("Creation de l'asset impossible", (root) =>
+      createAsset({ blenderPath: userSettings.blenderPath ?? undefined, name, parentDir, projectRoot: root })
+    );
+
+  const handleRenameAsset = (assetId: string, newName: string) =>
+    runAssetMutation("Renommage impossible", (root) => renameAsset(root, assetId, newName));
+
+  const handleMoveAsset = (assetId: string, targetDir: string) =>
+    runAssetMutation("Deplacement impossible", (root) => moveAsset(root, assetId, targetDir));
+
+  const handleCopyAsset = (assetId: string, targetDir: string, move: boolean) =>
+    runAssetMutation(move ? "Deplacement impossible" : "Copie impossible", (root) =>
+      copyAsset(root, assetId, targetDir, move)
+    );
+
+  const handleDuplicateAsset = (assetId: string) =>
+    runAssetMutation("Duplication impossible", (root) => duplicateAsset(root, assetId));
+
+  const handleDeleteAsset = (assetId: string) =>
+    runAssetMutation("Suppression impossible", (root) => deleteAsset(root, assetId));
+
+  const handleRenameFolder = (folder: string, newName: string) =>
+    runAssetMutation("Renommage du dossier impossible", (root) => renameFolder(root, folder, newName));
+
+  const handleMoveFolder = (folder: string, targetDir: string) =>
+    runAssetMutation("Deplacement du dossier impossible", (root) => moveFolder(root, folder, targetDir));
+
+  const handleDeleteFolder = (folder: string) =>
+    runAssetMutation("Suppression du dossier impossible", (root) => deleteFolder(root, folder));
+
+  const handleUpdateAssetMetadata = (
+    assetId: string,
+    notes: string,
+    tags: string[],
+    variants: AssetVariant[],
+    lods: AssetLod[]
+  ) =>
+    runAssetMutation("Enregistrement impossible", (root) =>
+      updateAssetMetadata({ assetId, lods, notes, projectRoot: root, tags, variants })
+    );
+
+  const handleSetAssetThumbnail = async (assetId: string) => {
+    const images = await selectImageFiles();
+    if (images[0]) {
+      await runAssetMutation("Miniature impossible", (root) => setAssetThumbnail(root, assetId, images[0]));
+    }
+  };
+
+  const handleAddAssetImages = async (assetId: string, kind: "renders" | "textures") => {
+    const images = await selectImageFiles();
+    if (images.length > 0) {
+      await runAssetMutation("Ajout des images impossible", (root) =>
+        addAssetImages(root, assetId, kind, images)
+      );
+    }
+  };
+
   const setShowBlenderCommandPrompt = async (show: boolean) => {
     await persistSettings({ ...userSettings, showBlenderCommandPrompt: show });
   };
@@ -284,7 +386,20 @@ export function useBlendUpController() {
     exportAllAssets,
     exportingAssetIds,
     forgetLastProject,
+    handleAddAssetImages,
+    handleCopyAsset,
+    handleCreateAsset,
+    handleCreateFolder,
+    handleDeleteAsset,
+    handleDeleteFolder,
+    handleDuplicateAsset,
     handleExportAsset,
+    handleMoveAsset,
+    handleMoveFolder,
+    handleRenameAsset,
+    handleRenameFolder,
+    handleSetAssetThumbnail,
+    handleUpdateAssetMetadata,
     isBooting,
     isCreatingProject,
     isDetectingBlender,

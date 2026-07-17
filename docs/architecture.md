@@ -2,7 +2,7 @@
 
 ## Périmètre
 
-BlendUp gère uniquement les projets, les assets Blender, les problèmes d'export et les paramètres locaux.
+BlendUp gère uniquement les projets, les assets Blender, leurs métadonnées de production, les problèmes d'export et les paramètres locaux.
 
 L'application React appelle un backend Tauri en Rust. Le backend :
 
@@ -38,3 +38,10 @@ Les données techniques d'export sont limitées à `.blendup/export-state.json`.
 
 Les sous-dossiers de `Art` sont reproduits sous le dossier `Assets` actif.
 
+## Métadonnées Assets
+
+Chaque asset peut avoir un fichier `.blendup/assets/asset_<id>.json`. Il contient uniquement les informations nécessaires à l'explorateur : notes, tags, miniature, variantes et LOD. L'identifiant est un hash stable du chemin Blender. L'application continue de lire les métadonnées de l'ancien schéma lorsque celles-ci existent.
+
+## Add-on Blender
+
+`apps/blender-addon/blendup/core` ne dépend pas de Blender : il normalise le projet, calcule les chemins et partage `export-state.json` avec l'application. La couche Blender ajoute le panneau, les opérateurs GLB/FBX, la validation des maillages et l'export après sauvegarde. Aucun prefab ni widget moteur n'est généré.

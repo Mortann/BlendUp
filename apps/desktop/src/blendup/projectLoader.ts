@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
+  AssetLod,
+  AssetMutationResult,
+  AssetVariant,
   CreateProjectOptions,
   CreateProjectResult,
   ExportAssetResult,
@@ -110,6 +113,116 @@ export async function openBlendFile(options: {
     relativePath: options.relativePath,
     showCommandPrompt: options.showCommandPrompt
   });
+}
+
+export interface ProjectImageFile {
+  path: string;
+  name: string;
+  modifiedAt?: string;
+}
+
+export async function readProjectFileDataUrl(projectRoot: string, relativePath?: string): Promise<string> {
+  if (!relativePath?.trim()) return "";
+  return invoke<string>("read_project_file_data_url", { projectRoot, relativePath: relativePath.trim() });
+}
+
+export async function listProjectImages(projectRoot: string, relativeDir?: string): Promise<ProjectImageFile[]> {
+  if (!relativeDir?.trim()) return [];
+  return invoke<ProjectImageFile[]>("list_project_images", { projectRoot, relativeDir: relativeDir.trim() });
+}
+
+export async function selectImageFiles(): Promise<string[]> {
+  const selected = await open({
+    directory: false,
+    multiple: true,
+    title: "Choisir des images",
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "tga"] }]
+  });
+  if (!selected) return [];
+  return (Array.isArray(selected) ? selected : [selected]).filter((item): item is string => typeof item === "string");
+}
+
+export async function createFolder(projectRoot: string, parentDir: string, name: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("create_folder", { projectRoot, parentDir, name });
+}
+
+export async function createAsset(options: {
+  blenderPath?: string;
+  name: string;
+  parentDir: string;
+  projectRoot: string;
+}): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("create_asset", {
+    blenderPath: options.blenderPath?.trim() || null,
+    name: options.name,
+    parentDir: options.parentDir,
+    projectRoot: options.projectRoot
+  });
+}
+
+export async function renameAsset(projectRoot: string, assetId: string, newName: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("rename_asset", { projectRoot, assetId, newName });
+}
+
+export async function moveAsset(projectRoot: string, assetId: string, targetDir: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("move_asset", { projectRoot, assetId, targetDir });
+}
+
+export async function copyAsset(
+  projectRoot: string,
+  assetId: string,
+  targetDir: string,
+  move: boolean
+): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("copy_asset", { projectRoot, assetId, targetDir, moveAssetFile: move });
+}
+
+export async function duplicateAsset(projectRoot: string, assetId: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("duplicate_asset", { projectRoot, assetId });
+}
+
+export async function deleteAsset(projectRoot: string, assetId: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("delete_asset", { projectRoot, assetId });
+}
+
+export async function renameFolder(projectRoot: string, folder: string, newName: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("rename_folder", { projectRoot, folder, newName });
+}
+
+export async function moveFolder(projectRoot: string, folder: string, targetDir: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("move_folder", { projectRoot, folder, targetDir });
+}
+
+export async function deleteFolder(projectRoot: string, folder: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("delete_folder", { projectRoot, folder });
+}
+
+export async function updateAssetMetadata(options: {
+  assetId: string;
+  lods: AssetLod[];
+  notes: string;
+  projectRoot: string;
+  tags: string[];
+  variants: AssetVariant[];
+}): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("update_asset_metadata", options);
+}
+
+export async function setAssetThumbnail(
+  projectRoot: string,
+  assetId: string,
+  sourcePath: string
+): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("set_asset_thumbnail", { projectRoot, assetId, sourcePath });
+}
+
+export async function addAssetImages(
+  projectRoot: string,
+  assetId: string,
+  kind: "renders" | "textures",
+  sourcePaths: string[]
+): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("add_asset_images", { projectRoot, assetId, kind, sourcePaths });
 }
 
 export function rememberProject(settings: UserSettings, projectRoot: string): UserSettings {

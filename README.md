@@ -13,7 +13,7 @@ Art/**/*.blend
 
 L'application ne contient que trois espaces :
 
-- **Assets** : détecter, ouvrir et exporter les fichiers Blender ;
+- **Assets** : organiser, rechercher, documenter, prévisualiser et exporter les fichiers Blender ;
 - **Problèmes** : voir les exports manquants, obsolètes ou en erreur ;
 - **Paramètres** : choisir Godot ou Unity et configurer Blender.
 
@@ -35,7 +35,15 @@ MonProjet/
 
 Le chemin situé sous `Art` est conservé dans le dossier `Assets`. Par exemple, `Art/Environment/Rock.blend` devient `Godot/Assets/Environment/Rock.glb`.
 
+L'explorateur Assets conserve les fonctions avancées utiles : dossiers, favoris, filtres, plusieurs vues, glisser-déposer, miniatures, aperçu 3D, rendus, textures, variantes et LOD. Ces informations sont locales au projet dans `.blendup/assets` et ne dépendent ni de Git ni d'un système de tâches.
+
 Changer le moteur dans les paramètres active la nouvelle organisation et conserve l'ancien dossier moteur par sécurité.
+
+## Add-on Blender
+
+Le dossier `apps/blender-addon/blendup` contient l'add-on Blender. Il détecte le projet depuis le fichier `.blend`, affiche l'état de l'export, valide les maillages et exporte vers le moteur actif. Un export automatique à la sauvegarde peut être activé dans ses préférences.
+
+Voir [le guide de l'add-on](apps/blender-addon/README.md).
 
 ## Développement
 
