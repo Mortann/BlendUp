@@ -20,6 +20,7 @@ def main() -> None:
 
     import blendup
     from blendup.handlers import open_requested_blend_file
+    from blendup.scripts.generate_lods import generate
 
     blendup.register()
     try:
@@ -50,6 +51,15 @@ def main() -> None:
             assert bpy.ops.blendup.validate_asset() == {"FINISHED"}
             assert bpy.ops.blendup.export_asset() == {"FINISHED"}
             assert (root / "Godot" / "Assets" / "Blender" / "Smoke" / "Smoke.glb").is_file()
+
+            lod_source = source.parent / "Smoke.lod.lod1.blend"
+            generate(source, [(lod_source, 0.5)])
+            assert lod_source.is_file()
+            mesh_objects = [obj for obj in bpy.data.objects if obj.type == "MESH"]
+            assert mesh_objects
+            assert all(any(modifier.type == "DECIMATE" and modifier.name == "BlendUp LOD" for modifier in obj.modifiers) for obj in mesh_objects)
+            assert all(any(abs(modifier.ratio - 0.5) < 0.001 for modifier in obj.modifiers if modifier.type == "DECIMATE") for obj in mesh_objects)
+            bpy.ops.wm.open_mainfile(filepath=str(source))
 
             other = root / "Art" / "Blender" / "Other" / "Other.blend"
             other.parent.mkdir(parents=True)

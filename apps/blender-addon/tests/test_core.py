@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
+import shutil
 import sys
-import tempfile
 import time
 import unittest
+from uuid import uuid4
 
 
 ADDON_ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +17,17 @@ from blendup.core.export_state import export_status, read_state, record_export
 from blendup.core.bridge import acknowledge_open, clear_open_request, read_open_request, requested_blend_file
 from blendup.core.project import asset_id_for_path, find_project_root, load_project, locate_asset
 from blendup.core.validation import validate_meshes
+
+
+@contextmanager
+def test_directory():
+    """Crée un dossier de test avec les droits hérités du dépôt sous Windows."""
+    directory = ADDON_ROOT / "tests" / f".tmp_blendup_{uuid4().hex}"
+    directory.mkdir(parents=True)
+    try:
+        yield directory
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 class FakeMesh:
@@ -44,8 +57,7 @@ class ProjectTests(unittest.TestCase):
         (root / ".blendup" / "project.json").write_text(json.dumps(config), encoding="utf-8")
 
     def test_finds_project_and_mirrors_godot_path(self):
-        with tempfile.TemporaryDirectory(dir=ADDON_ROOT / "tests") as directory:
-            root = Path(directory)
+        with test_directory() as root:
             self.make_project(root)
             source = root / "Art" / "Environment" / "Rock.blend"
             source.parent.mkdir(parents=True)
@@ -56,8 +68,7 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(asset.asset_id, asset_id_for_path("Art/Environment/Rock.blend"))
 
     def test_mirrors_unity_path_as_fbx(self):
-        with tempfile.TemporaryDirectory(dir=ADDON_ROOT / "tests") as directory:
-            root = Path(directory)
+        with test_directory() as root:
             self.make_project(root, "unity")
             source = root / "Art" / "Props" / "Crate.blend"
             source.parent.mkdir(parents=True)
@@ -67,8 +78,7 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(asset.output_relative, "Unity/Assets/Props/Crate.fbx")
 
     def test_reads_legacy_paths(self):
-        with tempfile.TemporaryDirectory(dir=ADDON_ROOT / "tests") as directory:
-            root = Path(directory)
+        with test_directory() as root:
             (root / ".blendup").mkdir()
             legacy = {"name": "Legacy", "paths": {"artRoot": "Artwork", "unityRoot": "Game", "unityAssetsRoot": "Game/Assets3D"}}
             (root / ".blendup" / "project.json").write_text(json.dumps(legacy), encoding="utf-8")
@@ -77,8 +87,7 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(project.engine_assets_root, "Game/Assets3D")
 
     def test_export_state_matches_file_dates(self):
-        with tempfile.TemporaryDirectory(dir=ADDON_ROOT / "tests") as directory:
-            root = Path(directory)
+        with test_directory() as root:
             self.make_project(root)
             source = root / "Art" / "Tree.blend"
             source.parent.mkdir()
@@ -107,8 +116,7 @@ class ValidationTests(unittest.TestCase):
 
 class BridgeTests(unittest.TestCase):
     def test_reads_validates_and_acknowledges_open_request(self):
-        with tempfile.TemporaryDirectory(dir=ADDON_ROOT / "tests") as directory:
-            root = Path(directory)
+        with test_directory() as root:
             target = root / "Art" / "Rock" / "Rock.blend"
             target.parent.mkdir(parents=True)
             target.touch()

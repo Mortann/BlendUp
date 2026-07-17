@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { demoProjectSnapshot } from "./demoSnapshot";
 import type {
   AssetLod,
   AssetMutationResult,
@@ -16,6 +17,12 @@ import type {
 
 const userSettingsStorageKey = "blendup:user-settings";
 
+function isBrowserDemo(projectRoot?: string): boolean {
+  return import.meta.env.DEV
+    && new URLSearchParams(window.location.search).get("demo") === "1"
+    && (!projectRoot || projectRoot === demoProjectSnapshot.projectRoot);
+}
+
 export const defaultUserSettings: UserSettings = {
   schemaVersion: 2,
   kind: "user_settings",
@@ -28,10 +35,12 @@ export const defaultUserSettings: UserSettings = {
 export async function loadProjectSnapshot(projectRoot: string): Promise<ProjectSnapshot> {
   const trimmed = projectRoot.trim();
   if (!trimmed) throw new Error("Choisis un dossier projet BlendUp.");
+  if (isBrowserDemo(trimmed)) return demoProjectSnapshot;
   return invoke<ProjectSnapshot>("read_project_snapshot", { projectRoot: trimmed });
 }
 
 export async function loadDefaultProjectSnapshot(): Promise<ProjectSnapshot> {
+  if (isBrowserDemo()) return demoProjectSnapshot;
   return invoke<ProjectSnapshot>("read_default_project_snapshot");
 }
 
@@ -97,6 +106,34 @@ export async function exportAsset(options: {
   });
 }
 
+export async function exportAssetVersion(options: {
+  assetId: string;
+  blenderPath?: string;
+  projectRoot: string;
+  versionId: string;
+  versionKind: "variant" | "lod";
+}): Promise<ExportAssetResult> {
+  return invoke<ExportAssetResult>("export_asset_version", {
+    assetId: options.assetId,
+    blenderPath: options.blenderPath?.trim() || null,
+    projectRoot: options.projectRoot,
+    versionId: options.versionId,
+    versionKind: options.versionKind
+  });
+}
+
+export async function exportAssetVersions(options: {
+  assetId: string;
+  blenderPath?: string;
+  projectRoot: string;
+}): Promise<ExportAssetResult> {
+  return invoke<ExportAssetResult>("export_asset_versions", {
+    assetId: options.assetId,
+    blenderPath: options.blenderPath?.trim() || null,
+    projectRoot: options.projectRoot
+  });
+}
+
 export async function openProjectPath(projectRoot: string, relativePath: string): Promise<void> {
   return invoke("open_project_path", { projectRoot, relativePath });
 }
@@ -123,11 +160,13 @@ export interface ProjectImageFile {
 
 export async function readProjectFileDataUrl(projectRoot: string, relativePath?: string): Promise<string> {
   if (!relativePath?.trim()) return "";
+  if (isBrowserDemo(projectRoot)) return "";
   return invoke<string>("read_project_file_data_url", { projectRoot, relativePath: relativePath.trim() });
 }
 
 export async function listProjectImages(projectRoot: string, relativeDir?: string): Promise<ProjectImageFile[]> {
   if (!relativeDir?.trim()) return [];
+  if (isBrowserDemo(projectRoot)) return [];
   return invoke<ProjectImageFile[]>("list_project_images", { projectRoot, relativeDir: relativeDir.trim() });
 }
 
@@ -162,6 +201,40 @@ export async function createAsset(options: {
 
 export async function organizeAsset(projectRoot: string, assetId: string): Promise<AssetMutationResult> {
   return invoke<AssetMutationResult>("organize_asset", { projectRoot, assetId });
+}
+
+export async function createAssetVariant(
+  projectRoot: string,
+  assetId: string,
+  name: string
+): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("create_asset_variant", { projectRoot, assetId, name });
+}
+
+export async function generateAssetLods(options: {
+  assetId: string;
+  blenderPath?: string;
+  projectRoot: string;
+}): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("generate_asset_lods", {
+    assetId: options.assetId,
+    blenderPath: options.blenderPath?.trim() || null,
+    projectRoot: options.projectRoot
+  });
+}
+
+export async function deleteAssetVersion(
+  projectRoot: string,
+  assetId: string,
+  versionId: string,
+  versionKind: "variant" | "lod"
+): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("delete_asset_version", {
+    projectRoot,
+    assetId,
+    versionId,
+    versionKind
+  });
 }
 
 export async function renameAsset(projectRoot: string, assetId: string, newName: string): Promise<AssetMutationResult> {

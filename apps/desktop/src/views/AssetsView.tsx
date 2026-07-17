@@ -25,9 +25,8 @@ import {
   Upload,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import type { AssetLod, AssetMutationResult, AssetVariant, BlendUpAsset, ProjectSnapshot } from "../blendup/types";
-import { AssetDetail } from "./assets/AssetDetail";
 import { AssetCard, FolderCard } from "./assets/AssetVisual";
 import type { AssetDialogState, AssetExplorerSettings, AssetQuickFilter, ClipboardEntry, ContextMenuState } from "./assets/model";
 import {
@@ -54,6 +53,8 @@ import {
   sortAssets
 } from "./assets/utils";
 
+const AssetDetail = lazy(() => import("./assets/AssetDetail").then((module) => ({ default: module.AssetDetail })));
+
 type Mutation = Promise<AssetMutationResult | null>;
 
 export function AssetsView({
@@ -61,14 +62,20 @@ export function AssetsView({
   onAddAssetImages,
   onCopyAsset,
   onCreateAsset,
+  onCreateAssetVariant,
   onCreateFolder,
   onDeleteAsset,
+  onDeleteAssetVersion,
   onDeleteFolder,
   onDuplicateAsset,
   onExportAsset,
+  onExportAssetVersion,
+  onExportAssetVersions,
+  onGenerateAssetLods,
   onMoveAsset,
   onMoveFolder,
   onOpenAsset,
+  onOpenAssetPath,
   onOpenPath,
   onOrganizeAsset,
   onRenameAsset,
@@ -83,14 +90,20 @@ export function AssetsView({
   onAddAssetImages: (assetId: string, kind: "renders" | "textures") => Promise<void>;
   onCopyAsset: (assetId: string, targetDir: string, move: boolean) => Mutation;
   onCreateAsset: (parentDir: string, name: string) => Mutation;
+  onCreateAssetVariant: (assetId: string, name: string) => Mutation;
   onCreateFolder: (parentDir: string, name: string) => Mutation;
   onDeleteAsset: (assetId: string) => Mutation;
+  onDeleteAssetVersion: (assetId: string, versionId: string, versionKind: "variant" | "lod") => Mutation;
   onDeleteFolder: (folder: string) => Mutation;
   onDuplicateAsset: (assetId: string) => Mutation;
   onExportAsset: (assetId: string) => Promise<boolean>;
+  onExportAssetVersion: (assetId: string, versionId: string, versionKind: "variant" | "lod") => Promise<boolean>;
+  onExportAssetVersions: (assetId: string) => Promise<boolean>;
+  onGenerateAssetLods: (assetId: string) => Mutation;
   onMoveAsset: (assetId: string, targetDir: string) => Mutation;
   onMoveFolder: (folder: string, targetDir: string) => Mutation;
   onOpenAsset: (asset: BlendUpAsset) => void;
+  onOpenAssetPath: (relativePath: string) => void;
   onOpenPath: (path: string) => void;
   onOrganizeAsset: (assetId: string) => Mutation;
   onRenameAsset: (assetId: string, newName: string) => Mutation;
@@ -269,7 +282,28 @@ export function AssetsView({
         </section>
       </div>
 
-      {selectedAsset ? <AssetDetail asset={selectedAsset} exporting={exportingAssetIds.includes(selectedAsset.id)} onAddImages={(kind) => void onAddAssetImages(selectedAsset.id, kind)} onClose={() => setSelectedAssetId(null)} onExport={() => void onExportAsset(selectedAsset.id)} onOpen={() => onOpenAsset(selectedAsset)} onOpenPath={onOpenPath} onSave={(notes, tags, variants, lods) => onUpdateAssetMetadata(selectedAsset.id, notes, tags, variants, lods)} onSetThumbnail={() => void onSetAssetThumbnail(selectedAsset.id)} projectRoot={snapshot.projectRoot} /> : null}
+      {selectedAsset ? (
+        <Suspense fallback={<aside className="asset-detail asset-detail-loading"><LoaderCircle className="spin" size={22} /><span>Chargement de l'aperçu…</span></aside>}>
+          <AssetDetail
+            asset={selectedAsset}
+            exporting={exportingAssetIds.includes(selectedAsset.id)}
+            onAddImages={(kind) => void onAddAssetImages(selectedAsset.id, kind)}
+            onClose={() => setSelectedAssetId(null)}
+            onCreateVariant={(name) => onCreateAssetVariant(selectedAsset.id, name)}
+            onDeleteVersion={(versionId, versionKind) => onDeleteAssetVersion(selectedAsset.id, versionId, versionKind)}
+            onExport={() => void onExportAsset(selectedAsset.id)}
+            onExportAll={() => void onExportAssetVersions(selectedAsset.id)}
+            onExportVersion={(versionId, versionKind) => void onExportAssetVersion(selectedAsset.id, versionId, versionKind)}
+            onGenerateLods={() => onGenerateAssetLods(selectedAsset.id)}
+            onOpen={() => onOpenAsset(selectedAsset)}
+            onOpenPath={onOpenPath}
+            onOpenVersion={onOpenAssetPath}
+            onSave={(notes, tags, variants, lods) => onUpdateAssetMetadata(selectedAsset.id, notes, tags, variants, lods)}
+            onSetThumbnail={() => void onSetAssetThumbnail(selectedAsset.id)}
+            projectRoot={snapshot.projectRoot}
+          />
+        </Suspense>
+      ) : null}
 
       {contextMenu ? <ContextMenu menu={contextMenu} clipboard={clipboard} currentPath={currentPath} rootPath={explorerRoot} assets={snapshot.assets} onCopy={(entry) => setClipboard(entry)} onDeleteAsset={deleteAsset} onDeleteFolder={deleteFolder} onDialog={setDialog} onDuplicate={(assetId) => void onDuplicateAsset(assetId)} onExport={(assetId) => void onExportAsset(assetId)} onNavigate={navigate} onOpen={(asset) => onOpenAsset(asset)} onOrganize={(assetId) => void onOrganizeAsset(assetId)} onPaste={paste} onToggleFavorite={toggleFavorite} /> : null}
       {dialog ? <AssetDialog dialog={dialog} folders={folders} rootPath={explorerRoot} onClose={() => setDialog(null)} onCreateAsset={onCreateAsset} onCreateFolder={onCreateFolder} onMoveAsset={onMoveAsset} onMoveFolder={onMoveFolder} onRenameAsset={onRenameAsset} onRenameFolder={onRenameFolder} /> : null}

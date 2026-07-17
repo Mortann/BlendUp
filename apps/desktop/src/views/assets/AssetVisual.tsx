@@ -1,8 +1,5 @@
 import { Box, Folder, Heart, Image as ImageIcon, MoreHorizontal, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import * as THREE from "three";
-import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { readProjectFileDataUrl } from "../../blendup/projectLoader";
 import type { BlendUpAsset } from "../../blendup/types";
 import type { AssetDisplayMode, AssetThumbSize } from "./model";
@@ -34,71 +31,79 @@ function ModelThumbnail({ asset, projectRoot }: { asset: BlendUpAsset; projectRo
     const element = canvas.current;
     if (!element) return;
     let disposed = false;
+    let three: typeof import("three") | undefined;
+    let scene: import("three").Scene | undefined;
+    let renderer: import("three").WebGLRenderer | undefined;
     setFailed(false);
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x202322);
-    const camera = new THREE.PerspectiveCamera(38, 16 / 10, 0.01, 10_000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: element });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    renderer.setSize(320, 200, false);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x1b2430, 2.8));
-    const key = new THREE.DirectionalLight(0xffffff, 3.4);
-    key.position.set(4, 7, 5);
-    scene.add(key);
+    void (async () => {
+      const [loadedThree, url] = await Promise.all([
+        import("three"),
+        readProjectFileDataUrl(projectRoot, asset.outputPath)
+      ]);
+      if (disposed || !url) return;
+      three = loadedThree;
+      scene = new loadedThree.Scene();
+      scene.background = new loadedThree.Color(0x202322);
+      const camera = new loadedThree.PerspectiveCamera(38, 16 / 10, 0.01, 10_000);
+      renderer = new loadedThree.WebGLRenderer({ antialias: true, canvas: element });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      renderer.setSize(320, 200, false);
+      renderer.outputColorSpace = loadedThree.SRGBColorSpace;
+      scene.add(new loadedThree.HemisphereLight(0xffffff, 0x1b2430, 2.8));
+      const key = new loadedThree.DirectionalLight(0xffffff, 3.4);
+      key.position.set(4, 7, 5);
+      scene.add(key);
 
-    const fitAndRender = (object: THREE.Object3D) => {
-      if (disposed) {
-        disposeObject(object);
-        return;
-      }
-      scene.add(object);
-      const bounds = new THREE.Box3().setFromObject(object);
-      if (bounds.isEmpty()) {
-        setFailed(true);
-        return;
-      }
-      const size = bounds.getSize(new THREE.Vector3());
-      const center = bounds.getCenter(new THREE.Vector3());
-      const max = Math.max(size.x, size.y, size.z, 0.1);
-      object.position.sub(center);
-      camera.position.set(max * 1.55, max * 1.05, max * 1.55);
-      camera.lookAt(0, 0, 0);
-      camera.near = Math.max(max / 1_000, 0.001);
-      camera.far = max * 100;
-      camera.updateProjectionMatrix();
-      renderer.render(scene, camera);
-    };
-
-    void readProjectFileDataUrl(projectRoot, asset.outputPath)
-      .then((url) => {
-        if (disposed || !url) return;
-        if (asset.format === "glb") {
-          new GLTFLoader().load(url, (result) => fitAndRender(result.scene), undefined, () => { if (!disposed) setFailed(true); });
-        } else {
-          new FBXLoader().load(url, fitAndRender, undefined, () => { if (!disposed) setFailed(true); });
+      const fitAndRender = (object: import("three").Object3D) => {
+        if (disposed || !three || !scene || !renderer) {
+          disposeObject(object, loadedThree);
+          return;
         }
-      })
-      .catch(() => { if (!disposed) setFailed(true); });
+        scene.add(object);
+        const bounds = new loadedThree.Box3().setFromObject(object);
+        if (bounds.isEmpty()) {
+          setFailed(true);
+          return;
+        }
+        const size = bounds.getSize(new loadedThree.Vector3());
+        const center = bounds.getCenter(new loadedThree.Vector3());
+        const max = Math.max(size.x, size.y, size.z, 0.1);
+        object.position.sub(center);
+        camera.position.set(max * 1.55, max * 1.05, max * 1.55);
+        camera.lookAt(0, 0, 0);
+        camera.near = Math.max(max / 1_000, 0.001);
+        camera.far = max * 100;
+        camera.updateProjectionMatrix();
+        renderer.render(scene, camera);
+      };
+
+      if (asset.format === "glb") {
+        const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+        if (!disposed) new GLTFLoader().load(url, (result) => fitAndRender(result.scene), undefined, () => { if (!disposed) setFailed(true); });
+      } else {
+        const { FBXLoader } = await import("three/examples/jsm/loaders/FBXLoader.js");
+        if (!disposed) new FBXLoader().load(url, fitAndRender, undefined, () => { if (!disposed) setFailed(true); });
+      }
+    })().catch(() => { if (!disposed) setFailed(true); });
 
     return () => {
       disposed = true;
-      disposeObject(scene);
-      renderer.dispose();
+      if (scene && three) disposeObject(scene, three);
+      renderer?.dispose();
     };
   }, [asset.format, asset.outputModifiedAt, asset.outputPath, projectRoot]);
 
   return failed ? <Box aria-hidden="true" size={34} /> : <canvas aria-label={`Aperçu 3D de ${asset.name}`} ref={canvas} />;
 }
 
-function disposeObject(object: THREE.Object3D) {
+function disposeObject(object: import("three").Object3D, three: typeof import("three")) {
   object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
+    if (!(child instanceof three.Mesh)) return;
     child.geometry?.dispose();
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     materials.forEach((material) => {
       Object.values(material).forEach((value) => {
-        if (value instanceof THREE.Texture) value.dispose();
+        if (value instanceof three.Texture) value.dispose();
       });
       material.dispose();
     });

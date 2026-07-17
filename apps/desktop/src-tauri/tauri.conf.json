@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "BlendUp",
   "version": "0.1.0",
-  "identifier": "com.blendup.app",
+  "identifier": "com.blendup.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",

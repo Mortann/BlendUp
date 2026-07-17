@@ -3,14 +3,19 @@ import {
   addAssetImages,
   copyAsset,
   createAsset,
+  createAssetVariant,
   createFolder,
   createProject,
   defaultUserSettings,
   deleteAsset,
+  deleteAssetVersion,
   deleteFolder,
   detectBlender,
   duplicateAsset,
   exportAsset,
+  exportAssetVersion,
+  exportAssetVersions,
+  generateAssetLods,
   loadDefaultProjectSnapshot,
   loadProjectSnapshot,
   loadUserSettings,
@@ -235,6 +240,60 @@ export function useBlendUpController() {
     }
   };
 
+  const handleExportAssetVersion = async (
+    assetId: string,
+    versionId: string,
+    versionKind: "variant" | "lod"
+  ): Promise<boolean> => {
+    if (!project || exportingAssetIds.includes(assetId)) return false;
+    setExportingAssetIds((current) => [...current, assetId]);
+    try {
+      const result = await exportAssetVersion({
+        assetId,
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot,
+        versionId,
+        versionKind
+      });
+      await refreshProject();
+      setOperationMessage({
+        detail: result.success ? result.outputPath : result.log,
+        title: result.message,
+        tone: result.success ? "success" : "error"
+      });
+      return result.success;
+    } catch (error) {
+      showError("Export de la version impossible", error);
+      return false;
+    } finally {
+      setExportingAssetIds((current) => current.filter((id) => id !== assetId));
+    }
+  };
+
+  const handleExportAssetVersions = async (assetId: string): Promise<boolean> => {
+    if (!project || exportingAssetIds.includes(assetId)) return false;
+    setExportingAssetIds((current) => [...current, assetId]);
+    try {
+      const result = await exportAssetVersions({
+        assetId,
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot
+      });
+      await refreshProject();
+      setOperationMessage({
+        detail: result.outputPath ?? result.log,
+        title: result.message,
+        tone: result.success ? "success" : "error"
+      });
+      return result.success;
+    } catch (error) {
+      showError("Export de toutes les versions impossible", error);
+      return false;
+    } finally {
+      setExportingAssetIds((current) => current.filter((id) => id !== assetId));
+    }
+  };
+
   const exportAllAssets = async () => {
     if (!project) return;
     const pending = project.assets.filter((asset) => asset.status !== "exported");
@@ -265,6 +324,20 @@ export function useBlendUpController() {
       });
     } catch (error) {
       showError("Impossible d'ouvrir Blender", error);
+    }
+  };
+
+  const openAssetPathInBlender = async (relativePath: string) => {
+    if (!project) return;
+    try {
+      await openBlendFile({
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: project.projectRoot,
+        relativePath,
+        showCommandPrompt: userSettings.showBlenderCommandPrompt
+      });
+    } catch (error) {
+      showError("Impossible d'ouvrir cette version dans Blender", error);
     }
   };
 
@@ -341,6 +414,29 @@ export function useBlendUpController() {
 
   const handleOrganizeAsset = (assetId: string) =>
     runAssetMutation("Organisation de l'asset impossible", (root) => organizeAsset(root, assetId));
+
+  const handleCreateAssetVariant = (assetId: string, name: string) =>
+    runAssetMutation("Creation de la variante impossible", (root) =>
+      createAssetVariant(root, assetId, name)
+    );
+
+  const handleGenerateAssetLods = (assetId: string) =>
+    runAssetMutation("Generation des LOD impossible", (root) =>
+      generateAssetLods({
+        assetId,
+        blenderPath: userSettings.blenderPath ?? undefined,
+        projectRoot: root
+      })
+    );
+
+  const handleDeleteAssetVersion = (
+    assetId: string,
+    versionId: string,
+    versionKind: "variant" | "lod"
+  ) =>
+    runAssetMutation("Suppression de la version impossible", (root) =>
+      deleteAssetVersion(root, assetId, versionId, versionKind)
+    );
 
   const handleRenameAsset = (assetId: string, newName: string) =>
     runAssetMutation("Renommage impossible", (root) => renameAsset(root, assetId, newName));
@@ -427,11 +523,16 @@ export function useBlendUpController() {
     handleAddAssetImages,
     handleCopyAsset,
     handleCreateAsset,
+    handleCreateAssetVariant,
     handleCreateFolder,
     handleDeleteAsset,
+    handleDeleteAssetVersion,
     handleDeleteFolder,
     handleDuplicateAsset,
     handleExportAsset,
+    handleExportAssetVersion,
+    handleExportAssetVersions,
+    handleGenerateAssetLods,
     handleMoveAsset,
     handleMoveFolder,
     handleOrganizeAsset,
@@ -444,6 +545,7 @@ export function useBlendUpController() {
     isDetectingBlender,
     isLoadingProject,
     openAssetInBlender,
+    openAssetPathInBlender,
     openContentPath,
     openDefaultProject,
     openProject,

@@ -64,6 +64,43 @@ bpy.ops.wm.read_factory_settings(use_empty=False)
 bpy.ops.wm.save_as_mainfile(filepath=str(target))
 "#;
 
+const GENERATE_LOD_SCRIPT: &str =
+    include_str!("../../../blender-addon/blendup/scripts/generate_lods.py");
+
+const GODOT_LOD_GROUP_SCRIPT: &str = r#"@tool
+extends Node3D
+
+@export var lod_scenes: Array[PackedScene] = []
+@export var lod_distances: PackedFloat32Array = PackedFloat32Array([20.0, 45.0, 90.0])
+
+var _current_lod := -1
+var _instance: Node
+
+func _ready() -> void:
+    _show_lod(0)
+
+func _process(_delta: float) -> void:
+    if Engine.is_editor_hint() or lod_scenes.is_empty():
+        return
+    var camera := get_viewport().get_camera_3d()
+    if camera == null:
+        return
+    var distance := global_position.distance_to(camera.global_position)
+    var index := 0
+    while index < lod_distances.size() and distance > lod_distances[index]:
+        index += 1
+    _show_lod(min(index, lod_scenes.size() - 1))
+
+func _show_lod(index: int) -> void:
+    if index == _current_lod or index < 0 or index >= lod_scenes.size():
+        return
+    if is_instance_valid(_instance):
+        _instance.queue_free()
+    _instance = lod_scenes[index].instantiate()
+    add_child(_instance)
+    _current_lod = index
+"#;
+
 const ASSET_SUPPORT_DIRECTORIES: [&str; 3] = ["textures", "references", "renders"];
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -147,6 +184,14 @@ struct AssetVariant {
     id: String,
     name: String,
     status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_modified_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_modified_at: Option<String>,
     #[serde(default)]
     notes: String,
 }
@@ -161,6 +206,16 @@ struct AssetLod {
     target_ratio: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     triangle_budget: Option<u64>,
+    #[serde(default)]
+    generated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_modified_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_modified_at: Option<String>,
     #[serde(default)]
     notes: String,
 }
@@ -544,6 +599,212 @@ fn export_asset(
 }
 
 #[tauri::command]
+fn export_asset_version(
+    project_root: String,
+    asset_id: String,
+    version_id: String,
+    version_kind: String,
+    blender_path: Option<String>,
+) -> Result<ExportAssetResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let (label, source_path, output_path) =
+        asset_version_paths(&asset, &version_id, &version_kind)?;
+    let (success, log, blender_display) = export_managed_file(
+        &root,
+        &source_path,
+        &output_path,
+        &asset.format,
+        blender_path.as_deref(),
+    )?;
+
+    Ok(ExportAssetResult {
+        success,
+        asset_id,
+        message: if success {
+            format!("{} a ete exporte.", label)
+        } else {
+            format!("L'export de {} a echoue.", label)
+        },
+        output_path: Some(root.join(&output_path).to_string_lossy().to_string()),
+        blender_path: blender_display,
+        log,
+    })
+}
+
+#[tauri::command]
+fn export_asset_versions(
+    project_root: String,
+    asset_id: String,
+    blender_path: Option<String>,
+) -> Result<ExportAssetResult, String> {
+    let base_result = export_asset(project_root.clone(), asset_id.clone(), blender_path.clone())?;
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let mut versions = Vec::new();
+    for variant in &asset.metadata.variants {
+        if let (Some(source), Some(output)) = (&variant.source_path, &variant.output_path) {
+            versions.push((variant.name.clone(), source.clone(), output.clone()));
+        }
+    }
+    for lod in &asset.metadata.lods {
+        if let (Some(source), Some(output)) = (&lod.source_path, &lod.output_path) {
+            versions.push((lod.level.clone(), source.clone(), output.clone()));
+        }
+    }
+
+    let total = versions.len() + 1;
+    let mut success_count = usize::from(base_result.success);
+    let mut logs = vec![format!("{}\n{}", asset.name, base_result.log)];
+    let mut blender_display = base_result.blender_path.clone();
+    for (label, source, output) in versions {
+        let (success, log, detected_blender) = export_managed_file(
+            &root,
+            &source,
+            &output,
+            &asset.format,
+            blender_path.as_deref(),
+        )?;
+        if success {
+            success_count += 1;
+        }
+        if blender_display.is_none() {
+            blender_display = detected_blender;
+        }
+        logs.push(format!("{label}\n{log}"));
+    }
+
+    let lod_scene = if project.engine == "godot" {
+        write_godot_lod_support(&root, &project, &asset)?
+    } else {
+        None
+    };
+    let success = success_count == total;
+    Ok(ExportAssetResult {
+        success,
+        asset_id,
+        message: if success {
+            format!("{} versions de {} ont ete exportees.", total, asset.name)
+        } else {
+            format!("{} version(s) sur {} exportee(s).", success_count, total)
+        },
+        output_path: lod_scene
+            .or_else(|| Some(root.join(&asset.output_path).to_string_lossy().to_string())),
+        blender_path: blender_display,
+        log: logs.join("\n\n---\n\n"),
+    })
+}
+
+fn asset_version_paths(
+    asset: &BlendUpAsset,
+    version_id: &str,
+    version_kind: &str,
+) -> Result<(String, String, String), String> {
+    if version_kind == "variant" {
+        let version = asset
+            .metadata
+            .variants
+            .iter()
+            .find(|item| item.id == version_id)
+            .ok_or_else(|| "Variante introuvable.".to_string())?;
+        Ok((
+            version.name.clone(),
+            version
+                .source_path
+                .clone()
+                .ok_or_else(|| "Cette variante n'a pas encore de fichier Blender.".to_string())?,
+            version
+                .output_path
+                .clone()
+                .ok_or_else(|| "Cette variante n'a pas de destination d'export.".to_string())?,
+        ))
+    } else if version_kind == "lod" {
+        let version = asset
+            .metadata
+            .lods
+            .iter()
+            .find(|item| item.id == version_id)
+            .ok_or_else(|| "LOD introuvable.".to_string())?;
+        Ok((
+            version.level.clone(),
+            version
+                .source_path
+                .clone()
+                .ok_or_else(|| "Ce LOD n'a pas encore de fichier Blender.".to_string())?,
+            version
+                .output_path
+                .clone()
+                .ok_or_else(|| "Ce LOD n'a pas de destination d'export.".to_string())?,
+        ))
+    } else {
+        Err("Type de version invalide.".to_string())
+    }
+}
+
+fn export_managed_file(
+    root: &Path,
+    source_path: &str,
+    output_path: &str,
+    format: &str,
+    blender_path: Option<&str>,
+) -> Result<(bool, String, Option<String>), String> {
+    let source = root.join(safe_relative_path(source_path)?);
+    let output = root.join(safe_relative_path(output_path)?);
+    if !source.is_file() {
+        return Ok((
+            false,
+            format!("Fichier Blender introuvable: {}", source.display()),
+            None,
+        ));
+    }
+    let Some(blender) = find_blender_executable(blender_path) else {
+        return Ok((
+            false,
+            "Blender est introuvable. Configure son chemin dans Parametres.".to_string(),
+            None,
+        ));
+    };
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Impossible de creer {}: {error}", parent.display()))?;
+    }
+    let temp_dir = root.join(".blendup").join("temp");
+    fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Impossible de preparer l'export: {error}"))?;
+    let script = temp_dir.join("export_asset.py");
+    fs::write(&script, EXPORT_SCRIPT)
+        .map_err(|error| format!("Impossible de preparer Blender: {error}"))?;
+    let process = Command::new(&blender)
+        .arg("--background")
+        .arg(&source)
+        .arg("--python")
+        .arg(&script)
+        .arg("--")
+        .arg(&output)
+        .arg(format)
+        .output();
+    let blender_display = blender.to_string_lossy().to_string();
+    let process = match process {
+        Ok(process) => process,
+        Err(error) => {
+            return Ok((
+                false,
+                format!("Impossible de lancer Blender depuis {blender_display}: {error}"),
+                Some(blender_display),
+            ))
+        }
+    };
+    let log = command_log(&process.stdout, &process.stderr);
+    Ok((
+        process.status.success() && output.is_file(),
+        log,
+        Some(blender_display),
+    ))
+}
+
+#[tauri::command]
 fn open_project_path(project_root: String, relative_path: String) -> Result<(), String> {
     let root = validated_project_root(&project_root)?;
     let relative = safe_relative_path(&relative_path)?;
@@ -551,7 +812,11 @@ fn open_project_path(project_root: String, relative_path: String) -> Result<(), 
     if !target.exists() {
         return Err(format!("{} n'existe pas.", target.display()));
     }
-    open_with_system(&target)
+    if target.is_file() {
+        reveal_with_system(&target)
+    } else {
+        open_with_system(&target)
+    }
 }
 
 #[tauri::command]
@@ -852,6 +1117,233 @@ fn organize_asset(project_root: String, asset_id: String) -> Result<AssetMutatio
 }
 
 #[tauri::command]
+fn create_asset_variant(
+    project_root: String,
+    asset_id: String,
+    name: String,
+) -> Result<AssetMutationResult, String> {
+    validate_item_name(&name)?;
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    require_asset_workspace(&root, &project, &asset)?;
+    let mut metadata = metadata_for_asset(&root, &asset);
+    if metadata
+        .details
+        .variants
+        .iter()
+        .any(|variant| variant.name.eq_ignore_ascii_case(name.trim()))
+    {
+        return Err("Une variante porte deja ce nom.".to_string());
+    }
+
+    let key = version_key(&name);
+    let source = root.join(&asset.source_path);
+    let target = source
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?
+        .join(format!("{}.variant.{key}.blend", asset.name));
+    if target.exists() {
+        return Err(format!("{} existe deja.", target.display()));
+    }
+    copy_file(&source, &target)?;
+    let source_path = relative_string(&root, &target)?;
+    let output = version_output_path(&root, &asset, "variants", &key)?;
+    let output_path = relative_string(&root, &output)?;
+    let id = asset_id_for_path(&source_path);
+    metadata.details.variants.push(AssetVariant {
+        id,
+        name: name.trim().to_string(),
+        status: "ready".to_string(),
+        source_path: Some(source_path),
+        output_path: Some(output_path),
+        source_modified_at: modified_time(&target).map(time_label),
+        output_modified_at: None,
+        notes: String::new(),
+    });
+    write_asset_metadata(&root, &metadata)?;
+
+    Ok(AssetMutationResult {
+        message: format!("La variante {} est prete dans Blender.", name.trim()),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
+fn generate_asset_lods(
+    project_root: String,
+    asset_id: String,
+    blender_path: Option<String>,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    require_asset_workspace(&root, &project, &asset)?;
+    let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
+        "Blender est introuvable. Configure son chemin dans Parametres.".to_string()
+    })?;
+    let source = root.join(&asset.source_path);
+    let workspace = source
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?;
+    let mut metadata = metadata_for_asset(&root, &asset);
+    let presets = [("LOD1", 50.0), ("LOD2", 25.0), ("LOD3", 12.5)];
+    let mut pending = Vec::new();
+
+    for (level, ratio) in presets {
+        if metadata
+            .details
+            .lods
+            .iter()
+            .any(|lod| lod.level.eq_ignore_ascii_case(level) && lod.source_path.is_some())
+        {
+            continue;
+        }
+        let key = version_key(level);
+        let target = workspace.join(format!("{}.lod.{key}.blend", asset.name));
+        if target.exists() {
+            return Err(format!(
+                "{} existe deja mais n'est pas lie a l'asset.",
+                target.display()
+            ));
+        }
+        pending.push((level.to_string(), ratio, key, target));
+    }
+
+    if pending.is_empty() {
+        return Ok(AssetMutationResult {
+            message: "Les trois LOD automatiques existent deja.".to_string(),
+            asset_id: Some(asset.id),
+        });
+    }
+
+    let temp_dir = root.join(".blendup").join("temp");
+    fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Impossible de preparer les LOD: {error}"))?;
+    let script = temp_dir.join("generate_lods.py");
+    fs::write(&script, GENERATE_LOD_SCRIPT)
+        .map_err(|error| format!("Impossible de preparer Blender: {error}"))?;
+    let mut command = Command::new(&blender);
+    command
+        .arg("--background")
+        .arg("--python")
+        .arg(&script)
+        .arg("--")
+        .arg(&source);
+    for (_, ratio, _, target) in &pending {
+        command.arg(target).arg((ratio / 100.0).to_string());
+    }
+    let output = command
+        .output()
+        .map_err(|error| format!("Impossible de lancer Blender: {error}"))?;
+    if !output.status.success() || pending.iter().any(|(_, _, _, target)| !target.is_file()) {
+        for (_, _, _, target) in &pending {
+            if target.is_file() {
+                let _ = fs::remove_file(target);
+            }
+        }
+        return Err(format!(
+            "Blender n'a pas genere les LOD. {}",
+            command_log(&output.stdout, &output.stderr)
+        ));
+    }
+
+    for (level, ratio, key, target) in pending {
+        let source_path = relative_string(&root, &target)?;
+        let output_path =
+            relative_string(&root, &version_output_path(&root, &asset, "lods", &key)?)?;
+        metadata.details.lods.push(AssetLod {
+            id: asset_id_for_path(&source_path),
+            level,
+            status: "ready".to_string(),
+            target_ratio: Some(ratio),
+            triangle_budget: None,
+            generated: true,
+            source_path: Some(source_path),
+            output_path: Some(output_path),
+            source_modified_at: modified_time(&target).map(time_label),
+            output_modified_at: None,
+            notes: "Genere automatiquement avec un modificateur Decimate editable.".to_string(),
+        });
+    }
+    metadata.details.lods.sort_by(|left, right| {
+        left.target_ratio
+            .partial_cmp(&right.target_ratio)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .reverse()
+    });
+    write_asset_metadata(&root, &metadata)?;
+
+    Ok(AssetMutationResult {
+        message: "LOD1, LOD2 et LOD3 ont ete generes dans Blender.".to_string(),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
+fn delete_asset_version(
+    project_root: String,
+    asset_id: String,
+    version_id: String,
+    version_kind: String,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let source = root.join(&asset.source_path);
+    let workspace = source
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?;
+    let mut metadata = metadata_for_asset(&root, &asset);
+    let (label, source_path, output_path) = if version_kind == "variant" {
+        let index = metadata
+            .details
+            .variants
+            .iter()
+            .position(|item| item.id == version_id)
+            .ok_or_else(|| "Variante introuvable.".to_string())?;
+        let item = metadata.details.variants.remove(index);
+        (item.name, item.source_path, item.output_path)
+    } else if version_kind == "lod" {
+        let index = metadata
+            .details
+            .lods
+            .iter()
+            .position(|item| item.id == version_id)
+            .ok_or_else(|| "LOD introuvable.".to_string())?;
+        let item = metadata.details.lods.remove(index);
+        (item.level, item.source_path, item.output_path)
+    } else {
+        return Err("Type de version invalide.".to_string());
+    };
+
+    if let Some(relative) = source_path {
+        let target = root.join(safe_relative_path(&relative)?);
+        if target == source || target.parent() != Some(workspace) {
+            return Err("Le fichier de version n'est pas dans le dossier de l'asset.".to_string());
+        }
+        if target.exists() {
+            trash_path(&target)?;
+        }
+    }
+    if let Some(relative) = output_path {
+        let target = root.join(safe_relative_path(&relative)?);
+        if !target.starts_with(root.join(&project.paths.engine_assets_root)) {
+            return Err("L'export de version est hors du dossier Assets.".to_string());
+        }
+        if target.exists() {
+            trash_path(&target)?;
+        }
+    }
+    write_asset_metadata(&root, &metadata)?;
+
+    Ok(AssetMutationResult {
+        message: format!("{} a ete place dans la corbeille.", label),
+        asset_id: Some(asset.id),
+    })
+}
+
+#[tauri::command]
 fn rename_asset(
     project_root: String,
     asset_id: String,
@@ -1081,7 +1573,7 @@ fn update_asset_metadata(
         .filter(|item| !item.name.trim().is_empty())
         .map(|mut item| {
             item.name = item.name.trim().to_string();
-            item.status = normalize_item_status(&item.status);
+            item.status = normalize_version_status(&item.status);
             item
         })
         .collect();
@@ -1090,7 +1582,7 @@ fn update_asset_metadata(
         .filter(|item| !item.level.trim().is_empty())
         .map(|mut item| {
             item.level = item.level.trim().to_string();
-            item.status = normalize_item_status(&item.status);
+            item.status = normalize_version_status(&item.status);
             item
         })
         .collect();
@@ -1266,8 +1758,10 @@ fn relocate_asset(
     }
     let new_output = output_path_for_source(root, project, target)?;
     let old_output = root.join(&asset.output_path);
+    let mut metadata = metadata_for_asset(root, asset);
     fs::rename(&source, target)
         .map_err(|error| format!("Impossible de deplacer {}: {error}", source.display()))?;
+    rename_managed_version_sources(root, &source, target, &mut metadata.details)?;
     if old_output.is_file() {
         if let Some(parent) = new_output.parent() {
             fs::create_dir_all(parent)
@@ -1280,8 +1774,8 @@ fn relocate_asset(
         }
     }
 
-    let mut metadata = metadata_for_asset(root, asset);
     metadata.source_path = relative_string(root, target)?;
+    relocate_version_output_paths(root, &old_output, &new_output, &mut metadata.details)?;
     write_asset_metadata(root, &metadata)?;
     let mut state = read_export_state(root);
     if let Some(record) = state.exports.get_mut(&asset.id) {
@@ -1304,6 +1798,215 @@ fn asset_owns_workspace(root: &Path, project: &ProjectConfig, asset: &BlendUpAss
             .file_stem()
             .and_then(|value| value.to_str())
             .is_some_and(|name| name.eq_ignore_ascii_case(&asset.name))
+}
+
+fn require_asset_workspace(
+    root: &Path,
+    project: &ProjectConfig,
+    asset: &BlendUpAsset,
+) -> Result<(), String> {
+    if asset_owns_workspace(root, project, asset) {
+        Ok(())
+    } else {
+        Err("Range d'abord cet asset dans son propre dossier.".to_string())
+    }
+}
+
+fn version_key(value: &str) -> String {
+    let key = slug(value);
+    if key.is_empty() {
+        "version".to_string()
+    } else {
+        key
+    }
+}
+
+fn version_output_path(
+    root: &Path,
+    asset: &BlendUpAsset,
+    directory: &str,
+    key: &str,
+) -> Result<PathBuf, String> {
+    let base_output = root.join(safe_relative_path(&asset.output_path)?);
+    let parent = base_output
+        .parent()
+        .ok_or_else(|| "Dossier d'export invalide.".to_string())?;
+    Ok(parent
+        .join(directory)
+        .join(format!("{key}.{}", asset.format)))
+}
+
+fn rename_managed_version_sources(
+    root: &Path,
+    old_base: &Path,
+    new_base: &Path,
+    details: &mut AssetMetadataView,
+) -> Result<(), String> {
+    let old_parent = old_base
+        .parent()
+        .ok_or_else(|| "Dossier source invalide.".to_string())?;
+    let new_parent = new_base
+        .parent()
+        .ok_or_else(|| "Dossier cible invalide.".to_string())?;
+    let old_stem = old_base
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Nom source invalide.".to_string())?;
+    let new_stem = new_base
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Nom cible invalide.".to_string())?;
+
+    let relocate = |source_path: &mut Option<String>| -> Result<(), String> {
+        let Some(relative) = source_path.clone() else {
+            return Ok(());
+        };
+        let existing = root.join(safe_relative_path(&relative)?);
+        if existing.parent() != Some(old_parent) {
+            return Ok(());
+        }
+        let Some(file_name) = existing.file_name().and_then(|value| value.to_str()) else {
+            return Ok(());
+        };
+        let Some(suffix) = file_name.strip_prefix(&format!("{old_stem}.")) else {
+            return Ok(());
+        };
+        if !suffix.starts_with("variant.") && !suffix.starts_with("lod.") {
+            return Ok(());
+        }
+        let target = new_parent.join(format!("{new_stem}.{suffix}"));
+        if existing != target && existing.exists() {
+            if target.exists() {
+                return Err(format!("{} existe deja.", target.display()));
+            }
+            fs::rename(&existing, &target).map_err(|error| {
+                format!("Impossible de deplacer {}: {error}", existing.display())
+            })?;
+        }
+        *source_path = Some(relative_string(root, &target)?);
+        Ok(())
+    };
+
+    for variant in &mut details.variants {
+        relocate(&mut variant.source_path)?;
+    }
+    for lod in &mut details.lods {
+        relocate(&mut lod.source_path)?;
+    }
+    Ok(())
+}
+
+fn relocate_version_output_paths(
+    root: &Path,
+    old_base_output: &Path,
+    new_base_output: &Path,
+    details: &mut AssetMetadataView,
+) -> Result<(), String> {
+    let Some(old_parent) = old_base_output.parent() else {
+        return Ok(());
+    };
+    let Some(new_parent) = new_base_output.parent() else {
+        return Ok(());
+    };
+    let old_relative = relative_string(root, old_parent)?;
+    let new_relative = relative_string(root, new_parent)?;
+    for output_path in details
+        .variants
+        .iter_mut()
+        .map(|item| &mut item.output_path)
+        .chain(details.lods.iter_mut().map(|item| &mut item.output_path))
+    {
+        if let Some(value) = output_path.as_mut() {
+            if path_is_inside(value, &old_relative) {
+                *value = replace_path_prefix(value, &old_relative, &new_relative);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn prepare_copied_version_metadata(
+    root: &Path,
+    old_base: &Path,
+    new_base: &Path,
+    project: &ProjectConfig,
+    details: &mut AssetMetadataView,
+) -> Result<(), String> {
+    let old_stem = old_base
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Nom source invalide.".to_string())?;
+    let new_stem = new_base
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Nom de copie invalide.".to_string())?;
+    let new_workspace = new_base
+        .parent()
+        .ok_or_else(|| "Dossier de copie invalide.".to_string())?;
+    let new_base_output = output_path_for_source(root, project, new_base)?;
+    let output_parent = new_base_output
+        .parent()
+        .ok_or_else(|| "Dossier d'export invalide.".to_string())?;
+    let export_format = if project.engine == "godot" {
+        "glb"
+    } else {
+        "fbx"
+    };
+
+    let prepare = |source_path: &mut Option<String>,
+                   output_path: &mut Option<String>,
+                   id: &mut String,
+                   directory: &str,
+                   key: &str|
+     -> Result<(), String> {
+        let Some(relative) = source_path.clone() else {
+            *output_path = None;
+            return Ok(());
+        };
+        let old_version = root.join(safe_relative_path(&relative)?);
+        let Some(file_name) = old_version.file_name().and_then(|value| value.to_str()) else {
+            return Ok(());
+        };
+        let copied = new_workspace.join(file_name);
+        let suffix = file_name
+            .strip_prefix(&format!("{old_stem}."))
+            .unwrap_or(file_name);
+        let renamed = new_workspace.join(format!("{new_stem}.{suffix}"));
+        if copied != renamed && copied.exists() {
+            fs::rename(&copied, &renamed)
+                .map_err(|error| format!("Impossible de renommer {}: {error}", copied.display()))?;
+        }
+        let new_source = relative_string(root, &renamed)?;
+        *id = asset_id_for_path(&new_source);
+        *source_path = Some(new_source);
+        *output_path = Some(relative_string(
+            root,
+            &output_parent
+                .join(directory)
+                .join(format!("{key}.{export_format}")),
+        )?);
+        Ok(())
+    };
+
+    for variant in &mut details.variants {
+        prepare(
+            &mut variant.source_path,
+            &mut variant.output_path,
+            &mut variant.id,
+            "variants",
+            &version_key(&variant.name),
+        )?;
+    }
+    for lod in &mut details.lods {
+        prepare(
+            &mut lod.source_path,
+            &mut lod.output_path,
+            &mut lod.id,
+            "lods",
+            &version_key(&lod.level),
+        )?;
+    }
+    Ok(())
 }
 
 fn prepare_asset_directories(workspace: &Path) -> Result<(), String> {
@@ -1391,6 +2094,7 @@ fn copy_asset_into(
     metadata.id = id.clone();
     metadata.source_path = source_path;
     metadata.details.thumbnail_path = None;
+    prepare_copied_version_metadata(root, &source, &target, project, &mut metadata.details)?;
     write_asset_metadata(root, &metadata)?;
     Ok(AssetMutationResult {
         message: format!("Une copie de {} a ete creee.", asset.name),
@@ -1415,6 +2119,8 @@ fn relocate_folder(
     let new_rel = relative_string(root, target)?;
     let old_output = output_folder_for_art_path(root, project, Path::new(&old_rel))?;
     let new_output = output_folder_for_art_path(root, project, Path::new(&new_rel))?;
+    let old_output_rel = relative_string(root, &old_output)?;
+    let new_output_rel = relative_string(root, &new_output)?;
 
     fs::rename(source, target)
         .map_err(|error| format!("Impossible de deplacer {}: {error}", source.display()))?;
@@ -1431,6 +2137,44 @@ fn relocate_folder(
     for mut metadata in read_asset_metadata(root).into_values() {
         if path_is_inside(&metadata.source_path, &old_rel) {
             metadata.source_path = replace_path_prefix(&metadata.source_path, &old_rel, &new_rel);
+            for source_path in metadata
+                .details
+                .variants
+                .iter_mut()
+                .map(|item| &mut item.source_path)
+                .chain(
+                    metadata
+                        .details
+                        .lods
+                        .iter_mut()
+                        .map(|item| &mut item.source_path),
+                )
+            {
+                if let Some(value) = source_path.as_mut() {
+                    if path_is_inside(value, &old_rel) {
+                        *value = replace_path_prefix(value, &old_rel, &new_rel);
+                    }
+                }
+            }
+            for output_path in metadata
+                .details
+                .variants
+                .iter_mut()
+                .map(|item| &mut item.output_path)
+                .chain(
+                    metadata
+                        .details
+                        .lods
+                        .iter_mut()
+                        .map(|item| &mut item.output_path),
+                )
+            {
+                if let Some(value) = output_path.as_mut() {
+                    if path_is_inside(value, &old_output_rel) {
+                        *value = replace_path_prefix(value, &old_output_rel, &new_output_rel);
+                    }
+                }
+            }
             if let Some(record) = state.exports.get_mut(&metadata.id) {
                 let output =
                     output_path_for_source(root, project, &root.join(&metadata.source_path))?;
@@ -1468,6 +2212,100 @@ fn output_folder_for_art_path(
         .strip_prefix(Path::new(&project.paths.art_root))
         .map_err(|_| "Le dossier doit rester dans Art.".to_string())?;
     Ok(root.join(&project.paths.engine_assets_root).join(relative))
+}
+
+fn write_godot_lod_support(
+    root: &Path,
+    project: &ProjectConfig,
+    asset: &BlendUpAsset,
+) -> Result<Option<String>, String> {
+    let base_output = root.join(safe_relative_path(&asset.output_path)?);
+    if !base_output.is_file() {
+        return Ok(None);
+    }
+    let mut lods = asset
+        .metadata
+        .lods
+        .iter()
+        .filter_map(|lod| {
+            let output = root.join(safe_relative_path(lod.output_path.as_deref()?).ok()?);
+            output
+                .is_file()
+                .then_some((lod.target_ratio.unwrap_or(0.0), output))
+        })
+        .collect::<Vec<_>>();
+    lods.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if lods.is_empty() {
+        return Ok(None);
+    }
+
+    let engine_root = root.join(&project.paths.engine_root);
+    let res_path = |path: &Path| -> Result<String, String> {
+        let relative = path
+            .strip_prefix(&engine_root)
+            .map_err(|_| "Un export LOD est hors du projet Godot.".to_string())?;
+        Ok(format!("res://{}", normalize_path(relative)))
+    };
+    let helper = root
+        .join(&project.paths.engine_assets_root)
+        .join("BlendUp")
+        .join("blendup_lod_group.gd");
+    fs::create_dir_all(
+        helper
+            .parent()
+            .ok_or_else(|| "Dossier d'aide Godot invalide.".to_string())?,
+    )
+    .map_err(|error| format!("Impossible de preparer l'aide Godot: {error}"))?;
+    fs::write(&helper, GODOT_LOD_GROUP_SCRIPT)
+        .map_err(|error| format!("Impossible d'ecrire {}: {error}", helper.display()))?;
+
+    let mut scenes = vec![base_output];
+    scenes.extend(lods.into_iter().map(|(_, path)| path));
+    let helper_resource = res_path(&helper)?;
+    let mut content = format!(
+        "[gd_scene load_steps={} format=3]\n\n[ext_resource type=\"Script\" path=\"{}\" id=\"1_script\"]\n",
+        scenes.len() + 2,
+        helper_resource
+    );
+    for (index, scene) in scenes.iter().enumerate() {
+        content.push_str(&format!(
+            "[ext_resource type=\"PackedScene\" path=\"{}\" id=\"{}_lod\"]\n",
+            res_path(scene)?,
+            index + 2
+        ));
+    }
+    let resources = scenes
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("ExtResource(\"{}_lod\")", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let distances = (0..scenes.len().saturating_sub(1))
+        .map(|index| match index {
+            0 => 20.0,
+            1 => 45.0,
+            2 => 90.0,
+            _ => 90.0 * 2_f64.powi((index - 2) as i32),
+        })
+        .map(|distance| format!("{distance:.1}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    content.push_str(&format!(
+        "\n[node name=\"{}_LOD\" type=\"Node3D\"]\nscript = ExtResource(\"1_script\")\nlod_scenes = Array[PackedScene]([{}])\nlod_distances = PackedFloat32Array([{}])\n",
+        asset.name, resources, distances
+    ));
+    let scene_path = scenes[0]
+        .parent()
+        .ok_or_else(|| "Dossier d'export LOD invalide.".to_string())?
+        .join(format!("{}_lod.tscn", asset.name));
+    fs::write(&scene_path, content)
+        .map_err(|error| format!("Impossible d'ecrire {}: {error}", scene_path.display()))?;
+    Ok(Some(scene_path.to_string_lossy().to_string()))
 }
 
 fn path_is_inside(path: &str, directory: &str) -> bool {
@@ -1691,6 +2529,7 @@ fn scan_assets(
             .to_string();
 
         let mut details = metadata.map(|item| item.details).unwrap_or_default();
+        refresh_version_statuses(&root, &mut details);
         if details.thumbnail_path.is_none() {
             let legacy_thumbnail = root
                 .join(".blendup")
@@ -1820,11 +2659,15 @@ fn normalize_asset_metadata(value: &Value) -> Option<AssetMetadata> {
                     Some(AssetVariant {
                         id: json_string(item, "id").unwrap_or_else(|| format!("variant_{index}")),
                         name: json_string(item, "name")?,
-                        status: normalize_item_status(
+                        status: normalize_version_status(
                             item.get("status")
                                 .and_then(Value::as_str)
-                                .unwrap_or("planned"),
+                                .unwrap_or("missing"),
                         ),
+                        source_path: json_string(item, "sourcePath"),
+                        output_path: json_string(item, "outputPath"),
+                        source_modified_at: json_string(item, "sourceModifiedAt"),
+                        output_modified_at: json_string(item, "outputModifiedAt"),
                         notes: json_string(item, "notes").unwrap_or_default(),
                     })
                 })
@@ -1842,13 +2685,21 @@ fn normalize_asset_metadata(value: &Value) -> Option<AssetMetadata> {
                     Some(AssetLod {
                         id: json_string(item, "id").unwrap_or_else(|| format!("lod_{index}")),
                         level: json_string(item, "level")?,
-                        status: normalize_item_status(
+                        status: normalize_version_status(
                             item.get("status")
                                 .and_then(Value::as_str)
-                                .unwrap_or("planned"),
+                                .unwrap_or("missing"),
                         ),
                         target_ratio: item.get("targetRatio").and_then(Value::as_f64),
                         triangle_budget: item.get("triangleBudget").and_then(Value::as_u64),
+                        generated: item
+                            .get("generated")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                        source_path: json_string(item, "sourcePath"),
+                        output_path: json_string(item, "outputPath"),
+                        source_modified_at: json_string(item, "sourceModifiedAt"),
+                        output_modified_at: json_string(item, "outputModifiedAt"),
                         notes: json_string(item, "notes").unwrap_or_default(),
                     })
                 })
@@ -1871,13 +2722,69 @@ fn normalize_asset_metadata(value: &Value) -> Option<AssetMetadata> {
     })
 }
 
-fn normalize_item_status(value: &str) -> String {
+fn normalize_version_status(value: &str) -> String {
     match value {
-        "working" | "in_blender" | "in_progress" => "working",
-        "ready" | "exported" | "in_unity" | "validated" => "ready",
-        _ => "planned",
+        "exported" => "exported",
+        "outdated" => "outdated",
+        "ready" => "ready",
+        "error" => "error",
+        _ => "missing",
     }
     .to_string()
+}
+
+fn refresh_version_statuses(root: &Path, details: &mut AssetMetadataView) {
+    fn refresh(
+        root: &Path,
+        source_path: &Option<String>,
+        output_path: &Option<String>,
+    ) -> (String, Option<String>, Option<String>) {
+        let Some(source_relative) = source_path else {
+            return ("missing".to_string(), None, None);
+        };
+        let Ok(source_relative) = safe_relative_path(source_relative) else {
+            return ("error".to_string(), None, None);
+        };
+        let source = root.join(source_relative);
+        if !source.is_file() {
+            return ("missing".to_string(), None, None);
+        }
+        let source_time = modified_time(&source);
+        let output_time = output_path
+            .as_ref()
+            .and_then(|value| safe_relative_path(value).ok())
+            .map(|value| root.join(value))
+            .and_then(|path| modified_time(&path));
+        let status = match (source_time, output_time) {
+            (Some(source_modified), Some(output_modified))
+                if output_modified >= source_modified =>
+            {
+                "exported"
+            }
+            (_, Some(_)) => "outdated",
+            _ => "ready",
+        };
+        (
+            status.to_string(),
+            source_time.map(time_label),
+            output_time.map(time_label),
+        )
+    }
+
+    for variant in &mut details.variants {
+        let (status, source_modified, output_modified) =
+            refresh(root, &variant.source_path, &variant.output_path);
+        variant.status = status;
+        variant.source_modified_at = source_modified;
+        variant.output_modified_at = output_modified;
+    }
+    for lod in &mut details.lods {
+        let (status, source_modified, output_modified) =
+            refresh(root, &lod.source_path, &lod.output_path);
+        lod.status = status;
+        lod.source_modified_at = source_modified;
+        lod.output_modified_at = output_modified;
+    }
 }
 
 fn collect_blend_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -1898,11 +2805,27 @@ fn collect_blend_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(),
             .extension()
             .and_then(|value| value.to_str())
             .is_some_and(|extension| extension.eq_ignore_ascii_case("blend"))
+            && !is_managed_version_file(&path)
         {
             files.push(path);
         }
     }
     Ok(())
+}
+
+fn is_managed_version_file(path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let base = stem
+        .split_once(".variant.")
+        .or_else(|| stem.split_once(".lod."))
+        .map(|(base, _)| base);
+    let Some(base) = base else {
+        return false;
+    };
+    path.parent()
+        .is_some_and(|parent| parent.join(format!("{base}.blend")).is_file())
 }
 
 fn collect_problems(
@@ -2406,6 +3329,21 @@ fn open_with_system(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))
 }
 
+fn reveal_with_system(path: &Path) -> Result<(), String> {
+    let result = if cfg!(target_os = "windows") {
+        Command::new("explorer").arg("/select,").arg(path).spawn()
+    } else if cfg!(target_os = "macos") {
+        Command::new("open").arg("-R").arg(path).spawn()
+    } else {
+        Command::new("xdg-open")
+            .arg(path.parent().unwrap_or(path))
+            .spawn()
+    };
+    result
+        .map(|_| ())
+        .map_err(|error| format!("Impossible d'afficher {}: {error}", path.display()))
+}
+
 #[cfg(target_os = "windows")]
 fn apply_command_window_preference(command: &mut Command, show_command_prompt: bool) {
     use std::os::windows::process::CommandExt;
@@ -2429,6 +3367,8 @@ fn main() {
             update_project_engine,
             detect_blender,
             export_asset,
+            export_asset_version,
+            export_asset_versions,
             open_project_path,
             open_blend_file,
             read_project_file_data_url,
@@ -2436,6 +3376,9 @@ fn main() {
             create_folder,
             create_asset,
             organize_asset,
+            create_asset_variant,
+            generate_asset_lods,
+            delete_asset_version,
             rename_asset,
             move_asset,
             copy_asset,
@@ -2548,8 +3491,8 @@ mod tests {
         assert_eq!(assets[0].id, "asset_crate_legacy");
         assert_eq!(assets[0].metadata.notes, "Garder les proportions.");
         assert_eq!(assets[0].metadata.tags, vec!["prop", "wood"]);
-        assert_eq!(assets[0].metadata.variants[0].status, "working");
-        assert_eq!(assets[0].metadata.lods[0].status, "ready");
+        assert_eq!(assets[0].metadata.variants[0].status, "missing");
+        assert_eq!(assets[0].metadata.lods[0].status, "missing");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -2580,6 +3523,27 @@ mod tests {
             .unwrap()
             .remove(0);
         let original_id = asset.id.clone();
+        fs::write(asset_folder.join("Rock.variant.moss.blend"), b"variant").unwrap();
+        fs::create_dir_all(output_folder.join("variants")).unwrap();
+        fs::write(
+            output_folder.join("variants").join("moss.glb"),
+            b"variant-glb",
+        )
+        .unwrap();
+        let mut metadata = metadata_for_asset(&root, &asset);
+        metadata.details.variants.push(AssetVariant {
+            id: "variant_moss".to_string(),
+            name: "Moss".to_string(),
+            status: "exported".to_string(),
+            source_path: Some("Art/Blender/Environment/Rock/Rock.variant.moss.blend".to_string()),
+            output_path: Some(
+                "Godot/Assets/Blender/Environment/Rock/variants/moss.glb".to_string(),
+            ),
+            source_modified_at: None,
+            output_modified_at: None,
+            notes: String::new(),
+        });
+        write_asset_metadata(&root, &metadata).unwrap();
         relocate_asset_to_directory(&root, &project, &asset, &target).unwrap();
 
         assert!(target.join("Rock").join("Rock.blend").is_file());
@@ -2596,11 +3560,28 @@ mod tests {
             .join("Rock")
             .join("Rock.glb")
             .is_file());
+        assert!(target
+            .join("Rock")
+            .join("Rock.variant.moss.blend")
+            .is_file());
+        assert!(root
+            .join("Godot")
+            .join("Assets")
+            .join("Blender")
+            .join("Props")
+            .join("Rock")
+            .join("variants")
+            .join("moss.glb")
+            .is_file());
         let moved = scan_assets(&root, &project, &ExportState::default())
             .unwrap()
             .remove(0);
         assert_eq!(moved.id, original_id);
         assert_eq!(moved.folder, "Art/Blender/Props/Rock");
+        assert_eq!(
+            moved.metadata.variants[0].source_path.as_deref(),
+            Some("Art/Blender/Props/Rock/Rock.variant.moss.blend")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -2677,12 +3658,25 @@ mod tests {
         let workspace = root.join("Art").join("Props").join("Crate");
         fs::create_dir_all(workspace.join("textures")).unwrap();
         fs::write(workspace.join("Crate.blend"), b"blend").unwrap();
+        fs::write(workspace.join("Crate.variant.red.blend"), b"variant").unwrap();
         fs::write(workspace.join("textures").join("wood.png"), b"image").unwrap();
         fs::create_dir_all(root.join("Godot").join("Assets")).unwrap();
 
         let asset = scan_assets(&root, &project, &ExportState::default())
             .unwrap()
             .remove(0);
+        let mut metadata = metadata_for_asset(&root, &asset);
+        metadata.details.variants.push(AssetVariant {
+            id: "variant_red".to_string(),
+            name: "Red".to_string(),
+            status: "ready".to_string(),
+            source_path: Some("Art/Props/Crate/Crate.variant.red.blend".to_string()),
+            output_path: Some("Godot/Assets/Props/Crate/variants/red.glb".to_string()),
+            source_modified_at: None,
+            output_modified_at: None,
+            notes: String::new(),
+        });
+        write_asset_metadata(&root, &metadata).unwrap();
         let result =
             copy_asset_into(&root, &project, &asset, &root.join("Art").join("Props")).unwrap();
 
@@ -2699,7 +3693,166 @@ mod tests {
             .join("textures")
             .join("wood.png")
             .is_file());
+        assert!(root
+            .join("Art")
+            .join("Props")
+            .join("Crate Copy")
+            .join("Crate Copy.variant.red.blend")
+            .is_file());
+        let copied = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .into_iter()
+            .find(|item| item.name == "Crate Copy")
+            .unwrap();
+        assert_eq!(
+            copied.metadata.variants[0].source_path.as_deref(),
+            Some("Art/Props/Crate Copy/Crate Copy.variant.red.blend")
+        );
+        assert_eq!(
+            copied.metadata.variants[0].output_path.as_deref(),
+            Some("Godot/Assets/Props/Crate Copy/variants/red.glb")
+        );
         assert!(result.asset_id.is_some());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn renaming_an_asset_renames_its_managed_blend_versions() {
+        let root = test_root("rename_versions");
+        let project = new_project_config("Test", "godot");
+        let workspace = root.join("Art").join("Props").join("Table");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(root.join("Godot").join("Assets")).unwrap();
+        fs::create_dir_all(root.join(".blendup")).unwrap();
+        fs::write(workspace.join("Table.blend"), b"blend").unwrap();
+        fs::write(workspace.join("Table.variant.red.blend"), b"variant").unwrap();
+        write_json(&project_file(&root), &project).unwrap();
+        write_json(&export_state_file(&root), &ExportState::default()).unwrap();
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        let mut metadata = metadata_for_asset(&root, &asset);
+        metadata.details.variants.push(AssetVariant {
+            id: "variant_red".to_string(),
+            name: "Red".to_string(),
+            status: "ready".to_string(),
+            source_path: Some("Art/Props/Table/Table.variant.red.blend".to_string()),
+            output_path: Some("Godot/Assets/Props/Table/variants/red.glb".to_string()),
+            source_modified_at: None,
+            output_modified_at: None,
+            notes: String::new(),
+        });
+        write_asset_metadata(&root, &metadata).unwrap();
+
+        rename_asset(
+            root.to_string_lossy().to_string(),
+            asset.id,
+            "Chair".to_string(),
+        )
+        .unwrap();
+
+        assert!(root.join("Art/Props/Chair/Chair.blend").is_file());
+        assert!(root
+            .join("Art/Props/Chair/Chair.variant.red.blend")
+            .is_file());
+        let assets = scan_assets(&root, &project, &ExportState::default()).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].name, "Chair");
+        assert_eq!(
+            assets[0].metadata.variants[0].source_path.as_deref(),
+            Some("Art/Props/Chair/Chair.variant.red.blend")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn variants_are_real_blend_copies_hidden_from_the_main_library() {
+        let root = test_root("variant_copy");
+        let project = new_project_config("Test", "godot");
+        let workspace = root.join("Art").join("Props").join("Table");
+        fs::create_dir_all(workspace.join("textures")).unwrap();
+        fs::create_dir_all(root.join("Godot").join("Assets")).unwrap();
+        fs::create_dir_all(root.join(".blendup")).unwrap();
+        fs::write(workspace.join("Table.blend"), b"blend-data").unwrap();
+        fs::write(workspace.join("textures").join("wood.png"), b"texture").unwrap();
+        write_json(&project_file(&root), &project).unwrap();
+        write_json(&export_state_file(&root), &ExportState::default()).unwrap();
+
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        create_asset_variant(
+            root.to_string_lossy().to_string(),
+            asset.id,
+            "Bois rouge".to_string(),
+        )
+        .unwrap();
+
+        let copy = workspace.join("Table.variant.bois_rouge.blend");
+        assert!(copy.is_file());
+        assert_eq!(fs::read(copy).unwrap(), b"blend-data");
+        let assets = scan_assets(&root, &project, &ExportState::default()).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].metadata.variants.len(), 1);
+        assert_eq!(
+            assets[0].metadata.variants[0].output_path.as_deref(),
+            Some("Godot/Assets/Props/Table/variants/bois_rouge.glb")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn godot_lod_scene_references_the_base_and_generated_levels() {
+        let root = test_root("godot_lod_scene");
+        let project = new_project_config("Test", "godot");
+        let source = root
+            .join("Art")
+            .join("Props")
+            .join("Table")
+            .join("Table.blend");
+        let base_output = root
+            .join("Godot")
+            .join("Assets")
+            .join("Props")
+            .join("Table")
+            .join("Table.glb");
+        let lod_output = base_output.parent().unwrap().join("lods").join("lod1.glb");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::create_dir_all(lod_output.parent().unwrap()).unwrap();
+        fs::write(&source, b"blend").unwrap();
+        fs::write(&base_output, b"glb").unwrap();
+        fs::write(&lod_output, b"glb-lod").unwrap();
+
+        let mut asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        asset.metadata.lods.push(AssetLod {
+            id: "lod1".to_string(),
+            level: "LOD1".to_string(),
+            status: "exported".to_string(),
+            target_ratio: Some(50.0),
+            triangle_budget: None,
+            generated: true,
+            source_path: Some("Art/Props/Table/Table.lod.lod1.blend".to_string()),
+            output_path: Some("Godot/Assets/Props/Table/lods/lod1.glb".to_string()),
+            source_modified_at: None,
+            output_modified_at: None,
+            notes: String::new(),
+        });
+
+        let scene = write_godot_lod_support(&root, &project, &asset)
+            .unwrap()
+            .unwrap();
+        let content = fs::read_to_string(&scene).unwrap();
+        assert!(content.contains("[gd_scene load_steps=4 format=3]"));
+        assert!(content.contains("res://Assets/Props/Table/Table.glb"));
+        assert!(content.contains("res://Assets/Props/Table/lods/lod1.glb"));
+        assert!(root
+            .join("Godot")
+            .join("Assets")
+            .join("BlendUp")
+            .join("blendup_lod_group.gd")
+            .is_file());
         fs::remove_dir_all(root).unwrap();
     }
 }

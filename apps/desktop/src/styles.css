@@ -698,6 +698,33 @@ h1, h2, p { margin-top: 0; }
 .path-row code { color: #5e6662; }
 .engine-cards button.active { border-color: #77aede; background: #edf6fd; }
 
+.asset-detail-actions.has-export-all { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.asset-detail-actions.has-export-all button { padding-inline: 7px; }
+.asset-version-manager { display: grid; gap: 10px; }
+.version-intro { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 9px; border-radius: 12px; padding: 11px; color: #5d99cc; background: #edf5fc; }
+.version-intro > div { display: grid; gap: 3px; }
+.version-intro strong { color: #29312d; font-size: 0.74rem; }
+.version-intro span { color: #78817d; font-size: 0.66rem; line-height: 1.45; }
+.version-create-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.version-create-row input { min-width: 0; }
+.asset-version-card { display: grid; gap: 8px; border: 1px solid #e2e6e8; border-radius: 12px; padding: 10px; background: #f8f9fa; }
+.asset-version-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.asset-version-card > header > div { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.asset-version-card > header strong { overflow: hidden; color: #252a27; font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
+.asset-version-card > header span { flex: 0 0 auto; border-radius: 8px; padding: 3px 6px; color: #63716b; background: #e8ecea; font-size: 0.58rem; }
+.asset-version-card .asset-status { position: static; flex: 0 0 auto; }
+.version-paths { display: grid; gap: 3px; }
+.version-paths code { overflow: hidden; color: #7b8580; font-size: 0.59rem; text-overflow: ellipsis; white-space: nowrap; }
+.asset-version-card textarea { min-height: 52px; font-size: 0.67rem; }
+.asset-version-card > footer { display: grid; grid-template-columns: 1fr 1fr 32px; gap: 6px; }
+.asset-version-card > footer button { min-height: 31px; padding-inline: 7px; font-size: 0.64rem; }
+.asset-version-card > footer .icon-button { padding: 0; }
+.asset-detail-loading { display: grid; place-content: center; justify-items: center; gap: 10px; color: #68716d; font-size: 0.72rem; }
+.godot-lod-tip { display: grid; gap: 3px; border: 1px solid #dbe9df; border-radius: 11px; padding: 10px; background: #eff8f2; }
+.godot-lod-tip strong { color: #397a54; font-size: 0.7rem; }
+.godot-lod-tip span { color: #6f7e75; font-size: 0.64rem; line-height: 1.45; }
+.godot-lod-tip code { color: #315f43; }
+
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 70px minmax(0, 1fr); }
   .sidebar { padding-inline: 10px; }

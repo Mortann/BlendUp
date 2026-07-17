@@ -2,21 +2,30 @@ export type GameEngine = "godot" | "unity";
 
 export type AssetExportStatus = "ready" | "exported" | "outdated" | "error";
 
-export type AssetItemStatus = "planned" | "working" | "ready";
+export type AssetVersionStatus = AssetExportStatus | "missing";
 
 export interface AssetVariant {
   id: string;
   name: string;
-  status: AssetItemStatus;
+  status: AssetVersionStatus;
+  sourcePath?: string;
+  outputPath?: string;
+  sourceModifiedAt?: string;
+  outputModifiedAt?: string;
   notes: string;
 }
 
 export interface AssetLod {
   id: string;
   level: string;
-  status: AssetItemStatus;
+  status: AssetVersionStatus;
   targetRatio?: number;
   triangleBudget?: number;
+  generated: boolean;
+  sourcePath?: string;
+  outputPath?: string;
+  sourceModifiedAt?: string;
+  outputModifiedAt?: string;
   notes: string;
 }
 
