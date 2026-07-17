@@ -483,8 +483,8 @@ h1, h2, p { margin-top: 0; }
   width: 46px;
   height: 46px;
   border-radius: 15px;
-  color: #2f302f;
-  background: #ffffff;
+  color: #ffffff;
+  background: #0a0b0b;
   box-shadow: none;
 }
 .nav-list { width: 100%; gap: 12px; }

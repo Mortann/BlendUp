@@ -14,6 +14,7 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tauri::Manager;
 
 const EXPORT_SCRIPT: &str = r#"
 import pathlib
@@ -3475,9 +3476,35 @@ fn apply_command_window_preference(command: &mut Command, show_command_prompt: b
 #[cfg(not(target_os = "windows"))]
 fn apply_command_window_preference(_command: &mut Command, _show_command_prompt: bool) {}
 
+#[cfg(target_os = "windows")]
+fn configure_platform_app_identity() {
+    use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+
+    let app_id = "com.blendup.desktop"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    unsafe {
+        let _ = SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr());
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn configure_platform_app_identity() {}
+
 fn main() {
+    configure_platform_app_identity();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            if let (Some(window), Some(icon)) = (
+                app.get_webview_window("main"),
+                app.default_window_icon().cloned(),
+            ) {
+                window.set_icon(icon)?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             read_user_settings,
             save_user_settings,

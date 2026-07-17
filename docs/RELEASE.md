@@ -9,19 +9,23 @@ Le dépôt contient `.github/workflows/release.yml`. À chaque tag `v*`, GitHub 
 
 ## Checklist
 
-1. Choisir la version, par exemple `0.1.0`.
+1. Choisir la version, par exemple `0.1.2`.
 2. Mettre la même version dans `package.json`, `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml` et `apps/desktop/src-tauri/tauri.conf.json`.
 3. Mettre à jour la version de l'add-on dans `apps/blender-addon/blendup/__init__.py` si celui-ci a changé, puis reconstruire `blendup.zip`.
 4. Exécuter localement `npm test` et `npm run tauri:build`.
-5. Envoyer le code sur GitHub, puis créer et envoyer le tag :
+5. Depuis la branche `dev`, envoyer les changements, les intégrer dans `master`, puis créer et envoyer le tag :
 
 ```text
-git tag v0.1.0
-git push origin v0.1.0
+git push origin dev
+git switch master
+git merge dev
+git push origin master
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 6. Dans l'onglet **Actions**, attendre la réussite des deux plateformes.
-7. Ouvrir **Releases**, télécharger au moins un installateur Windows et un paquet Linux, puis les tester.
+7. Ouvrir **Releases**, télécharger l'installateur Windows, le paquet Linux `.deb` et l'AppImage, puis les tester.
 8. Vérifier que `blendup.zip` a bien été joint automatiquement à la release.
 9. Compléter les notes et publier le brouillon.
 
