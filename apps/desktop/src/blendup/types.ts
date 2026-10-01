@@ -120,6 +120,11 @@ export interface BlendUpProblem {
   title: string;
   detail: string;
   actionLabel?: "Exporter" | "Ouvrir" | "Vérifier";
+  category?: "uv" | "export" | "project";
+  versionLabel?: string;
+  score?: number;
+  minimumScore?: number;
+  technicalDetails?: string;
 }
 
 export interface ProjectSnapshot {
@@ -128,6 +133,21 @@ export interface ProjectSnapshot {
   assetFolders: string[];
   assets: BlendUpAsset[];
   problems: BlendUpProblem[];
+  showcases?: FolderShowcase[];
+  integrations?: EditorIntegrations;
+}
+
+export interface FolderShowcase {
+  id: string; folder: string; spacing: number;
+  status: "ready" | "outdated" | "generating" | "error";
+  assetCount: number; includedCount: number; godotCount: number;
+  blenderPath: string; godotPath?: string; error?: string;
+}
+
+export interface EditorIntegrations {
+  blender: boolean; godot: boolean; libraryCount: number;
+  libraryStatus: "ready" | "generating" | "error" | "";
+  libraryErrors: { name: string; error: string }[];
 }
 
 export interface UserSettings {

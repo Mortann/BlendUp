@@ -13,7 +13,7 @@ def main():
     from blendup_blender_uv import check_and_record, project_policy, passes_uv_gate, uv_gate_message
     policy = project_policy(root)
     if policy.validate_uvs:
-        report = check_and_record(root, Path(bpy.data.filepath))
+        report = check_and_record(root, Path(bpy.data.filepath), source_is_saved=True)
         if enforce_gate and not passes_uv_gate(report, policy):
             raise RuntimeError(uv_gate_message(report, policy))
     output_path.parent.mkdir(parents=True, exist_ok=True)

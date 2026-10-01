@@ -111,7 +111,7 @@ def locate_asset(blend_file: str | Path, project: ProjectInfo | None = None) -> 
         output=output,
         source_relative=source_relative,
         output_relative=relative_string(project.root, output) if output else None,
-        asset_id=asset_id_for_path(source_relative),
+        asset_id=stored_asset_id(project.root, source_relative),
         export_format=export_format,
     )
 
@@ -137,6 +137,24 @@ def asset_id_for_path(path: str) -> str:
         value ^= byte
         value = (value * 1_099_511_628_211) & 0xFFFFFFFFFFFFFFFF
     return f"asset_{value:016x}"
+
+
+def stored_asset_id(root: Path, source_relative: str) -> str:
+    """Keep the desktop's stable identity after moving or renaming sources."""
+    directory = root / ".blendup/assets"
+    if directory.is_dir():
+        for file in directory.glob("*.json"):
+            try:
+                raw = json.loads(file.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict): continue
+                paths = raw.get("paths") if isinstance(raw.get("paths"), dict) else {}
+                stored_path = raw.get("sourcePath") or paths.get("blenderSource")
+                if isinstance(stored_path, str) and normalize_relative(stored_path) == source_relative:
+                    identity = raw.get("id")
+                    if isinstance(identity, str) and identity.strip(): return identity
+            except (OSError, ValueError):
+                continue
+    return asset_id_for_path(source_relative)
 
 
 def relative_string(root: Path, path: Path) -> str:

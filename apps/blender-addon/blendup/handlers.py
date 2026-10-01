@@ -64,11 +64,11 @@ def export_after_save(_filepath):
         policy = project_policy(asset.project.root)
         report = None
         if policy.validate_uvs:
-            report = check_and_record(asset.project.root, asset.source)
+            report = check_and_record(asset.project.root, asset.source, source_is_saved=True)
             if _preparation_warnings:
                 from .blender_uv import write_report
                 report["preparationWarnings"] = list(_preparation_warnings)
-                write_report(asset.project.root, asset.source, report)
+                write_report(asset.project.root, asset.source, report, unsaved_changes=False)
             print(f"[BlendUp] Score UV : {report['score']}/100")
         if not prefs or not prefs.auto_export or asset.project.engine == "none":
             return

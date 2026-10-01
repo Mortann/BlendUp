@@ -67,11 +67,12 @@ def report_path(root: Path, source: Path) -> Path:
     return (root / ".blendup/uv-reports" / source.resolve().relative_to(root.resolve())).with_suffix(".json")
 
 
-def write_report(root: Path, source: Path, report: dict) -> dict:
+def write_report(root: Path, source: Path, report: dict, unsaved_changes=None) -> dict:
     stat = source.stat()
     report.update(sourcePath=source.resolve().relative_to(root.resolve()).as_posix(),
                   sourceSize=stat.st_size, sourceModifiedNs=str(stat.st_mtime_ns),
-                  checkedAt=str(int(time.time())), unsavedChanges=bool(bpy.data.is_dirty))
+                  checkedAt=str(int(time.time())),
+                  unsavedChanges=bool(bpy.data.is_dirty) if unsaved_changes is None else unsaved_changes)
     target = report_path(root, source)
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent, suffix=".tmp", delete=False) as handle:
@@ -85,15 +86,18 @@ def write_report(root: Path, source: Path, report: dict) -> dict:
     return report
 
 
-def check_and_record(root: Path, source: Path, context=None) -> dict:
+def check_and_record(root: Path, source: Path, context=None, source_is_saved=False) -> dict:
     policy = project_policy(root)
+    # Evaluating modifiers can dirty Blender's transient data without changing
+    # the source. Record the state before evaluation, or the known saved state.
+    unsaved = False if source_is_saved else bool(bpy.data.is_dirty)
     try:
         report = analyze_scene(policy, context)
     except Exception as error:
         report = {"algorithmVersion": ALGORITHM_VERSION, "score": 0.0, "complete": False,
                   "error": str(error), "objects": [], "issues": [f"Analyse UV impossible : {error}"],
                   "allowUvOverlap": policy.allow_uv_overlap}
-    return write_report(root, source, report)
+    return write_report(root, source, report, unsaved_changes=unsaved)
 
 
 def prepare_before_save(policy: UvPolicy, context=None) -> list[str]:

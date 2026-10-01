@@ -1,9 +1,10 @@
 import { ExternalLink, FolderOpen, Gamepad2, Gauge, LoaderCircle, RefreshCw, Save, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ToolStatus } from "../app/ui";
-import type { BlenderProjectSettings, GameEngine, ProjectSnapshot, ToolDetection } from "../blendup/types";
+import type { BlenderProjectSettings, BlendUpProject, GameEngine, ProjectSnapshot, ToolDetection } from "../blendup/types";
 
 export function SettingsView({
+  onSetupIntegration, integrationBusy,
   blenderDetection,
   blenderPathInput,
   exportBusy,
@@ -23,8 +24,11 @@ export function SettingsView({
   setOpenAssetAfterCreation,
   checkingUvs,
   onCheckAllUvs,
-  onSaveProjectBlenderSettings
+  onSaveProjectBlenderSettings,
+  onSaveProjectPaths
 }: {
+  onSetupIntegration: (editor: "blender" | "godot") => Promise<void>;
+  integrationBusy: boolean;
   blenderDetection: ToolDetection | null;
   blenderPathInput: string;
   exportBusy: boolean;
@@ -45,9 +49,20 @@ export function SettingsView({
   checkingUvs: boolean;
   onCheckAllUvs: () => Promise<void>;
   onSaveProjectBlenderSettings: (settings: BlenderProjectSettings) => Promise<boolean>;
+  onSaveProjectPaths: (paths: BlendUpProject["paths"]) => Promise<boolean>;
 }) {
   const [blenderSettings, setBlenderSettings] = useState(project.project.blender);
   const [savingProject, setSavingProject] = useState(false);
+  const [paths, setPaths] = useState(project.project.paths);
+  const [savingPaths, setSavingPaths] = useState(false);
+  const pathsSignature = JSON.stringify(project.project.paths);
+  useEffect(() => { setPaths(project.project.paths); }, [project.project.projectId, pathsSignature]);
+  const pathsChanged = JSON.stringify(paths) !== pathsSignature;
+  const updateEnginePath = (engineRoot: string) => setPaths((current) => ({ ...current, engineRoot, engineAssetsRoot: current.engineAssetsRoot?.startsWith(`${current.engineRoot}/`) ? engineRoot + current.engineAssetsRoot.slice(current.engineRoot!.length) : current.engineAssetsRoot }));
+  const savePaths = async () => {
+    setSavingPaths(true);
+    try { await onSaveProjectPaths(paths); } finally { setSavingPaths(false); }
+  };
   const settingsSignature = JSON.stringify(project.project.blender);
   useEffect(() => { setBlenderSettings(project.project.blender); }, [project.project.projectId, settingsSignature]);
   const validThreshold = Number.isFinite(blenderSettings.minimumUvScore) && blenderSettings.minimumUvScore >= 1 && blenderSettings.minimumUvScore <= 100;
@@ -77,17 +92,18 @@ export function SettingsView({
           <EngineCard active={project.project.engine === "unity"} disabled={exportBusy || isReexporting} format="Export FBX" label="Unity" onClick={() => onChangeEngine("unity")} />
         </div>
         <div className="path-stack">
-          <PathRow label="Sources" onOpen={() => onOpenPath(project.project.paths.artRoot)} value={project.project.paths.artRoot} />
+          <PathRow label="Sources" disabled={savingPaths} onChange={(artRoot) => setPaths((current) => ({ ...current, artRoot }))} onOpen={() => onOpenPath(project.project.paths.artRoot)} value={paths.artRoot} />
           {project.project.engine !== "none" ? <>
-            <PathRow label="Projet moteur" onOpen={() => onOpenPath(project.project.paths.engineRoot!)} value={project.project.paths.engineRoot!} />
-            <PathRow label="Exports" onOpen={() => onOpenPath(project.project.paths.engineAssetsRoot!)} value={project.project.paths.engineAssetsRoot!} />
+            <PathRow label="Projet moteur" disabled={savingPaths} onChange={updateEnginePath} onOpen={() => onOpenPath(project.project.paths.engineRoot!)} value={paths.engineRoot ?? ""} />
+            <PathRow label="Exports" disabled={savingPaths} onChange={(engineAssetsRoot) => setPaths((current) => ({ ...current, engineAssetsRoot }))} onOpen={() => onOpenPath(project.project.paths.engineAssetsRoot!)} value={paths.engineAssetsRoot ?? ""} />
           </> : null}
         </div>
-        {project.project.engine === "none" ? <p>Les assets restent dans Art. Les aperçus 3D se génèrent à la demande depuis leur fiche, sans export moteur.</p> : null}
+        <p>Chemins relatifs au projet. Enregistrer renomme les dossiers existants et conserve leurs fichiers. Ferme Blender et le moteur avant de les déplacer.{project.project.engine === "unity" ? " Unity nécessite un dossier d’exports dans Assets." : ""}</p>
+        <div className="button-row"><button className="primary" disabled={!pathsChanged || !paths.artRoot.trim() || savingPaths || exportBusy || isReexporting} onClick={() => void savePaths()} type="button">{savingPaths ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />} Enregistrer les dossiers</button>{pathsChanged ? <button disabled={savingPaths} onClick={() => setPaths(project.project.paths)} type="button">Annuler</button> : null}</div>
       </section>
 
       <section className="settings-section content-panel">
-        <div className="section-heading"><Gauge size={20} /><div><h2>Préparation et qualité dans Blender</h2><p>Options de ce projet, partagées avec l’add-on BlendUp 0.5.0 ou plus récent.</p></div></div>
+        <div className="section-heading"><Gauge size={20} /><div><h2>Préparation et qualité dans Blender</h2><p>Options de ce projet, partagées avec l’add-on BlendUp 0.5.1 ou plus récent.</p></div></div>
         <div className="uv-settings-grid">
           <div className="settings-option-group">
             <h3>À chaque sauvegarde du .blend</h3>
@@ -109,6 +125,21 @@ export function SettingsView({
           <button className="primary" disabled={savingProject || exportBusy || !validThreshold || !unsaved} onClick={() => void saveBlenderSettings()} type="button">{savingProject ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />} Enregistrer les options du projet</button>
           <button disabled={savingProject || exportBusy || unsaved || !project.assets.length} onClick={() => void onCheckAllUvs()} type="button">{checkingUvs ? <LoaderCircle className="spin" size={16} /> : <Gauge size={16} />}{checkingUvs ? "Vérification…" : "Vérifier tous les assets"}</button>
           {unsaved ? <span className="settings-unsaved">Modifications à enregistrer</span> : null}
+        </div>
+      </section>
+
+      <section className="settings-section content-panel">
+        <div className="section-heading"><ExternalLink size={20} /><div><h2>Bibliothèque dans les éditeurs</h2><p>Retrouve les assets du projet associé dans Blender et Godot, puis glisse-les dans ta scène.</p></div></div>
+        <div className="editor-integrations">
+          <div><h3>Blender</h3><p>Installe l’add-on BlendUp 0.6.0, puis ouvre un asset ou un Showcase. Dans la barre latérale BlendUp, la bibliothèque permet de placer un asset au curseur 3D ou d’ouvrir le navigateur avec glisser-déposer. Les instances sont liées par défaut.</p>
+            <button disabled={integrationBusy || project.integrations?.libraryStatus === "generating"} onClick={() => void onSetupIntegration("blender")} type="button"><RefreshCw size={16} />{project.integrations?.libraryStatus === "generating" ? "Synchronisation…" : "Synchroniser la bibliothèque Blender"}</button>
+            {project.integrations?.blender ? <p>{project.integrations.libraryCount} assets prêts · synchronisation automatique lorsque BlendUp est ouvert.</p> : null}
+            {project.integrations?.libraryErrors.map((error, i) => <p className="field-error" key={i}>{error.name} : {error.error}</p>)}
+          </div>
+          {project.project.engine === "godot" ? <div><h3>Godot 4</h3><p>Le panneau comprend recherche, filtres par dossier, aperçus et glisser-déposer dans la vue 3D. Seuls les exports à jour sont utilisables. La scène reste liée à son export.</p>
+            <button disabled={integrationBusy} onClick={() => void onSetupIntegration("godot")} type="button"><ExternalLink size={16} />{project.integrations?.godot ? "Mettre à jour le panneau Godot" : "Installer et activer le panneau Godot"}</button>
+            <p>Si Godot est déjà ouvert, rouvre le projet après l’installation.</p>
+          </div> : null}
         </div>
       </section>
 
@@ -166,6 +197,6 @@ function EngineCard({ active, disabled, format, label, onClick }: { active: bool
   );
 }
 
-function PathRow({ label, onOpen, value }: { label: string; onOpen: () => void; value: string }) {
-  return <div className="path-row"><span>{label}</span><code>{value}</code><button onClick={onOpen} title={`Ouvrir ${value}`} type="button"><ExternalLink size={15} /></button></div>;
+function PathRow({ label, disabled, onChange, onOpen, value }: { label: string; disabled: boolean; onChange: (value: string) => void; onOpen: () => void; value: string }) {
+  return <div className="path-row"><label className="path-field"><span>{label}</span><input disabled={disabled} onChange={(event) => onChange(event.target.value)} value={value} /></label><button disabled={disabled} onClick={onOpen} title={`Ouvrir le dossier ${label.toLowerCase()}`} type="button"><ExternalLink size={15} /></button></div>;
 }

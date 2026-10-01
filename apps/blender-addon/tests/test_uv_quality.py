@@ -29,6 +29,11 @@ class UvQualityTests(unittest.TestCase):
         self.assertLess(report["score"], 70)
         self.assertTrue(report["issues"])
 
+    def test_gate_message_prioritizes_the_worst_mesh(self):
+        triangles = [UvTriangle("FirstStretch", POINTS, ((0, 0), (10, 0), (0, 1))), UvTriangle("MissingUV", POINTS, None)]
+        report = self.measure(objects=triangles)
+        self.assertTrue(report["issues"][0].startswith("MissingUV"), report["issues"])
+
     def test_adjacent_triangles_sharing_an_edge_do_not_overlap(self):
         other_uv = ((1, 0), (1, 1), (0, 1))
         other_points = ((1, 0, 0), (1, 1, 0), (0, 1, 0))

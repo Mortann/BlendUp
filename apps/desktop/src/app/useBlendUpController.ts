@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addAssetImages,
+  configureShowcase,
+  rebuildShowcase,
+  setupEditorIntegration,
+  openShowcaseGodot,
   checkAssetUvs,
   updateProjectBlenderSettings,
+  updateProjectPaths,
   clearAssetExports,
   copyAsset,
   createAsset,
@@ -44,12 +49,14 @@ import type {
   AssetMutationResult,
   AssetVariant,
   BlendUpAsset,
+  BlendUpProject,
   GameEngine,
   ProjectSnapshot,
   ToolDetection,
   UserSettings
 } from "../blendup/types";
 import type { ActiveView, OperationMessage } from "./types";
+import { readableError } from "../blendup/problems";
 
 export function useBlendUpController() {
   const [activeView, setActiveView] = useState<ActiveView>("assets");
@@ -64,6 +71,7 @@ export function useBlendUpController() {
   const [operationMessage, setOperationMessage] = useState<OperationMessage | null>(null);
   const [openingAssetPath, setOpeningAssetPath] = useState<string | null>(null);
   const openingAsset = useRef(false);
+  const changingProjectPaths = useRef(false);
   const [isBooting, setIsBooting] = useState(true);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -114,11 +122,11 @@ export function useBlendUpController() {
     let refreshing = false;
 
     const refreshFromDisk = async () => {
-      if (cancelled || refreshing || document.hidden) return;
+      if (cancelled || refreshing || document.hidden || changingProjectPaths.current) return;
       refreshing = true;
       try {
         const snapshot = await loadProjectSnapshot(activeProjectRoot);
-        if (!cancelled) {
+        if (!cancelled && !changingProjectPaths.current) {
           setProject((current) => {
             if (!current || current.projectRoot !== activeProjectRoot) return current;
             return JSON.stringify(current) === JSON.stringify(snapshot) ? current : snapshot;
@@ -147,7 +155,7 @@ export function useBlendUpController() {
   );
 
   const showError = (title: string, error: unknown) => {
-    setOperationMessage({ detail: errorMessage(error), title, tone: "error" });
+    setOperationMessage({ detail: readableError(errorMessage(error)), title, tone: "error" });
   };
 
   const persistSettings = async (next: UserSettings) => {
@@ -231,6 +239,46 @@ export function useBlendUpController() {
     }
   };
 
+  const [showcaseBusyIds, setShowcaseBusyIds] = useState<string[]>([]);
+  const [integrationBusy, setIntegrationBusy] = useState(false);
+  const handleConfigureShowcase = async (folder: string, enabled: boolean, spacing?: number) => {
+    if (!project) return;
+    try {
+      const message = await configureShowcase(project.projectRoot, folder, enabled, spacing);
+      setOperationMessage({ tone: "success", title: message });
+      await refreshProject();
+    } catch (error) { showError("Option Showcase impossible", error); }
+  };
+  const handleRebuildShowcase = async (id: string): Promise<boolean> => {
+    if (!project || showcaseBusyIds.includes(id)) return false;
+    setShowcaseBusyIds((ids) => [...ids, id]);
+    try {
+      const message = await rebuildShowcase(project.projectRoot, id, userSettings.blenderPath ?? undefined);
+      setOperationMessage({ tone: "success", title: message });
+      await refreshProject();
+      return true;
+    } catch (error) { showError("Génération Showcase impossible", error); return false; }
+    finally { setShowcaseBusyIds((ids) => ids.filter((entry) => entry !== id)); }
+  };
+  const handleOpenShowcase = async (id: string, editor: "blender" | "godot") => {
+    const scene = project?.showcases?.find((s) => s.id === id);
+    if (!project || !scene || scene.status === "generating") return;
+    if (scene.status === "outdated" && !await handleRebuildShowcase(id)) return;
+    try {
+      if (editor === "blender") await openAssetPathInBlender(scene.blenderPath);
+      else setOperationMessage({ tone: "success", title: await openShowcaseGodot(project.projectRoot, id) });
+    } catch (error) { showError("Ouverture Showcase impossible", error); }
+  };
+  const handleSetupIntegration = async (editor: "blender" | "godot") => {
+    if (!project || integrationBusy) return;
+    setIntegrationBusy(true);
+    try {
+      setOperationMessage({ tone: "success", title: await setupEditorIntegration(project.projectRoot, editor) });
+      await refreshProject();
+    } catch (error) { showError("Intégration impossible", error); }
+    finally { setIntegrationBusy(false); }
+  };
+
   const handleExportAsset = async (assetId: string, quiet = false): Promise<boolean> => {
     if (!project || exportingAssetIds.includes(assetId) || checkingUvAssetIds.includes(assetId)) return false;
     setExportingAssetIds((current) => [...current, assetId]);
@@ -243,7 +291,7 @@ export function useBlendUpController() {
       await refreshProject();
       if (!quiet || !result.success) {
         setOperationMessage({
-          detail: result.success ? result.outputPath : result.log,
+          detail: result.success ? result.outputPath : readableError(result.log),
           title: result.message,
           tone: result.success ? "success" : "error"
         });
@@ -274,7 +322,7 @@ export function useBlendUpController() {
       });
       await refreshProject();
       setOperationMessage({
-        detail: result.success ? result.outputPath : result.log,
+        detail: result.success ? result.outputPath : readableError(result.log),
         title: result.message,
         tone: result.success ? "success" : "error"
       });
@@ -298,7 +346,7 @@ export function useBlendUpController() {
       });
       await refreshProject();
       setOperationMessage({
-        detail: result.outputPath ?? result.log,
+        detail: result.success ? result.outputPath : readableError(result.log),
         title: result.message,
         tone: result.success ? "success" : "error"
       });
@@ -406,6 +454,18 @@ export function useBlendUpController() {
       setOperationMessage({ title: "Options Blender du projet enregistrées", tone: "success" });
       return true;
     } catch (error) { showError("Enregistrement impossible", error); return false; }
+  };
+
+  const saveProjectPaths = async (paths: BlendUpProject["paths"]): Promise<boolean> => {
+    if (!project || changingProjectPaths.current || exportingAssetIds.length || checkingUvAssetIds.length || isReexporting) return false;
+    changingProjectPaths.current = true;
+    try {
+      await updateProjectPaths(project.projectRoot, paths);
+      await refreshProject();
+      setOperationMessage({ title: "Dossiers du projet renommés", detail: "Les assets et les exports utilisent maintenant les nouveaux chemins.", tone: "success" });
+      return true;
+    } catch (error) { showError("Impossible de renommer les dossiers", error); return false; }
+    finally { changingProjectPaths.current = false; }
   };
 
   const checkUvAsset = async (assetId: string, quiet = false): Promise<boolean> => {
@@ -597,11 +657,13 @@ export function useBlendUpController() {
   };
 
   return {
+    handleConfigureShowcase, handleRebuildShowcase, handleOpenShowcase, handleSetupIntegration, showcaseBusyIds, integrationBusy,
     activeView,
     blenderDetection,
     blenderPathInput,
     changeProjectEngine,
     saveProjectBlenderSettings,
+    saveProjectPaths,
     checkUvAsset,
     checkAllUvs,
     checkingUvAssetIds,

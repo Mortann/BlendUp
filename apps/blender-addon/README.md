@@ -4,7 +4,7 @@ Add-on léger pour relier un fichier `.blend` placé dans `Art` à son projet Bl
 
 ## Fonctions
 
-L'add-on 0.4.2 ouvre les assets dans la session Blender active, prépare les dossiers
+L'add-on 0.5.1 ouvre les assets dans la session Blender active, prépare les dossiers
 `textures`, `references` et `renders`, puis synchronise les exports avec BlendUp.
 
 - détection automatique du projet à partir du fichier Blender ouvert ;
@@ -15,6 +15,8 @@ L'add-on 0.4.2 ouvre les assets dans la session Blender active, prépare les dos
 - export manuel ou automatique à chaque sauvegarde ;
 - génération de copies LOD non destructives pilotée par l'application (modificateur Decimate éditable) ;
 - accès direct aux dossiers source et destination.
+- préparation des transformations et unwrap Angle Based à la sauvegarde, selon les options du projet ;
+- score UV et blocage des exports insuffisants, avec des rapports lisibles dans BlendUp.
 
 ## Installation
 

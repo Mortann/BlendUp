@@ -1,6 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { explorerShortcut, visibleNavigationFolders } from "../src/views/assets/shortcuts.ts";
+import { groupProblems, readableError } from "../src/blendup/problems.ts";
+import type { BlendUpAsset, BlendUpProblem } from "../src/blendup/types.ts";
+
+test("problems group by asset, sort errors first and filter the cause or path", () => {
+  const assets = [{ id: "rock", name: "Rock", sourcePath: "Art/Props/Rock.blend" }, { id: "table", name: "Table", sourcePath: "Art/Furniture/Table.blend" }] as BlendUpAsset[];
+  const problems = [
+    { id: "1", assetId: "rock", title: "UV à vérifier", detail: "Pas de rapport", severity: "warning", category: "uv" },
+    { id: "2", assetId: "table", title: "Export absent", detail: "À exporter", severity: "warning", category: "export" },
+    { id: "3", assetId: "rock", title: "Export bloqué", detail: "FinalBaseMesh : UV manquantes", severity: "error", category: "uv" }
+  ] as BlendUpProblem[];
+  const groups = groupProblems(problems, assets);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].asset?.id, "rock");
+  assert.equal(groups[0].problems.length, 2);
+  assert.equal(groups[0].problems[0].id, "3");
+  assert.equal(groupProblems(problems, assets, { query: "Furniture", category: "all", severity: "all" })[0].asset?.id, "table");
+  assert.equal(groupProblems(problems, assets, { query: "FinalBaseMesh", category: "uv", severity: "error" })[0].problems.length, 1);
+  assert.equal(groupProblems(problems, assets, { query: "", category: "export", severity: "error" }).length, 0);
+});
+
+test("error messages show the cause while omitting the Blender shutdown wrapper", () => {
+  assert.equal(readableError("Blender startup\nTraceback (most recent call last):\n  File export.py\nRuntimeError: UV manquantes\nError: script failed, exiting."), "UV manquantes");
+  assert.equal(readableError("Dossier déjà présent."), "Dossier déjà présent.");
+});
 
 const key = (value: string, modifiers = {}) => explorerShortcut({ key: value, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...modifiers });
 

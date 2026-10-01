@@ -15,6 +15,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
+mod project_paths;
+mod showcases;
 
 const EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/export_asset.py");
 const UV_QUALITY_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/uv_quality.py");
@@ -181,6 +183,8 @@ struct ProjectSnapshot {
     asset_folders: Vec<String>,
     assets: Vec<BlendUpAsset>,
     problems: Vec<BlendUpProblem>,
+    showcases: Vec<showcases::ShowcaseView>,
+    integrations: showcases::Integrations,
 }
 
 #[derive(Clone, Serialize)]
@@ -321,6 +325,15 @@ struct BlendUpProblem {
     detail: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     action_label: Option<String>,
+    category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    minimum_score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    technical_details: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -465,7 +478,14 @@ fn read_project_snapshot(project_root: String) -> Result<ProjectSnapshot, String
         let _ = cleanup_legacy_version_outputs(&root, asset);
     }
     let asset_folders = collect_asset_folders(&root, &project)?;
-    let problems = collect_problems(&root, &project, &assets);
+    let mut problems = collect_problems(&root, &project, &assets);
+    let (showcases, integrations) = showcases::snapshot(&root, &project, &assets);
+    for (index, scene) in showcases.iter().enumerate() {
+        if let Some(error) = scene.error.as_ref().filter(|_| scene.status == "error") {
+            problems.push(BlendUpProblem { id: format!("showcase-{index}"), severity: "warning".into(), source: "blendup".into(), asset_id: None,
+                title: "Showcase incomplet".into(), detail: error.clone(), action_label: None, category: "project".into(), version_label: None, score: None, minimum_score: None, technical_details: None });
+        }
+    }
 
     Ok(ProjectSnapshot {
         project_root: root.to_string_lossy().to_string(),
@@ -473,6 +493,8 @@ fn read_project_snapshot(project_root: String) -> Result<ProjectSnapshot, String
         asset_folders,
         assets,
         problems,
+        showcases,
+        integrations,
     })
 }
 
@@ -558,6 +580,14 @@ fn update_project_engine(
         },
         project,
     })
+}
+
+#[tauri::command]
+fn update_project_paths(
+    project_root: String,
+    paths: ProjectPaths,
+) -> Result<ProjectConfig, String> {
+    project_paths::update(&project_root, paths)
 }
 
 #[tauri::command]
@@ -1017,7 +1047,7 @@ fn read_uv_quality(
         .ok()?
         .as_nanos()
         .to_string();
-    let stale = report.algorithm_version != 1
+    let stale = report.algorithm_version != 2
         || report.unsaved_changes
         || report.source_path != source_path
         || report.source_size != metadata.len()
@@ -1179,13 +1209,64 @@ fn open_blend_file_impl(
     let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
         "Blender est introuvable. Configure son chemin dans Parametres.".to_string()
     })?;
-    let mut command = Command::new(&blender);
-    command.arg(&target);
+    let mut command = blender_open_command(&blender, &target);
     apply_command_window_preference(&mut command, show_command_prompt);
     command
         .spawn()
         .map_err(|error| format!("Impossible de lancer {}: {error}", blender.display()))?;
     Ok(())
+}
+
+fn blender_open_command(blender: &Path, target: &Path) -> Command {
+    if let Some(steam) = steam_blender_launcher(blender) {
+        let mut command = Command::new(steam);
+        command.args(["-applaunch", "365670"]).arg(target);
+        command
+    } else {
+        let mut command = Command::new(blender);
+        command.arg(target);
+        command
+    }
+}
+
+fn steam_blender_launcher(blender: &Path) -> Option<PathBuf> {
+    let installation = blender.parent()?;
+    let common = installation.parent()?;
+    let steamapps = common.parent()?;
+    if !common.file_name()?.to_str()?.eq_ignore_ascii_case("common")
+        || !steamapps
+            .file_name()?
+            .to_str()?
+            .eq_ignore_ascii_case("steamapps")
+    {
+        return None;
+    }
+    let manifest = fs::read_to_string(steamapps.join("appmanifest_365670.acf")).ok()?;
+    let installed_folder = manifest
+        .lines()
+        .find(|line| line.trim_start().starts_with("\"installdir\""))?
+        .split('"')
+        .nth(3)?;
+    if !installation
+        .file_name()?
+        .to_str()?
+        .eq_ignore_ascii_case(installed_folder)
+    {
+        return None;
+    }
+    let configured = manifest
+        .lines()
+        .find(|line| line.trim_start().starts_with("\"LauncherPath\""))
+        .and_then(|line| line.split('"').nth(3))
+        .map(|path| PathBuf::from(path.replace("\\\\", "\\")));
+    configured.filter(|path| path.is_file()).or_else(|| {
+        let candidate = steamapps.parent()?.join(if cfg!(target_os = "windows") {
+            "steam.exe"
+        } else {
+            "steam"
+        });
+        candidate.is_file().then_some(candidate)
+    })
 }
 
 fn request_open_in_running_blender(root: &Path, target: &Path) -> Result<bool, String> {
@@ -2524,6 +2605,7 @@ fn relocate_folder(
     source: &Path,
     target: &Path,
 ) -> Result<(), String> {
+    showcases::ensure_idle(root)?;
     let art_root = root.join(&project.paths.art_root);
     if source == art_root || !target.starts_with(&art_root) || target.starts_with(source) {
         return Err("Ce deplacement de dossier n'est pas autorise.".to_string());
@@ -2599,6 +2681,7 @@ fn relocate_folder(
             write_asset_metadata(root, &metadata)?;
         }
     }
+    showcases::retarget(root, &old_rel, &new_rel)?;
     if project.engine == "none" {
         Ok(())
     } else {
@@ -2785,7 +2868,7 @@ fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<(), Str
         let file_type = entry
             .file_type()
             .map_err(|error| format!("Type de fichier illisible: {error}"))?;
-        if file_type.is_symlink() {
+        if file_type.is_symlink() || is_blender_backup(&entry.path()) {
             continue;
         }
         let target = destination.join(entry.file_name());
@@ -2796,6 +2879,19 @@ fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<(), Str
         }
     }
     Ok(())
+}
+
+fn is_blender_backup(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension
+                .to_ascii_lowercase()
+                .strip_prefix("blend")
+                .is_some_and(|suffix| {
+                    !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+                })
+        })
 }
 
 fn unique_file_path(path: &Path) -> PathBuf {
@@ -2915,10 +3011,16 @@ fn scan_assets(
             .unwrap_or_else(|| asset_id_for_path(&source_path));
         let source_time = modified_time(&source);
         let output_time = modified_time(&output);
+        let uv_quality = read_uv_quality(root, project, &source_path);
         let failed_record = export_state
             .exports
             .get(&id)
-            .filter(|record| project.engine != "none" && !record.success);
+            .filter(|record| project.engine != "none" && !record.success)
+            .filter(|record| {
+                !is_uv_export_error(&record.message)
+                    || (project.blender.validate_uvs
+                        && !uv_quality.as_ref().is_some_and(|q| !q.stale && !q.blocked))
+            });
         let status = if project.engine == "none" {
             "local"
         } else {
@@ -2962,7 +3064,6 @@ fn scan_assets(
             };
         }
 
-        let uv_quality = read_uv_quality(root, project, &source_path);
         for version in &mut details.variants {
             version.uv_quality = version
                 .source_path
@@ -3336,6 +3437,7 @@ fn collect_problems(
 
     for asset in assets {
         let mut uv_blocked = false;
+        let previous_uv_failure = asset.last_error.as_deref().is_some_and(is_uv_export_error);
         if project.blender.validate_uvs {
             let mut versions = vec![(asset.name.as_str(), asset.uv_quality.as_ref())];
             versions.extend(
@@ -3358,24 +3460,50 @@ fn collect_problems(
                 let (title, detail, severity, action) = match quality {
                     Some(quality) if quality.blocked => {
                         uv_blocked = true;
-                        ("Qualité UV insuffisante", format!("{} : {:.1}/100, minimum {:.1}/100. {} {}", label, quality.report.score, quality.minimum_score,
-                            if project.engine == "none" { "" } else { "Export bloqué." }, quality.report.issues.join(" ")), "error", "Ouvrir")
+                        ("Qualité UV insuffisante", uv_problem_reason(quality), "error", "Ouvrir")
                     }
                     Some(quality) if !quality.stale => continue,
+                    _ if index == 0 && previous_uv_failure => {
+                        uv_blocked = true;
+                        ("Dernier export bloqué par les UV", quality.map(|quality| format!("Dernier contrôle : {}", uv_problem_reason(quality))).unwrap_or_else(|| export_error_summary(asset.last_error.as_deref().unwrap_or_default())) + " Un nouveau contrôle est nécessaire.", "error", "Vérifier")
+                    }
                     _ => ("UV à vérifier", format!("{} : aucun contrôle UV à jour. Le prochain export sera vérifié dans Blender.", label), "warning", "Vérifier"),
                 };
-                problems.push(problem(
+                let mut issue = problem(
                     &format!("{}_uv_{index}", asset.id),
                     severity,
                     "blender",
                     Some(asset.id.clone()),
                     title,
                     &detail,
-                    Some(if index == 0 { action } else { "Ouvrir" }),
-                ));
+                    Some(action),
+                );
+                issue.category = "uv".into();
+                issue.version_label = Some(if index == 0 {
+                    "Asset principal".into()
+                } else {
+                    label.into()
+                });
+                issue.score = quality.filter(|q| !q.stale).map(|q| q.report.score);
+                issue.minimum_score = Some(project.blender.minimum_uv_score);
+                issue.technical_details = quality
+                    .map(|q| {
+                        let mut details = q.report.issues.clone();
+                        details.extend(q.report.preparation_warnings.clone());
+                        details.join("\n")
+                    })
+                    .filter(|text| !text.is_empty());
+                if previous_uv_failure && index == 0 {
+                    issue.technical_details = Some(format!(
+                        "{}\n\nDernier export :\n{}",
+                        issue.technical_details.unwrap_or_default(),
+                        asset.last_error.as_deref().unwrap_or_default()
+                    ));
+                }
+                problems.push(issue);
             }
         }
-        if uv_blocked {
+        if uv_blocked && (asset.status != "error" || previous_uv_failure) {
             continue;
         }
         match asset.status.as_str() {
@@ -3401,18 +3529,23 @@ fn collect_problems(
                 &format!("{} a ete modifie depuis son dernier export.", asset.name),
                 Some("Exporter"),
             )),
-            "error" => problems.push(problem(
-                &format!("{}_export_error", asset.id),
-                "error",
-                "blender",
-                Some(asset.id.clone()),
-                "Dernier export en erreur",
-                asset
+            "error" => {
+                let raw = asset
                     .last_error
                     .as_deref()
-                    .unwrap_or("Blender n'a pas termine l'export."),
-                Some("Exporter"),
-            )),
+                    .unwrap_or("Blender n'a pas terminé l'export.");
+                let mut issue = problem(
+                    &format!("{}_export_error", asset.id),
+                    "error",
+                    "blender",
+                    Some(asset.id.clone()),
+                    "Dernier export en erreur",
+                    &export_error_summary(raw),
+                    Some("Exporter"),
+                );
+                issue.technical_details = Some(raw.into());
+                problems.push(issue);
+            }
             _ => {}
         }
     }
@@ -3428,6 +3561,12 @@ fn problem(
     detail: &str,
     action_label: Option<&str>,
 ) -> BlendUpProblem {
+    let category = if asset_id.is_some() {
+        "export"
+    } else {
+        "project"
+    }
+    .to_string();
     BlendUpProblem {
         id: id.to_string(),
         severity: severity.to_string(),
@@ -3436,7 +3575,83 @@ fn problem(
         title: title.to_string(),
         detail: detail.to_string(),
         action_label: action_label.map(str::to_string),
+        category,
+        version_label: None,
+        score: None,
+        minimum_score: None,
+        technical_details: None,
     }
+}
+
+fn is_uv_export_error(message: &str) -> bool {
+    message.contains("Export bloqué par le contrôle UV")
+        || message.contains("Export bloque par le controle UV")
+}
+
+fn export_error_summary(message: &str) -> String {
+    let cause = message
+        .lines()
+        .rev()
+        .find(|line| {
+            [
+                "RuntimeError:",
+                "ValueError:",
+                "TypeError:",
+                "OSError:",
+                "FileNotFoundError:",
+                "PermissionError:",
+            ]
+            .iter()
+            .any(|prefix| line.trim().starts_with(prefix))
+        })
+        .or_else(|| message.lines().rev().find(|line| !line.trim().is_empty()))
+        .unwrap_or("Blender n'a pas terminé l'export.")
+        .trim();
+    let cause = cause
+        .split_once(": ")
+        .map(|(_, reason)| reason)
+        .unwrap_or(cause);
+    cause.chars().take(400).collect()
+}
+
+fn uv_problem_reason(quality: &UvQualitySummary) -> String {
+    if let Some(error) = &quality.report.error {
+        return format!(
+            "Le contrôle n'a pas abouti : {}",
+            export_error_summary(error)
+        );
+    }
+    let worst = quality
+        .report
+        .objects
+        .iter()
+        .min_by(|a, b| a.score.total_cmp(&b.score));
+    if let Some(mesh) = worst {
+        if mesh.missing_uv_triangles > 0 {
+            return format!("{} : {} triangles n'ont pas de coordonnées UV. Crée une UV Map et déplie ce maillage dans Blender.", mesh.object_name, mesh.missing_uv_triangles);
+        }
+        if mesh.degenerate_triangles > 0 {
+            return format!("{} : {} triangles ont des UV écrasées ou invalides. Vérifie les coutures, puis refais le dépliage UV.", mesh.object_name, mesh.degenerate_triangles);
+        }
+        if !quality.report.complete {
+            return "L'analyse est incomplète. Consulte les mesures et relance le contrôle.".into();
+        }
+        return format!(
+            "{} obtient {:.1}/100. {}",
+            mesh.object_name,
+            mesh.score,
+            quality
+                .report
+                .issues
+                .iter()
+                .find(|issue| issue.starts_with(&mesh.object_name))
+                .map(String::as_str)
+                .unwrap_or(
+                    "Vérifie l'étirement, la densité et les chevauchements UV dans sa fiche."
+                )
+        );
+    }
+    "Aucun maillage avec des UV utilisables n'a été détecté.".into()
 }
 
 fn read_project_config(root: &Path) -> Result<ProjectConfig, String> {
@@ -3892,31 +4107,135 @@ fn command_log(stdout: &[u8], stderr: &[u8]) -> String {
 }
 
 fn open_with_system(path: &Path) -> Result<(), String> {
-    let result = if cfg!(target_os = "windows") {
-        Command::new("explorer").arg(path).spawn()
-    } else if cfg!(target_os = "macos") {
-        Command::new("open").arg(path).spawn()
-    } else {
-        Command::new("xdg-open").arg(path).spawn()
-    };
-    result
-        .map(|_| ())
-        .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::{
+            System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
+            UI::Shell::ShellExecuteW,
+        };
+        let name = windows_shell_path(path)?;
+        let operation = "open\0".encode_utf16().collect::<Vec<_>>();
+        unsafe {
+            let initialized = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
+            let result = ShellExecuteW(
+                std::ptr::null_mut(),
+                operation.as_ptr(),
+                name.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            ) as isize;
+            if initialized >= 0 {
+                CoUninitialize();
+            }
+            return if result > 32 {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Impossible d'ouvrir {} dans l'explorateur Windows (code {result}).",
+                    path.display()
+                ))
+            };
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let result = if cfg!(target_os = "macos") {
+            Command::new("open").arg(path).spawn()
+        } else {
+            Command::new("xdg-open").arg(path).spawn()
+        };
+        result
+            .map(|_| ())
+            .map_err(|error| format!("Impossible d'ouvrir {}: {error}", path.display()))
+    }
 }
 
 fn reveal_with_system(path: &Path) -> Result<(), String> {
-    let result = if cfg!(target_os = "windows") {
-        Command::new("explorer").arg("/select,").arg(path).spawn()
-    } else if cfg!(target_os = "macos") {
-        Command::new("open").arg("-R").arg(path).spawn()
-    } else {
-        Command::new("xdg-open")
-            .arg(path.parent().unwrap_or(path))
-            .spawn()
+    #[cfg(target_os = "windows")]
+    {
+        return reveal_in_windows_explorer(path);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let result = if cfg!(target_os = "macos") {
+            Command::new("open").arg("-R").arg(path).spawn()
+        } else {
+            Command::new("xdg-open")
+                .arg(path.parent().unwrap_or(path))
+                .spawn()
+        };
+        result
+            .map(|_| ())
+            .map_err(|error| format!("Impossible d'afficher {}: {error}", path.display()))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_shell_path(path: &Path) -> Result<Vec<u16>, String> {
+    use std::os::windows::ffi::OsStrExt;
+    let absolute = fs::canonicalize(path).map_err(|error| error.to_string())?;
+    // Rust canonicalizes with the extended path prefix; Explorer expects its
+    // regular display path, including UNC shares and Unicode names.
+    let regular = match absolute.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            std::path::Prefix::VerbatimDisk(drive) => {
+                PathBuf::from(format!("{}:\\", drive as char))
+                    .join(absolute.components().skip(2).collect::<PathBuf>())
+            }
+            std::path::Prefix::VerbatimUNC(server, share) => PathBuf::from("\\\\")
+                .join(server)
+                .join(share)
+                .join(absolute.components().skip(2).collect::<PathBuf>()),
+            _ => absolute,
+        },
+        _ => absolute,
     };
-    result
-        .map(|_| ())
-        .map_err(|error| format!("Impossible d'afficher {}: {error}", path.display()))
+    Ok(regular.as_os_str().encode_wide().chain(Some(0)).collect())
+}
+
+#[cfg(target_os = "windows")]
+fn reveal_in_windows_explorer(path: &Path) -> Result<(), String> {
+    use windows_sys::Win32::{
+        Foundation::RPC_E_CHANGED_MODE,
+        System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED},
+        UI::Shell::{SHOpenFolderAndSelectItems, SHParseDisplayName},
+    };
+    let name = windows_shell_path(path)?;
+    unsafe {
+        let initialized = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
+        if initialized < 0 && initialized != RPC_E_CHANGED_MODE {
+            return Err(format!(
+                "Initialisation de l'explorateur impossible ({initialized:#x})."
+            ));
+        }
+        let mut pidl = std::ptr::null_mut();
+        let parsed = SHParseDisplayName(
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut pidl,
+            0,
+            std::ptr::null_mut(),
+        );
+        let opened = if parsed >= 0 {
+            SHOpenFolderAndSelectItems(pidl, 0, std::ptr::null(), 0)
+        } else {
+            parsed
+        };
+        if !pidl.is_null() {
+            CoTaskMemFree(pidl.cast());
+        }
+        if initialized >= 0 {
+            CoUninitialize();
+        }
+        if opened < 0 {
+            return Err(format!(
+                "Impossible d'afficher {} dans l'explorateur ({opened:#x}).",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -3960,12 +4279,17 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            showcases::configure_showcase,
+            showcases::rebuild_showcase,
+            showcases::setup_editor_integration,
+            showcases::open_showcase_godot,
             read_user_settings,
             save_user_settings,
             read_default_project_snapshot,
             read_project_snapshot,
             create_project,
             update_project_engine,
+            update_project_paths,
             detect_blender,
             export_asset,
             generate_asset_preview,
@@ -4007,7 +4331,7 @@ mod tests {
     fn uv_report_fixture(root: &Path, source: &str, score: f64) -> Value {
         let metadata = fs::metadata(root.join(source)).unwrap();
         serde_json::json!({
-            "algorithmVersion": 1, "score": score, "complete": true, "allowUvOverlap": false,
+            "algorithmVersion": 2, "score": score, "complete": true, "allowUvOverlap": false,
             "sourcePath": source, "sourceSize": metadata.len(),
             "sourceModifiedNs": metadata.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_nanos().to_string(),
             "checkedAt": "1", "objects": [], "issues": []
@@ -4291,7 +4615,438 @@ mod tests {
         assert!(loaded.show_blender_command_prompt);
     }
 
-    fn test_root(label: &str) -> PathBuf {
+    #[test]
+    fn changing_project_roots_preserves_assets_exports_reports_and_godot_references() {
+        let root = test_root("custom_project_paths");
+        create_project(CreateProjectOptions {
+            project_root: root.to_string_lossy().into(),
+            project_name: "Test".into(),
+            engine: "godot".into(),
+        })
+        .unwrap();
+        let project = read_project_config(&root).unwrap();
+        fs::create_dir_all(root.join("Art/Rock/textures")).unwrap();
+        fs::write(root.join("Art/Rock/Rock.blend"), b"source").unwrap();
+        fs::write(root.join("Art/Rock/Rock.blend1"), b"backup").unwrap();
+        fs::write(root.join("Art/Rock/textures/color.png"), b"texture").unwrap();
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        let mut metadata = metadata_for_asset(&root, &asset);
+        metadata.details.notes = "Keep my notes".into();
+        metadata.details.thumbnail_path = Some("Art/Rock/textures/color.png".into());
+        metadata.details.lods.push(AssetLod {
+            id: "lod1".into(),
+            level: "LOD1".into(),
+            status: "exported".into(),
+            target_ratio: Some(50.0),
+            triangle_budget: None,
+            generated: true,
+            source_path: Some("Art/Rock/Rock.lod.lod1.blend".into()),
+            output_path: None,
+            source_modified_at: None,
+            output_modified_at: None,
+            notes: "LOD note".into(),
+            uv_quality: None,
+        });
+        fs::write(root.join("Art/Rock/Rock.lod.lod1.blend"), b"lod-source").unwrap();
+        metadata.details.variants.push(AssetVariant {
+            id: "moss".into(),
+            name: "Moss".into(),
+            status: "ready".into(),
+            source_path: Some("Art/Rock/Rock.variant.moss.blend".into()),
+            output_path: None,
+            source_modified_at: None,
+            output_modified_at: None,
+            notes: "Variant note".into(),
+            uv_quality: None,
+        });
+        fs::write(root.join("Art/Rock/Rock.variant.moss.blend"), b"variant").unwrap();
+        write_asset_metadata(&root, &metadata).unwrap();
+        fs::create_dir_all(root.join("Godot/Assets/Rock/variants")).unwrap();
+        fs::write(root.join("Godot/Assets/Rock/Rock.glb"), b"export").unwrap();
+        fs::write(
+            root.join("Godot/Assets/Rock/variants/moss.glb"),
+            b"variant-export",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Godot/main.tscn"),
+            b"path=\"res://Assets/Rock/Rock.glb\"",
+        )
+        .unwrap();
+        fs::write(
+            root.join("Godot/Assets/Rock/Rock_lod.tscn"),
+            b"path=\"res://Assets/Rock/variants/moss.glb\"",
+        )
+        .unwrap();
+        let report = uv_report_fixture(&root, &asset.source_path, 100.0);
+        let mut state = ExportState::default();
+        state.exports.insert(
+            asset.id.clone(),
+            ExportRecord {
+                output_path: asset.output_path.clone(),
+                success: true,
+                message: "Export completed".into(),
+            },
+        );
+        write_json(&export_state_file(&root), &state).unwrap();
+        write_json(
+            &root
+                .join(".blendup/uv-reports")
+                .join(&asset.source_path)
+                .with_extension("json"),
+            &report,
+        )
+        .unwrap();
+        let next = update_project_paths(
+            root.to_string_lossy().into(),
+            ProjectPaths {
+                art_root: "Sources 3D".into(),
+                engine_root: "Mon jeu".into(),
+                engine_assets_root: "Mon jeu/Modeles".into(),
+            },
+        )
+        .unwrap();
+        let moved = scan_assets(&root, &next, &read_export_state(&root)).unwrap();
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0].id, asset.id);
+        assert_eq!(moved[0].metadata.notes, "Keep my notes");
+        assert_eq!(moved[0].source_path, "Sources 3D/Rock/Rock.blend");
+        assert_eq!(
+            moved[0].metadata.variants[0].source_path.as_deref(),
+            Some("Sources 3D/Rock/Rock.variant.moss.blend")
+        );
+        assert_eq!(
+            moved[0].metadata.variants[0].output_path.as_deref(),
+            Some("Mon jeu/Modeles/Rock/variants/moss.glb")
+        );
+        assert_eq!(
+            moved[0].metadata.thumbnail_path.as_deref(),
+            Some("Sources 3D/Rock/textures/color.png")
+        );
+        assert!(!moved[0].uv_quality.as_ref().unwrap().stale);
+        assert_eq!(
+            moved[0].metadata.lods[0].source_path.as_deref(),
+            Some("Sources 3D/Rock/Rock.lod.lod1.blend")
+        );
+        assert_eq!(
+            moved[0].metadata.lods[0].output_path.as_deref(),
+            Some("Mon jeu/Modeles/Rock/lods/lod1.glb")
+        );
+        assert_eq!(
+            read_export_state(&root).exports[&asset.id].output_path,
+            "Mon jeu/Modeles/Rock/Rock.glb"
+        );
+        assert_eq!(
+            fs::read(root.join(&moved[0].source_path)).unwrap(),
+            b"source"
+        );
+        assert_eq!(
+            fs::read(root.join("Sources 3D/Rock/Rock.blend1")).unwrap(),
+            b"backup"
+        );
+        assert_eq!(
+            fs::read(root.join("Mon jeu/Modeles/Rock/variants/moss.glb")).unwrap(),
+            b"variant-export"
+        );
+        assert!(fs::read_to_string(root.join("Mon jeu/main.tscn"))
+            .unwrap()
+            .contains("res://Modeles/"));
+        assert!(
+            fs::read_to_string(root.join("Mon jeu/Modeles/Rock/Rock_lod.tscn"))
+                .unwrap()
+                .contains("res://Modeles/")
+        );
+        assert!(!root.join("Art").exists() && !root.join("Godot").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn custom_paths_support_unity_nested_exports_and_standalone_sources() {
+        for engine in ["unity", "none"] {
+            let root = test_root("nested_custom_paths");
+            create_project(CreateProjectOptions {
+                project_root: root.to_string_lossy().into(),
+                project_name: "Test".into(),
+                engine: engine.into(),
+            })
+            .unwrap();
+            fs::write(root.join("Art/Cube.blend"), b"source").unwrap();
+            if engine == "unity" {
+                fs::write(root.join("Unity/Assets/Cube.fbx"), b"export").unwrap();
+                fs::write(root.join("Unity/Assets.meta"), b"guid: keep-folder-guid").unwrap();
+                assert!(update_project_paths(
+                    root.to_string_lossy().into(),
+                    ProjectPaths {
+                        art_root: "Art".into(),
+                        engine_root: "Unity".into(),
+                        engine_assets_root: "Unity/Models".into()
+                    }
+                )
+                .is_err());
+            }
+            let next = update_project_paths(
+                root.to_string_lossy().into(),
+                ProjectPaths {
+                    art_root: "Mes modeles".into(),
+                    engine_root: "Unity".into(),
+                    engine_assets_root: "Unity/Assets/Models".into(),
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                scan_assets(&root, &next, &ExportState::default())
+                    .unwrap()
+                    .len(),
+                1
+            );
+            if engine == "unity" {
+                assert!(root.join("Unity/Assets/Models/Cube.fbx").is_file());
+                assert_eq!(
+                    fs::read(root.join("Unity/Assets/Models.meta")).unwrap(),
+                    b"guid: keep-folder-guid"
+                );
+            } else {
+                assert!(next.paths.engine_root.is_empty());
+                assert!(!root.join("Unity").exists());
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn custom_path_collisions_and_invalid_paths_leave_project_untouched() {
+        let root = test_root("path_collisions");
+        create_project(CreateProjectOptions {
+            project_root: root.to_string_lossy().into(),
+            project_name: "Test".into(),
+            engine: "godot".into(),
+        })
+        .unwrap();
+        fs::write(root.join("Art/Cube.blend"), b"source").unwrap();
+        fs::create_dir_all(root.join("Existing")).unwrap();
+        fs::write(root.join("Existing/keep.txt"), b"keep").unwrap();
+        let before = fs::read(project_file(&root)).unwrap();
+        for art in [
+            "../Outside",
+            "C:/Outside",
+            ".blendup/Art",
+            "Existing",
+            "Godot/Sources",
+            "Art/Nested",
+        ] {
+            assert!(
+                update_project_paths(
+                    root.to_string_lossy().into(),
+                    ProjectPaths {
+                        art_root: art.into(),
+                        engine_root: "Godot".into(),
+                        engine_assets_root: "Godot/Assets".into()
+                    }
+                )
+                .is_err(),
+                "{art}"
+            );
+            assert_eq!(fs::read(project_file(&root)).unwrap(), before);
+            assert_eq!(fs::read(root.join("Art/Cube.blend")).unwrap(), b"source");
+            assert_eq!(fs::read(root.join("Existing/keep.txt")).unwrap(), b"keep");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn path_migration_rolls_back_all_folder_moves_on_metadata_failure() {
+        let root = test_root("path_rollback");
+        create_project(CreateProjectOptions {
+            project_root: root.to_string_lossy().into(),
+            project_name: "Test".into(),
+            engine: "unity".into(),
+        })
+        .unwrap();
+        fs::write(root.join("Art/Cube.blend"), b"source").unwrap();
+        fs::write(root.join("Unity/Assets/Cube.fbx"), b"export").unwrap();
+        let project = read_project_config(&root).unwrap();
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        // A directory where the metadata file belongs forces a failure after every move.
+        fs::create_dir_all(asset_metadata_file(&root, &asset.id)).unwrap();
+        let before = fs::read(project_file(&root)).unwrap();
+        assert!(update_project_paths(
+            root.to_string_lossy().into(),
+            ProjectPaths {
+                art_root: "Sources".into(),
+                engine_root: "Jeu".into(),
+                engine_assets_root: "Jeu/Assets/Models".into()
+            }
+        )
+        .is_err());
+        assert_eq!(fs::read(project_file(&root)).unwrap(), before);
+        assert_eq!(fs::read(root.join("Art/Cube.blend")).unwrap(), b"source");
+        assert_eq!(
+            fs::read(root.join("Unity/Assets/Cube.fbx")).unwrap(),
+            b"export"
+        );
+        assert!(!root.join("Sources").exists() && !root.join("Jeu").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn steam_launch_passes_the_blend_path_as_a_separate_argument() {
+        let root = test_root("steam_launch");
+        let blender = root.join("steamapps/common/Blender/blender.exe");
+        fs::create_dir_all(blender.parent().unwrap()).unwrap();
+        let steam = root.join("steam.exe");
+        fs::write(&steam, b"placeholder").unwrap();
+        fs::write(
+            root.join("steamapps/appmanifest_365670.acf"),
+            format!(
+                "\"installdir\" \"Blender\"\n\"LauncherPath\" \"{}\"",
+                steam.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .unwrap();
+        let source = root.join("Models with spaces/Étagère.blend");
+        let command = blender_open_command(&blender, &source);
+        assert_eq!(command.get_program(), steam.as_os_str());
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![
+                std::ffi::OsStr::new("-applaunch"),
+                std::ffi::OsStr::new("365670"),
+                source.as_os_str()
+            ]
+        );
+        let standalone = root.join("Standalone/blender.exe");
+        assert_eq!(
+            blender_open_command(&standalone, &source).get_program(),
+            standalone.as_os_str()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_explorer_can_resolve_unicode_files_and_space_containing_folders() {
+        use windows_sys::Win32::{
+            System::Com::{
+                CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED,
+            },
+            UI::Shell::SHParseDisplayName,
+        };
+        let root = test_root("explorer_Étagère avec espaces");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("Étagère.blend"), b"blend").unwrap();
+        unsafe {
+            let initialized = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
+            assert!(initialized >= 0);
+            for path in [&root, &root.join("Étagère.blend")] {
+                let name = windows_shell_path(path).unwrap();
+                let display = String::from_utf16(&name[..name.len() - 1]).unwrap();
+                assert!(!display.starts_with("\\\\?\\"), "{display}");
+                let mut pidl = std::ptr::null_mut();
+                let result = SHParseDisplayName(
+                    name.as_ptr(),
+                    std::ptr::null_mut(),
+                    &mut pidl,
+                    0,
+                    std::ptr::null_mut(),
+                );
+                assert!(result >= 0 && !pidl.is_null(), "{result:#x} {display}");
+                CoTaskMemFree(pidl.cast());
+            }
+            CoUninitialize();
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn blender_backups_are_neither_scanned_as_assets_nor_copied() {
+        let root = test_root("ignore_backups");
+        fs::create_dir_all(root.join("Art/Rock/textures")).unwrap();
+        for name in ["Rock.blend", "Rock.blend1", "Old.blend2", "Rock.BLEND12"] {
+            fs::write(root.join("Art/Rock").join(name), name).unwrap();
+        }
+        fs::write(root.join("Art/Rock/textures/color.png"), b"texture").unwrap();
+        let project = new_project_config("Test", "none");
+        assert_eq!(
+            scan_assets(&root, &project, &ExportState::default())
+                .unwrap()
+                .len(),
+            1
+        );
+        copy_directory_recursive(&root.join("Art/Rock"), &root.join("Copy")).unwrap();
+        assert!(
+            root.join("Copy/Rock.blend").exists() && root.join("Copy/textures/color.png").exists()
+        );
+        assert!(
+            !root.join("Copy/Rock.blend1").exists()
+                && !root.join("Copy/Old.blend2").exists()
+                && !root.join("Copy/Rock.BLEND12").exists()
+        );
+        assert!(root.join("Art/Rock/Rock.blend1").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn uv_failures_show_one_problem_and_expire_when_the_quality_passes() {
+        let root = test_root("clear_uv_failure");
+        create_project(CreateProjectOptions {
+            project_root: root.to_string_lossy().into(),
+            project_name: "Test".into(),
+            engine: "godot".into(),
+        })
+        .unwrap();
+        let mut project = read_project_config(&root).unwrap();
+        project.blender.validate_uvs = true;
+        fs::write(root.join("Art/Cube.blend"), b"source").unwrap();
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        let mut state = ExportState::default();
+        state.exports.insert(
+            asset.id.clone(),
+            ExportRecord {
+                output_path: asset.output_path.clone(),
+                success: false,
+                message:
+                    "Traceback...\nRuntimeError: Export bloqué par le contrôle UV : score 0.0/100"
+                        .into(),
+            },
+        );
+        let failed = scan_assets(&root, &project, &state).unwrap();
+        let problems = collect_problems(&root, &project, &failed);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].category, "uv");
+        assert_eq!(problems[0].action_label.as_deref(), Some("Vérifier"));
+        write_json(
+            &root
+                .join(".blendup/uv-reports")
+                .join(&asset.source_path)
+                .with_extension("json"),
+            &uv_report_fixture(&root, &asset.source_path, 100.0),
+        )
+        .unwrap();
+        let corrected = scan_assets(&root, &project, &state).unwrap();
+        assert_eq!(corrected[0].status, "ready");
+        assert!(corrected[0].last_error.is_none());
+        project.blender.validate_uvs = false;
+        assert_eq!(
+            scan_assets(&root, &project, &state).unwrap()[0].status,
+            "ready"
+        );
+        state.exports.get_mut(&asset.id).unwrap().message =
+            "RuntimeError: Exporter unavailable".into();
+        assert_eq!(
+            scan_assets(&root, &project, &state).unwrap()[0].status,
+            "error"
+        );
+        assert_eq!(export_error_summary("Blender startup\nTraceback (most recent call last):\n  File x\nValueError: Missing texture\n"), "Missing texture");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    pub(super) fn test_root(label: &str) -> PathBuf {
         env::temp_dir().join(format!(
             "blendup_{label}_{}_{}",
             std::process::id(),

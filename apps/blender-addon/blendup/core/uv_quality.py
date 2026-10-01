@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-ALGORITHM_VERSION = 1
+ALGORITHM_VERSION = 2
 EPSILON = 1e-12
 MAX_OVERLAP_PAIRS = 2_000_000
 
@@ -158,7 +158,9 @@ def measure_uv_quality(triangles: list[UvTriangle], policy: UvPolicy, seams: dic
         groups.setdefault(triangle.object_name, []).append(i)
     objects = []
     issues = []
+    object_issues = []
     for name, indices in groups.items():
+        issue_start = len(issues)
         total = sum(measurements[i]["area"] for i in indices)
         valid = [i for i in indices if measurements[i]["area"] > EPSILON and measurements[i]["uvArea"] > EPSILON]
         valid_area = sum(measurements[i]["area"] for i in valid)
@@ -184,6 +186,9 @@ def measure_uv_quality(triangles: list[UvTriangle], policy: UvPolicy, seams: dic
         if degenerate: issues.append(f"{name} : {degenerate} triangle(s) dégénéré(s) ou UV invalides.")
         if stretch < 0.8 and valid: issues.append(f"{name} : étirement UV (qualité {stretch * 100:.0f}/100).")
         if overlap > 0.001 and not policy.allow_uv_overlap: issues.append(f"{name} : {overlap * 100:.1f} % de surface UV superposée.")
+        object_issues.append((score, issues[issue_start:]))
+    issues = [issue for _, entries in sorted(object_issues, key=lambda item: item[0]) for issue in entries]
+    objects.sort(key=lambda item: item["score"])
     if not complete: issues.append("Analyse des chevauchements trop complexe : vérification incomplète, export bloqué.")
     if not objects: issues.append("Aucun maillage avec des faces à vérifier.")
     # A small broken object cannot be hidden by a large correctly unwrapped object.

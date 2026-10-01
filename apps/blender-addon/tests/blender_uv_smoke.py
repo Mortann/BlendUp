@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import bpy
 
@@ -11,6 +12,7 @@ addon_root = Path(sys.argv[sys.argv.index("--") + 1]).resolve()
 sys.path.insert(0, str(addon_root))
 import blendup
 import blendup.handlers as handlers
+import blendup.blender_uv as uv_adapter
 from blendup.blender_uv import analyze_scene, project_policy, report_path
 from blendup.ops.export_ops import export_current
 
@@ -47,6 +49,17 @@ def main():
             assert not report["unsavedChanges"], report
             assert report["sourceModifiedNs"] == str(source.stat().st_mtime_ns)
             assert not (root / ".blendup/export-state.json").exists()
+
+            # Evaluation may dirty transient Blender data. Fresh saved sources
+            # must keep their valid report; actual unsaved edits stay marked.
+            fake_bpy = SimpleNamespace(data=SimpleNamespace(is_dirty=False))
+            def dirty_analysis(*args):
+                fake_bpy.data.is_dirty = True
+                return report.copy()
+            with patch.object(uv_adapter, "bpy", fake_bpy), patch.object(uv_adapter, "analyze_scene", dirty_analysis):
+                assert not uv_adapter.check_and_record(root, source)["unsavedChanges"]
+                assert uv_adapter.check_and_record(root, source)["unsavedChanges"]
+                assert not uv_adapter.check_and_record(root, source, source_is_saved=True)["unsavedChanges"]
 
             # Saving from edit mode preserves the active object, mode and face selection.
             bpy.ops.object.mode_set(mode="EDIT")

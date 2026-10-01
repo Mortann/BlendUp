@@ -37,9 +37,27 @@ Le menu contextuel permet aussi d'afficher le fichier `.blend` dans l'explorateu
 | Remonter au dossier parent | Alt+↑ |
 | Fermer un dialogue ou la fiche détaillée | Échap |
 
-Ces raccourcis ne déclenchent aucune action sur les fichiers pendant la saisie dans un champ. Les notifications se ferment automatiquement après 5 secondes (8 secondes pour une erreur) et peuvent toujours être fermées manuellement.
+Ces raccourcis ne déclenchent aucune action sur les fichiers pendant la saisie dans un champ. Les notifications flottent en bas à gauche et se ferment automatiquement après 5 secondes (8 secondes pour une erreur). Les options de tri et d’affichage passent dans un menu lorsque la place manque ; les dossiers parents restent accessibles depuis le bouton `…` du chemin.
 
 Dans **Paramètres → Application et lancement de Blender**, active **Ouvrir automatiquement les nouveaux assets dans Blender** pour ouvrir chaque asset dès sa création. Cette option est désactivée par défaut. La création du fichier se fait sans fenêtre de terminal ; l'option d'affichage de la fenêtre de commande concerne l'ouverture de Blender pour travailler sur le fichier.
+
+Si Blender est installé via Steam, BlendUp utilise le lanceur Steam pour les nouvelles sessions interactives. Ferme une ancienne session lancée directement, puis rouvre un asset depuis BlendUp pour permettre à Steam de suivre cette session. Les exports et contrôles en arrière-plan utilisent directement Blender.
+
+Les fichiers `.blend1`, `.blend2`, etc. sont les sauvegardes de Blender. Ils n’apparaissent pas comme assets et ne sont pas recopiés lors d’une duplication. Les sauvegardes déjà présentes sont conservées.
+
+## Renommer les dossiers du projet
+
+Dans **Paramètres → Type de projet**, modifie les chemins **Sources**, **Projet moteur** et **Exports**, puis clique sur **Enregistrer les dossiers**. Il s’agit du nom réel des dossiers, relatif au projet BlendUp. Ferme Blender et le moteur avant ce déplacement.
+
+BlendUp déplace les fichiers et conserve les identifiants, notes, miniatures, variantes, LOD, rapports UV et exports. Les références `res://` de Godot sont mises à jour et les métadonnées Unity sont conservées. Unity impose une destination sous son dossier `Assets`. Les chemins absolus enregistrés dans les fichiers Blender ou dans d’autres outils doivent être adaptés dans ces outils.
+
+Les sources et le moteur doivent rester séparés. Une destination existante est refusée pour éviter de remplacer des fichiers. Si le déplacement échoue, BlendUp restaure les chemins et les dossiers précédents.
+
+## Lire les problèmes
+
+Une fiche regroupe les problèmes d’un asset et de ses versions. Elle indique le chemin, la cause principale et le score UV avec son seuil. Recherche, gravité et type permettent de filtrer la liste. Les mesures complètes et traces Blender sont repliées sous **Mesures et détails techniques**.
+
+Un ancien échec dû aux UV ne reste pas affiché après un contrôle à jour qui passe, ou après la désactivation du contrôle UV. Les autres erreurs d’export restent signalées. Après installation de l’add-on **0.5.1**, lance **Vérifier tous les assets** une fois pour renouveler les rapports créés par l’ancienne analyse.
 
 ## États
 
@@ -59,7 +77,7 @@ Installe l'add-on situé dans `apps/blender-addon/blendup.zip`. Après avoir ouv
 
 ## Préparation à chaque sauvegarde
 
-Dans **Paramètres → Préparation et qualité dans Blender**, enregistre les options de ton projet. Elles sont désactivées par défaut et nécessitent l'add-on **BlendUp 0.5.0** ou plus récent dans Blender : réinstalle le ZIP mis à jour puis redémarre Blender.
+Dans **Paramètres → Préparation et qualité dans Blender**, enregistre les options de ton projet. Elles sont désactivées par défaut et nécessitent l'add-on **BlendUp 0.5.1** ou plus récent dans Blender : réinstalle le ZIP mis à jour puis redémarre Blender.
 
 - **Appliquer position, rotation et échelle** applique les trois transformations des objets maillages locaux, en conservant leur géométrie dans la scène.
 - **Refaire automatiquement l'unwrap Angle Based** remplace les coordonnées de la couche UV de rendu, à partir des coutures existantes. Cette option peut donc remplacer un dépliage manuel. Elle ne crée pas de coutures.

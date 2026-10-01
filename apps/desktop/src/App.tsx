@@ -53,6 +53,10 @@ function App() {
     >
       {app.activeView === "assets" ? (
         <AssetsView
+          onConfigureShowcase={app.handleConfigureShowcase}
+          onRebuildShowcase={app.handleRebuildShowcase}
+          onOpenShowcase={app.handleOpenShowcase}
+          showcaseBusyIds={app.showcaseBusyIds}
           checkingUvAssetIds={app.checkingUvAssetIds}
           onCheckUv={app.checkUvAsset}
           exportingAssetIds={app.exportingAssetIds}
@@ -95,12 +99,15 @@ function App() {
         />
       ) : (
         <SettingsView
+          onSetupIntegration={app.handleSetupIntegration}
+          integrationBusy={app.integrationBusy}
           blenderDetection={app.blenderDetection}
           blenderPathInput={app.blenderPathInput}
           exportBusy={app.exportingAssetIds.length > 0 || app.checkingUvAssetIds.length > 0}
           checkingUvs={app.checkingUvAssetIds.length > 0}
           onCheckAllUvs={app.checkAllUvs}
           onSaveProjectBlenderSettings={app.saveProjectBlenderSettings}
+          onSaveProjectPaths={app.saveProjectPaths}
           isDetectingBlender={app.isDetectingBlender}
           isReexporting={app.isReexporting}
           onChangeEngine={app.changeProjectEngine}

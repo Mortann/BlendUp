@@ -18,6 +18,22 @@ import type {
 } from "./types";
 
 const userSettingsStorageKey = "blendup:user-settings";
+
+export const configureShowcase = (projectRoot: string, folder: string, enabled: boolean, spacing = 1.5) =>
+  invoke<string>("configure_showcase", { projectRoot, folder, enabled, spacing });
+export const rebuildShowcase = (projectRoot: string, id: string, blenderPath?: string) =>
+  invoke<string>("rebuild_showcase", { projectRoot, id, blenderPath });
+export const setupEditorIntegration = (projectRoot: string, editor: "godot" | "blender") =>
+  invoke<string>("setup_editor_integration", { projectRoot, editor });
+export async function openShowcaseGodot(projectRoot: string, id: string): Promise<string> {
+  try { return await invoke<string>("open_showcase_godot", { projectRoot, id }); }
+  catch (error) {
+    if (!String(error).includes("GODOT_REQUIRED")) throw error;
+    const godotPath = await open({ title: "Choisir l’exécutable Godot", multiple: false, filters: [{ name: "Godot", extensions: ["exe"] }] });
+    if (!godotPath || Array.isArray(godotPath)) return "Ouverture annulée.";
+    return invoke<string>("open_showcase_godot", { projectRoot, id, godotPath });
+  }
+}
 const activeDemoSnapshot = new URLSearchParams(window.location.search).get("demo") === "3d"
   ? standaloneDemoProjectSnapshot : demoProjectSnapshot;
 
@@ -97,6 +113,10 @@ export async function updateProjectEngine(
 
 export async function updateProjectBlenderSettings(projectRoot: string, settings: BlenderProjectSettings): Promise<BlendUpProject> {
   return invoke<BlendUpProject>("update_project_blender_settings", { projectRoot, settings });
+}
+
+export async function updateProjectPaths(projectRoot: string, paths: BlendUpProject["paths"]): Promise<BlendUpProject> {
+  return invoke<BlendUpProject>("update_project_paths", { projectRoot, paths: { artRoot: paths.artRoot, engineRoot: paths.engineRoot ?? "", engineAssetsRoot: paths.engineAssetsRoot ?? "" } });
 }
 
 export async function checkAssetUvs(projectRoot: string, assetId: string, blenderPath?: string): Promise<AssetMutationResult> {

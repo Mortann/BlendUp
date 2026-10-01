@@ -28,6 +28,7 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import type { AssetLod, AssetMutationResult, AssetVariant, BlendUpAsset, ProjectSnapshot } from "../blendup/types";
 import { AssetCard, FolderCard } from "./assets/AssetVisual";
+import { ShowcaseCard } from "./assets/ShowcaseCard";
 import type { AssetDialogState, AssetExplorerSettings, AssetQuickFilter, ClipboardEntry, ContextMenuState, ContextTarget } from "./assets/model";
 import {
   loadCollapsedFolders,
@@ -63,6 +64,7 @@ const AssetDetail = lazy(() => import("./assets/AssetDetail").then((module) => (
 type Mutation = Promise<AssetMutationResult | null>;
 
 export function AssetsView({
+  onConfigureShowcase, onRebuildShowcase, onOpenShowcase, showcaseBusyIds,
   checkingUvAssetIds,
   onCheckUv,
   exportingAssetIds,
@@ -94,6 +96,10 @@ export function AssetsView({
   setSelectedAssetId,
   snapshot
 }: {
+  onConfigureShowcase: (folder: string, enabled: boolean, spacing?: number) => Promise<void>;
+  onRebuildShowcase: (id: string) => Promise<boolean>;
+  onOpenShowcase: (id: string, editor: "blender" | "godot") => Promise<void>;
+  showcaseBusyIds: string[];
   checkingUvAssetIds: string[];
   onCheckUv: (assetId: string) => Promise<boolean>;
   exportingAssetIds: string[];
@@ -142,6 +148,8 @@ export function AssetsView({
   const [settings, setSettings] = useState<AssetExplorerSettings>(() => loadExplorerSettings(projectId));
   const [favorites, setFavorites] = useState<string[]>(() => loadFavorites(projectId));
   const [currentPath, setCurrentPath] = useState(() => loadExplorerPath(projectId) || explorerRoot);
+  const currentShowcase = snapshot.showcases?.find((scene) => normalizePath(scene.folder) === currentPath);
+  const showShowcase = !!currentShowcase && !query && filter === "all";
   const [recentFolders, setRecentFolders] = useState<string[]>(() => loadRecentFolders(projectId));
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [dialog, setDialog] = useState<AssetDialogState>(null);
@@ -272,7 +280,7 @@ export function AssetsView({
       if (event.defaultPrevented || dialog || openingAsset || element?.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], .modal-backdrop")) return;
       const action = explorerShortcut(event);
       if (!action) return;
-      if (action === "open" && element?.closest("button, a") && (!contextMenu || element.closest("[role='menuitem']"))) return;
+      if (action === "open" && element?.closest("button, a, summary") && (!contextMenu || element.closest("[role='menuitem']"))) return;
       const target = contextMenu?.target ?? (selectedAsset ? { kind: "asset" as const, assetId: selectedAsset.id } : activeTarget);
       const asset = target.kind === "asset" ? snapshot.assets.find((item) => item.id === target.assetId) : null;
       const folder = target.kind === "folder" ? target.path : currentPath;
@@ -329,12 +337,14 @@ export function AssetsView({
             <div className="asset-browser-toolbar">
               <label className="search-field"><Search size={16} /><input ref={searchInput} onChange={(event) => setQuery(event.target.value)} title={`Rechercher (${shortcutLabels.search})`} placeholder="Rechercher un asset ou un dossier…" value={query} />{query ? <button aria-label="Effacer" onClick={() => setQuery("")} type="button"><X size={14} /></button> : null}</label>
               <div className="browser-actions">
-                <button onClick={() => setDialog({ kind: "createFolder", parent: currentPath })} title={`Nouveau dossier (${shortcutLabels.createFolder})`} type="button"><FolderPlus size={16} /></button>
+                <button disabled={currentShowcase?.status === "generating"} title={currentShowcase ? "Désactiver le Showcase de ce dossier" : "Créer un Showcase de ce dossier et de ses sous-dossiers"} aria-pressed={!!currentShowcase} onClick={() => void onConfigureShowcase(currentPath, !currentShowcase)} type="button"><FileBox size={18} /><span className="showcase-toggle-label">Showcase</span></button>
+              <button onClick={() => setDialog({ kind: "createFolder", parent: currentPath })} title={`Nouveau dossier (${shortcutLabels.createFolder})`} type="button"><FolderPlus size={16} /></button>
                 <button className="primary" onClick={() => setDialog({ kind: "createAsset", parent: currentPath })} title={`Nouvel asset (${shortcutLabels.createAsset})`} type="button"><Plus size={16} /> Asset</button>
               </div>
             </div>
             <div className="asset-view-options">
-              <div className="breadcrumbs">
+              <div className="breadcrumbs" title={currentPath}>
+                <details className="breadcrumb-ancestors"><summary aria-label="Dossiers parents">…</summary><div>{breadcrumbParts(currentPath).filter((part) => part.path === explorerRoot || part.path.startsWith(`${explorerRoot}/`)).map((part) => <button key={part.path} onClick={(event) => { setFilter("all"); navigate(part.path); event.currentTarget.closest("details")?.removeAttribute("open"); }} type="button">{part.label}</button>)}</div></details>
                 {breadcrumbParts(currentPath).filter((part) => part.path === explorerRoot || part.path.startsWith(`${explorerRoot}/`)).map((part, index) => <span key={part.path}>{index ? <ChevronRight size={13} /> : null}<button onClick={() => { setFilter("all"); navigate(part.path); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnFolder(event, part.path)} type="button">{part.label}</button></span>)}
               </div>
               <span>{visibleFolders.length + visibleAssets.length} élément{visibleFolders.length + visibleAssets.length > 1 ? "s" : ""}</span>
@@ -348,12 +358,23 @@ export function AssetsView({
                 <button className={settings.displayMode === "list" ? "active" : ""} onClick={() => updateSettings({ displayMode: "list" })} title="Liste" type="button"><LayoutList size={15} /></button>
                 <button className={settings.displayMode === "compact" ? "active" : ""} onClick={() => updateSettings({ displayMode: "compact" })} title="Compact" type="button"><List size={15} /></button>
               </div>
+              <details className="compact-view-options"><summary title="Filtres et affichage"><SlidersHorizontal size={16} /><span>Affichage</span></summary>
+              <div className="view-option-group">
+                <select aria-label="Trier les assets" onChange={(event) => updateSettings({ sortMode: event.target.value as AssetExplorerSettings["sortMode"] })} value={settings.sortMode}><option value="recent">Plus récents</option><option value="name">Nom</option><option value="status">État</option><option value="size">Taille</option></select>
+                <select aria-label="Taille des miniatures" onChange={(event) => updateSettings({ thumbnailSize: event.target.value as AssetExplorerSettings["thumbnailSize"] })} value={settings.thumbnailSize}><option value="small">Petites</option><option value="medium">Moyennes</option><option value="large">Grandes</option></select>
+                <button className={settings.hideEmptyFolders ? "active" : ""} onClick={() => updateSettings({ hideEmptyFolders: !settings.hideEmptyFolders })} title="Masquer les dossiers vides" type="button"><SlidersHorizontal size={15} /></button>
+                <button className={settings.displayMode === "grid" ? "active" : ""} onClick={() => updateSettings({ displayMode: "grid" })} title="Grille" type="button"><Grid2X2 size={15} /></button>
+                <button className={settings.displayMode === "list" ? "active" : ""} onClick={() => updateSettings({ displayMode: "list" })} title="Liste" type="button"><LayoutList size={15} /></button>
+                <button className={settings.displayMode === "compact" ? "active" : ""} onClick={() => updateSettings({ displayMode: "compact" })} title="Compact" type="button"><List size={15} /></button>
+              </div>
+              </details>
             </div>
 
-            {visibleFolders.length || visibleAssets.length ? (
+            {visibleFolders.length || visibleAssets.length || showShowcase ? (
               <div className={`asset-items ${settings.displayMode} thumb-${settings.thumbnailSize}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnFolder(event, currentPath)}>
                 {visibleFolders.map((folder) => <FolderCard assetCount={folderAssetCount(snapshot.assets, folder)} displayMode={settings.displayMode} key={folder} name={baseName(folder)} onContextMenu={(event) => openMenu(event, { kind: "folder", path: folder })} onDropAsset={(assetId) => void onMoveAsset(assetId, folder)} onDropFolder={(source) => void onMoveFolder(source, folder)} onOpen={() => navigate(folder)} onSelect={() => { setSelectedAssetId(null); setActiveTarget({ kind: "folder", path: folder }); }} path={folder} previewAssets={snapshot.assets.filter((asset) => assetBrowserFolder(asset) === folder || assetBrowserFolder(asset).startsWith(`${folder}/`)).slice(0, 4)} projectRoot={snapshot.projectRoot} thumbnailSize={settings.thumbnailSize} />)}
                 {visibleAssets.map((asset) => <AssetCard asset={asset} displayMode={settings.displayMode} exporting={exportingAssetIds.includes(asset.id)} favorite={favorites.includes(asset.id)} key={asset.id} onContextMenu={(event) => openMenu(event, { kind: "asset", assetId: asset.id })} onExport={() => void (standalone ? onExportAsset(asset.id) : onExportAssetVersions(asset.id))} onOpen={() => onOpenAsset(asset)} onSelect={() => setSelectedAssetId(asset.id)} onToggleFavorite={() => toggleFavorite(asset.id)} projectRoot={snapshot.projectRoot} selected={asset.id === selectedAssetId} thumbnailSize={settings.thumbnailSize} />)}
+                {showShowcase && currentShowcase ? <ShowcaseCard key={currentShowcase.id} scene={currentShowcase} busy={showcaseBusyIds.includes(currentShowcase.id)} onOpen={(editor) => void onOpenShowcase(currentShowcase.id, editor)} onRefresh={() => void onRebuildShowcase(currentShowcase.id)} onConfigure={(enabled, spacing) => void onConfigureShowcase(currentPath, enabled, spacing)} /> : null}
               </div>
             ) : (
               <div className="empty-state"><FileBox size={35} /><h2>{query || filter !== "all" ? "Aucun résultat" : "Ce dossier est vide"}</h2><p>{query ? "Essaie une recherche plus large." : "Crée un asset Blender ou un dossier pour commencer."}</p>{!query && filter === "all" ? <div className="button-row"><button onClick={() => setDialog({ kind: "createFolder", parent: currentPath })} type="button"><FolderPlus size={15} /> Dossier</button><button className="primary" onClick={() => setDialog({ kind: "createAsset", parent: currentPath })} type="button"><Plus size={15} /> Asset</button></div> : null}</div>
@@ -387,7 +408,7 @@ export function AssetsView({
         </Suspense>
       ) : null}
 
-      {contextMenu ? <ContextMenu onClose={() => setContextMenu(null)} onOpenPath={onOpenPath} standalone={standalone} menu={contextMenu} clipboard={clipboard} currentPath={currentPath} rootPath={explorerRoot} assets={snapshot.assets} onCopy={(entry) => setClipboard(entry)} onDeleteAsset={deleteAsset} onDeleteFolder={deleteFolder} onDialog={setDialog} onDuplicate={(assetId) => void duplicate(assetId)} onExport={(assetId) => void onExportAsset(assetId)} onNavigate={navigate} onOpen={(asset) => onOpenAsset(asset)} onOrganize={(assetId) => void onOrganizeAsset(assetId)} onPaste={paste} onToggleFavorite={toggleFavorite} /> : null}
+      {contextMenu ? <ContextMenu showcaseFolders={(snapshot.showcases ?? []).map((s) => s.folder)} onShowcase={(folder) => void onConfigureShowcase(folder, !snapshot.showcases?.some((s) => s.folder === folder))} onClose={() => setContextMenu(null)} onOpenPath={onOpenPath} standalone={standalone} menu={contextMenu} clipboard={clipboard} currentPath={currentPath} rootPath={explorerRoot} assets={snapshot.assets} onCopy={(entry) => setClipboard(entry)} onDeleteAsset={deleteAsset} onDeleteFolder={deleteFolder} onDialog={setDialog} onDuplicate={(assetId) => void duplicate(assetId)} onExport={(assetId) => void onExportAsset(assetId)} onNavigate={navigate} onOpen={(asset) => onOpenAsset(asset)} onOrganize={(assetId) => void onOrganizeAsset(assetId)} onPaste={paste} onToggleFavorite={toggleFavorite} /> : null}
       {dialog ? <AssetDialog key={JSON.stringify(dialog)} dialog={dialog} folders={folders} rootPath={explorerRoot} onClose={() => setDialog(null)} onCreateAsset={onCreateAsset} onCreateFolder={onCreateFolder} onMoveAsset={onMoveAsset} onMoveFolder={onMoveFolder} onRenameAsset={onRenameAsset} onRenameFolder={onRenameFolder} /> : null}
     </div>
   );
@@ -396,8 +417,8 @@ export function AssetsView({
 function SidebarSection({ children, label }: { children: ReactNode; label: string }) { return <div className="asset-sidebar-section"><strong>{label}</strong><div>{children}</div></div>; }
 function SidebarButton({ active, count, icon, label, onClick }: { active: boolean; count: number; icon: ReactNode; label: string; onClick: () => void }) { return <button className={active ? "active" : ""} onClick={onClick} type="button">{icon}<span>{label}</span><b>{count}</b></button>; }
 
-function ContextMenu({ onClose, onOpenPath, standalone, menu, clipboard, currentPath, rootPath, assets, onCopy, onDeleteAsset, onDeleteFolder, onDialog, onDuplicate, onExport, onNavigate, onOpen, onOrganize, onPaste, onToggleFavorite }: {
-  onClose: () => void; onOpenPath: (path: string) => void;
+function ContextMenu({ showcaseFolders, onShowcase, onClose, onOpenPath, standalone, menu, clipboard, currentPath, rootPath, assets, onCopy, onDeleteAsset, onDeleteFolder, onDialog, onDuplicate, onExport, onNavigate, onOpen, onOrganize, onPaste, onToggleFavorite }: {
+  showcaseFolders: string[]; onShowcase: (folder: string) => void; onClose: () => void; onOpenPath: (path: string) => void;
   standalone: boolean; menu: ContextMenuState; clipboard: ClipboardEntry | null; currentPath: string; rootPath: string; assets: BlendUpAsset[];
   onCopy: (entry: ClipboardEntry) => void; onDeleteAsset: (asset: BlendUpAsset) => void; onDeleteFolder: (folder: string) => void;
   onDialog: (dialog: AssetDialogState) => void; onDuplicate: (assetId: string) => void; onExport: (assetId: string) => void;
@@ -409,6 +430,7 @@ function ContextMenu({ onClose, onOpenPath, standalone, menu, clipboard, current
   const target = folder ?? currentPath;
   return <div className="context-menu" onClick={(event) => { event.stopPropagation(); onClose(); }} role="menu" aria-label="Actions" style={{ left: menu.x, top: menu.y }}>
     {asset && !isOwnedAssetFolder(asset) ? <MenuButton icon={<FolderCog size={14} />} label="Ranger dans un dossier d'asset" onClick={() => onOrganize(asset.id)} /> : null}
+    {!asset ? <MenuButton icon={<FileBox size={14} />} label={showcaseFolders.includes(target) ? "Désactiver le Showcase" : "Activer le Showcase"} onClick={() => onShowcase(target)} /> : null}
     {asset ? <><MenuButton icon={<ExternalLink size={14} />} shortcut={shortcutLabels.open} label="Ouvrir dans Blender" onClick={() => onOpen(asset)} /><MenuButton icon={<FolderOpen size={14} />} label="Afficher dans les fichiers" shortcut={shortcutLabels.reveal} onClick={() => onOpenPath(asset.sourcePath)} /><MenuButton icon={<Upload size={14} />} label={standalone ? "Générer l’aperçu" : "Exporter"} onClick={() => onExport(asset.id)} /><hr /><MenuButton icon={<Heart size={14} />} label="Favori" onClick={() => onToggleFavorite(asset.id)} /><MenuButton icon={<Pencil size={14} />} shortcut={shortcutLabels.rename} label="Renommer…" onClick={() => onDialog({ kind: "renameAsset", assetId: asset.id, initialValue: asset.name })} /><MenuButton icon={<Move size={14} />} label="Déplacer…" onClick={() => onDialog({ kind: "moveAsset", assetId: asset.id })} /><MenuButton icon={<Copy size={14} />} shortcut={shortcutLabels.duplicate} label="Dupliquer" onClick={() => onDuplicate(asset.id)} /><MenuButton icon={<Copy size={14} />} shortcut={shortcutLabels.copy} label="Copier" onClick={() => onCopy({ assetId: asset.id, mode: "copy" })} /><MenuButton icon={<FolderInput size={14} />} shortcut={shortcutLabels.cut} label="Couper" onClick={() => onCopy({ assetId: asset.id, mode: "cut" })} /><hr /><MenuButton danger icon={<Trash2 size={14} />} shortcut={shortcutLabels.delete} label="Mettre à la corbeille" onClick={() => onDeleteAsset(asset)} /></> : null}
     {folder ? <><MenuButton icon={<FolderOpen size={14} />} shortcut={shortcutLabels.open} label="Ouvrir" onClick={() => onNavigate(folder)} /><MenuButton icon={<FolderOpen size={14} />} label="Ouvrir dans les fichiers" shortcut={shortcutLabels.reveal} onClick={() => onOpenPath(folder)} /><MenuButton icon={<Plus size={14} />} shortcut={shortcutLabels.createAsset} label="Nouvel asset…" onClick={() => onDialog({ kind: "createAsset", parent: folder })} /><MenuButton icon={<FolderPlus size={14} />} shortcut={shortcutLabels.createFolder} label="Nouveau dossier…" onClick={() => onDialog({ kind: "createFolder", parent: folder })} />{clipboard ? <MenuButton icon={<Clipboard size={14} />} shortcut={shortcutLabels.paste} label="Coller ici" onClick={() => onPaste(folder)} /> : null}<hr />{folder !== rootPath ? <><MenuButton icon={<Pencil size={14} />} shortcut={shortcutLabels.rename} label="Renommer…" onClick={() => onDialog({ kind: "renameFolder", folder, initialValue: baseName(folder) })} /><MenuButton icon={<Move size={14} />} label="Déplacer…" onClick={() => onDialog({ kind: "moveFolder", folder })} /></> : null}{folder !== rootPath ? <><hr /><MenuButton danger icon={<Trash2 size={14} />} shortcut={shortcutLabels.delete} label="Mettre à la corbeille" onClick={() => onDeleteFolder(folder)} /></> : null}</> : null}
     {menu.target.kind === "background" ? <><MenuButton icon={<FolderOpen size={14} />} label="Ouvrir ce dossier dans les fichiers" shortcut={shortcutLabels.reveal} onClick={() => onOpenPath(target)} /><hr /><MenuButton icon={<Plus size={14} />} shortcut={shortcutLabels.createAsset} label="Nouvel asset…" onClick={() => onDialog({ kind: "createAsset", parent: target })} /><MenuButton icon={<FolderPlus size={14} />} shortcut={shortcutLabels.createFolder} label="Nouveau dossier…" onClick={() => onDialog({ kind: "createFolder", parent: target })} />{clipboard ? <><hr /><MenuButton icon={<Clipboard size={14} />} shortcut={shortcutLabels.paste} label="Coller ici" onClick={() => onPaste(target)} /></> : null}</> : null}
