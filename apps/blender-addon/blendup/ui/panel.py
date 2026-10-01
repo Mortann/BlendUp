@@ -42,22 +42,27 @@ class BLENDUP_PT_asset(bpy.types.Panel):
         row = project.row()
         row.label(text=asset.project.name, icon="FILE_FOLDER")
         row.operator("blendup.refresh", text="", icon="FILE_REFRESH")
-        project.label(text=f"Moteur : {asset.project.engine.title()}")
-        project.label(text=f"Format : {asset.export_format.upper()}")
+        standalone = asset.project.engine == "none"
+        project.label(text="Projet 3D · Sans moteur" if standalone else f"Moteur : {asset.project.engine.title()}")
+        if not standalone:
+            project.label(text=f"Format : {asset.export_format.upper()}")
 
-        status = export_status(asset)
-        label, icon, help_text = STATUS[status]
-        state = layout.box()
-        state.label(text=label, icon=icon)
-        state.label(text=help_text)
-        destination = state.column(align=True)
-        destination.label(text="Destination", icon="EXPORT")
-        for line in split_text(asset.output_relative, 38):
-            destination.label(text=line)
+        if standalone:
+            layout.label(text="Gestion des assets, sans export moteur", icon="FILE_BLEND")
+        else:
+            status = export_status(asset)
+            label, icon, help_text = STATUS[status]
+            state = layout.box()
+            state.label(text=label, icon=icon)
+            state.label(text=help_text)
+            destination = state.column(align=True)
+            destination.label(text="Destination", icon="EXPORT")
+            for line in split_text(asset.output_relative, 38):
+                destination.label(text=line)
 
-        button = layout.row()
-        button.scale_y = 1.35
-        button.operator("blendup.export_asset", text="Réexporter" if status == "exported" else "Exporter l'asset", icon="EXPORT")
+            button = layout.row()
+            button.scale_y = 1.35
+            button.operator("blendup.export_asset", text="Réexporter" if status == "exported" else "Exporter l'asset", icon="EXPORT")
 
         validation = layout.box()
         validation.label(text="Contrôle", icon="VIEWZOOM")
@@ -66,16 +71,17 @@ class BLENDUP_PT_asset(bpy.types.Panel):
             validation.label(text=summary, icon="INFO")
         validation.operator("blendup.validate_asset", icon="CHECKMARK")
 
-        options = layout.box()
         prefs = preferences(context)
-        if prefs:
+        if prefs and not standalone:
+            options = layout.box()
             options.prop(prefs, "auto_export", icon="RECOVER_LAST")
             options.prop(prefs, "selected_only")
         row = layout.row(align=True)
         source = row.operator("blendup.open_location", text="Art", icon="FILE_FOLDER")
         source.location = "SOURCE"
-        output = row.operator("blendup.open_location", text="Assets", icon="FILE_FOLDER")
-        output.location = "OUTPUT"
+        if not standalone:
+            output = row.operator("blendup.open_location", text="Assets", icon="FILE_FOLDER")
+            output.location = "OUTPUT"
         layout.operator("blendup.prepare_workspace", text="Préparer les dossiers", icon="NEWFOLDER")
 
 

@@ -17,6 +17,7 @@ import {
   exportAssetVersion,
   exportAssetVersions,
   generateAssetLods,
+  generateAssetPreview,
   loadDefaultProjectSnapshot,
   loadProjectSnapshot,
   loadUserSettings,
@@ -220,7 +221,7 @@ export function useBlendUpController() {
     if (!project || exportingAssetIds.includes(assetId)) return false;
     setExportingAssetIds((current) => [...current, assetId]);
     try {
-      const result = await exportAsset({
+      const result = await (project.project.engine === "none" ? generateAssetPreview : exportAsset)({
         assetId,
         blenderPath: userSettings.blenderPath ?? undefined,
         projectRoot: project.projectRoot
@@ -235,7 +236,7 @@ export function useBlendUpController() {
       }
       return result.success;
     } catch (error) {
-      showError("Export impossible", error);
+      showError(project.project.engine === "none" ? "Aperçu impossible" : "Export impossible", error);
       return false;
     } finally {
       setExportingAssetIds((current) => current.filter((id) => id !== assetId));
@@ -402,13 +403,13 @@ export function useBlendUpController() {
   };
 
   const changeProjectEngine = async (engine: GameEngine) => {
-    if (!project || engine === project.project.engine) return;
+    if (!project || exportingAssetIds.length || isReexporting || engine === project.project.engine) return;
     try {
       const result = await updateProjectEngine(project.projectRoot, engine);
       await refreshProject();
-      setOperationMessage({ detail: result.message, title: "Moteur modifie", tone: "success" });
+      setOperationMessage({ detail: result.message, title: "Type de projet modifié", tone: "success" });
     } catch (error) {
-      showError("Impossible de modifier le moteur", error);
+      showError("Impossible de modifier le type de projet", error);
     }
   };
 

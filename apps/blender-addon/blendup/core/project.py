@@ -26,11 +26,11 @@ class ProjectInfo:
 class AssetLocation:
     project: ProjectInfo
     source: Path
-    output: Path
+    output: Path | None
     source_relative: str
-    output_relative: str
+    output_relative: str | None
     asset_id: str
-    export_format: str
+    export_format: str | None
 
 
 def normalize_relative(value: str) -> str:
@@ -62,15 +62,17 @@ def normalize_project(root: Path, raw: dict[str, Any]) -> ProjectInfo:
         raise ValueError("Le projet BlendUp n'a pas de nom.")
     paths = raw.get("paths") if isinstance(raw.get("paths"), dict) else {}
     explicit_engine = str(raw.get("engine") or "").lower()
-    engine = explicit_engine if explicit_engine in {"godot", "unity"} else ("godot" if paths.get("godotRoot") else "unity")
+    if explicit_engine and explicit_engine not in {"none", "godot", "unity"}:
+        raise ValueError("Le type de projet doit être 3D, Godot ou Unity.")
+    engine = explicit_engine or ("godot" if paths.get("godotRoot") else "unity")
     engine_label = "Godot" if engine == "godot" else "Unity"
     art_root = normalize_relative(str(paths.get("artRoot") or "Art"))
-    engine_root = normalize_relative(str(
+    engine_root = "" if engine == "none" else normalize_relative(str(
         paths.get("engineRoot")
         or paths.get("godotRoot" if engine == "godot" else "unityRoot")
         or engine_label
     ))
-    engine_assets_root = normalize_relative(str(
+    engine_assets_root = "" if engine == "none" else normalize_relative(str(
         paths.get("engineAssetsRoot")
         or paths.get("godotAssetsRoot" if engine == "godot" else "unityAssetsRoot")
         or f"{engine_root}/Assets"
@@ -100,16 +102,15 @@ def locate_asset(blend_file: str | Path, project: ProjectInfo | None = None) -> 
         inside_art = source.relative_to(art_path)
     except ValueError as error:
         raise ValueError(f"Le fichier doit être placé dans {project.art_root}.") from error
-    export_format = "glb" if project.engine == "godot" else "fbx"
-    output_relative = managed_output_relative(inside_art, export_format)
-    output = project.root / project.engine_assets_root / output_relative
+    export_format = None if project.engine == "none" else "glb" if project.engine == "godot" else "fbx"
+    output = None if export_format is None else project.root / project.engine_assets_root / managed_output_relative(inside_art, export_format)
     source_relative = relative_string(project.root, source)
     return AssetLocation(
         project=project,
         source=source,
         output=output,
         source_relative=source_relative,
-        output_relative=relative_string(project.root, output),
+        output_relative=relative_string(project.root, output) if output else None,
         asset_id=asset_id_for_path(source_relative),
         export_format=export_format,
     )

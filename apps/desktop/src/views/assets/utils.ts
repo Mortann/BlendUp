@@ -47,11 +47,11 @@ export function sortAssets(assets: BlendUpAsset[], mode: AssetSortMode) {
 }
 
 function statusOrder(status: AssetExportStatus) {
-  return ({ error: 0, outdated: 1, ready: 2, exported: 3 } as const)[status];
+  return ({ error: 0, outdated: 1, ready: 2, exported: 3, local: 4 } as const)[status];
 }
 
 export function statusLabel(status: AssetExportStatus) {
-  return ({ error: "Erreur", outdated: "À réexporter", ready: "Prêt", exported: "À jour" } as const)[status];
+  return ({ error: "Erreur", outdated: "À réexporter", ready: "Prêt", exported: "À jour", local: "3D" } as const)[status];
 }
 
 export function formatBytes(bytes: number) {

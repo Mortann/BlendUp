@@ -1,6 +1,7 @@
 import {
   Box,
   Copy,
+  Eye,
   ExternalLink,
   Gauge,
   Image as ImageIcon,
@@ -56,6 +57,7 @@ export function AssetDetail({
   onSetThumbnail: () => void;
   projectRoot: string;
 }) {
+  const standalone = asset.status === "local";
   const [tab, setTab] = useState<DetailTab>("overview");
   const [notes, setNotes] = useState(asset.metadata.notes);
   const [tags, setTags] = useState(asset.metadata.tags.join(", "));
@@ -94,10 +96,10 @@ export function AssetDetail({
         <button aria-label="Fermer" className="icon-button" onClick={onClose} type="button"><X size={18} /></button>
       </header>
 
-      <div className="asset-detail-actions has-export-all">
+      <div className={`asset-detail-actions ${standalone ? "" : "has-export-all"}`}>
         <button onClick={onOpen} type="button"><ExternalLink size={15} /> Blender</button>
-        <button className="primary" disabled={exporting} onClick={onExport} type="button"><Upload size={15} /> {asset.status === "exported" ? "Réexporter" : "Exporter"}</button>
-        <button disabled={exporting} onClick={onExportAll} type="button"><Layers3 size={15} /> Tout exporter</button>
+        <button className="primary" disabled={exporting} onClick={onExport} type="button">{standalone ? <Eye size={15} /> : <Upload size={15} />} {standalone ? (asset.outputModifiedAt ? "Actualiser l’aperçu" : "Générer l’aperçu") : asset.status === "exported" ? "Réexporter" : "Exporter"}</button>
+        {!standalone ? <button disabled={exporting} onClick={onExportAll} type="button"><Layers3 size={15} /> Tout exporter</button> : null}
       </div>
 
       <nav className="detail-tabs" aria-label="Sections de l'asset">
@@ -120,7 +122,7 @@ export function AssetDetail({
             <label className="field"><span><Tag size={13} /> Tags</span><input onChange={(event) => setTags(event.target.value)} placeholder="environment, stone, modular" value={tags} /></label>
             <div className="detail-info-grid">
               <Info label="État" value={statusLabel(asset.status)} />
-              <Info label="Format" value={asset.format.toUpperCase()} />
+              <Info label="Format" value={standalone ? "BLEND" : asset.format.toUpperCase()} />
               <Info label="Taille source" value={formatBytes(asset.sizeBytes)} />
               <Info label="Modifié" value={formatTimestamp(asset.sourceModifiedAt)} />
             </div>
@@ -137,6 +139,7 @@ export function AssetDetail({
 
         {tab === "variants" ? (
           <VariantManager
+            standalone={standalone}
             exporting={exporting}
             items={variants}
             onChange={setVariants}
@@ -154,6 +157,7 @@ export function AssetDetail({
 
         {tab === "lods" ? (
           <LodManager
+            standalone={standalone}
             exporting={exporting}
             format={asset.format}
             items={lods}
@@ -168,7 +172,7 @@ export function AssetDetail({
         {tab === "files" ? (
           <div className="detail-file-list">
             <FileRow label="Source Blender" onOpen={onOpen} path={asset.sourcePath} />
-            <FileRow label={`Export ${asset.format.toUpperCase()}`} onOpen={() => onOpenPath(asset.outputPath)} path={asset.outputPath} />
+            {!standalone ? <FileRow label={`Export ${asset.format.toUpperCase()}`} onOpen={() => onOpenPath(asset.outputPath)} path={asset.outputPath} /> : null}
             <FileRow label="Dossier de travail" onOpen={() => onOpenPath(asset.folder)} path={asset.folder} />
           </div>
         ) : null}
@@ -182,6 +186,7 @@ export function AssetDetail({
 }
 
 function VariantManager({
+  standalone,
   exporting,
   items,
   onChange,
@@ -195,6 +200,7 @@ function VariantManager({
   originalSourcePath,
   originalStatus
 }: {
+  standalone?: boolean;
   exporting: boolean;
   items: AssetVariant[];
   onChange: (items: AssetVariant[]) => void;
@@ -223,12 +229,13 @@ function VariantManager({
 
   return (
     <div className="asset-version-manager">
-      <div className="version-intro"><Copy size={22} /><div><strong>Versions Blender indépendantes</strong><span>L'original compte comme première version. Chaque copie partage le dossier de textures, avec son propre fichier .blend et son propre export.</span></div></div>
+      <div className="version-intro"><Copy size={22} /><div><strong>Versions Blender indépendantes</strong><span>L'original compte comme première version. Chaque copie partage le dossier de textures et possède son propre fichier .blend.</span></div></div>
       <div className="version-create-row">
         <input onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void create(); }} placeholder="Ex. Rouge, Endommagée…" value={name} />
         <button className="primary" disabled={creating || !name.trim()} onClick={() => void create()} type="button">{creating ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />} Créer la copie</button>
       </div>
       <OriginalVersionCard
+        standalone={standalone}
         exporting={exporting}
         onExport={onExportOriginal}
         onOpen={onOpenOriginal}
@@ -239,6 +246,7 @@ function VariantManager({
       {!items.length ? <VersionEmpty icon={<Layers3 size={25} />} text="Aucune variante supplémentaire pour cet asset." /> : null}
       {items.map((variant, index) => (
         <VersionCard
+          standalone={standalone}
           exporting={exporting}
           key={variant.id}
           label={variant.name}
@@ -257,6 +265,7 @@ function VariantManager({
 }
 
 function OriginalVersionCard({
+  standalone,
   exporting,
   onExport,
   onOpen,
@@ -264,6 +273,7 @@ function OriginalVersionCard({
   sourcePath,
   status
 }: {
+  standalone?: boolean;
   exporting: boolean;
   onExport: () => void;
   onOpen: () => void;
@@ -274,16 +284,17 @@ function OriginalVersionCard({
   return (
     <article className="asset-version-card original-version">
       <header><div><strong>Originale</strong><span>Asset de base</span></div><b className={`asset-status ${status}`}>{statusLabel(status)}</b></header>
-      <div className="version-paths"><code title={sourcePath}>{sourcePath}</code><code title={outputPath}>{outputPath}</code></div>
+      <div className="version-paths"><code title={sourcePath}>{sourcePath}</code>{!standalone ? <code title={outputPath}>{outputPath}</code> : null}</div>
       <footer>
         <button onClick={onOpen} type="button"><ExternalLink size={14} /> Blender</button>
-        <button className="primary" disabled={exporting} onClick={onExport} type="button"><Upload size={14} /> Exporter</button>
+        {!standalone ? <button className="primary" disabled={exporting} onClick={onExport} type="button"><Upload size={14} /> Exporter</button> : null}
       </footer>
     </article>
   );
 }
 
 function LodManager({
+  standalone,
   exporting,
   format,
   items,
@@ -293,6 +304,7 @@ function LodManager({
   onGenerate,
   onOpen
 }: {
+  standalone?: boolean;
   exporting: boolean;
   format: BlendUpAsset["format"];
   items: AssetLod[];
@@ -316,10 +328,11 @@ function LodManager({
     <div className="asset-version-manager">
       <div className="version-intro"><Gauge size={22} /><div><strong>LOD Blender automatiques</strong><span>BlendUp crée LOD1 à 50 %, LOD2 à 25 % et LOD3 à 12,5 % avec un modificateur Decimate encore éditable.</span></div></div>
       <button className="primary full" disabled={generating} onClick={() => void generate()} type="button">{generating ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />} Générer les LOD manquants</button>
-      {format === "glb" ? <div className="godot-lod-tip"><strong>Godot prêt à l'emploi</strong><span>« Tout exporter » crée aussi une scène <code>NomAsset_lod.tscn</code> qui change automatiquement de version selon la distance de la caméra.</span></div> : null}
+      {!standalone && format === "glb" ? <div className="godot-lod-tip"><strong>Godot prêt à l'emploi</strong><span>« Tout exporter » crée aussi une scène <code>NomAsset_lod.tscn</code> qui change automatiquement de version selon la distance de la caméra.</span></div> : null}
       {!items.length ? <VersionEmpty icon={<Gauge size={25} />} text="Aucun LOD généré pour cet asset." /> : null}
       {items.map((lod, index) => (
         <VersionCard
+          standalone={standalone}
           badge={`${lod.targetRatio ?? 100} %${lod.generated ? " · Auto" : ""}`}
           exporting={exporting}
           key={lod.id}
@@ -339,6 +352,7 @@ function LodManager({
 }
 
 function VersionCard({
+  standalone,
   badge,
   exporting,
   label,
@@ -352,6 +366,7 @@ function VersionCard({
   status
 }: {
   badge?: string;
+  standalone?: boolean;
   exporting: boolean;
   label: string;
   notes: string;
@@ -366,11 +381,11 @@ function VersionCard({
   return (
     <article className="asset-version-card">
       <header><div><strong>{label}</strong>{badge ? <span>{badge}</span> : null}</div><b className={`asset-status ${status === "missing" ? "error" : status}`}>{versionStatusLabel(status)}</b></header>
-      <div className="version-paths"><code title={sourcePath}>{sourcePath ?? "Aucun fichier Blender lié"}</code>{outputPath ? <code title={outputPath}>{outputPath}</code> : null}</div>
+      <div className="version-paths"><code title={sourcePath}>{sourcePath ?? "Aucun fichier Blender lié"}</code>{!standalone && outputPath ? <code title={outputPath}>{outputPath}</code> : null}</div>
       <textarea onChange={(event) => onNotes(event.target.value)} placeholder="Notes sur cette version…" rows={2} value={notes} />
       <footer>
         <button disabled={!onOpen} onClick={onOpen} type="button"><ExternalLink size={14} /> Blender</button>
-        <button className="primary" disabled={exporting || !sourcePath} onClick={onExport} type="button"><Upload size={14} /> Exporter</button>
+        {!standalone ? <button className="primary" disabled={exporting || !sourcePath} onClick={onExport} type="button"><Upload size={14} /> Exporter</button> : null}
         <button aria-label={`Supprimer ${label}`} className="icon-button danger" onClick={onDelete} title="Mettre cette version à la corbeille" type="button"><Trash2 size={15} /></button>
       </footer>
     </article>

@@ -18,15 +18,15 @@ export function ProblemsView({
         <div>
           <span className="eyebrow">Controle utile uniquement</span>
           <h1>Problemes</h1>
-          <p>BlendUp signale seulement ce qui bloque ou demande un nouvel export.</p>
+          <p>{snapshot.project.engine === "none" ? "Les problèmes de ta bibliothèque d'assets." : "BlendUp signale seulement ce qui bloque ou demande un nouvel export."}</p>
         </div>
       </header>
 
       {snapshot.problems.length === 0 ? (
         <section className="content-panel success-empty">
           <CheckCircle2 size={38} />
-          <h2>Tout est a jour</h2>
-          <p>Aucun probleme detecte dans le flux Art vers {snapshot.project.engine === "godot" ? "Godot" : "Unity"}.</p>
+          <h2>{snapshot.project.engine === "none" ? "Aucun problème détecté" : "Tout est à jour"}</h2>
+          <p>{snapshot.project.engine === "none" ? "Ta bibliothèque d'assets ne nécessite aucun export moteur." : `Aucun problème détecté dans le flux Art vers ${snapshot.project.engine === "godot" ? "Godot" : "Unity"}.`}</p>
         </section>
       ) : (
         <section className="problem-list">

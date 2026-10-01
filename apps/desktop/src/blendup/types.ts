@@ -1,6 +1,6 @@
-export type GameEngine = "godot" | "unity";
+export type GameEngine = "none" | "godot" | "unity";
 
-export type AssetExportStatus = "ready" | "exported" | "outdated" | "error";
+export type AssetExportStatus = "local" | "ready" | "exported" | "outdated" | "error";
 
 export type AssetVersionStatus = AssetExportStatus | "missing";
 
@@ -45,8 +45,8 @@ export interface BlendUpProject {
   engine: GameEngine;
   paths: {
     artRoot: string;
-    engineRoot: string;
-    engineAssetsRoot: string;
+    engineRoot?: string;
+    engineAssetsRoot?: string;
   };
 }
 
@@ -55,6 +55,7 @@ export interface BlendUpAsset {
   name: string;
   folder: string;
   sourcePath: string;
+  /** Engine export, or a disposable local preview cache when status is local. */
   outputPath: string;
   format: "fbx" | "glb";
   status: AssetExportStatus;

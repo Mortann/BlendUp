@@ -102,8 +102,8 @@ export function AssetViewer({ asset, projectRoot }: { asset: BlendUpAsset; proje
       {state !== "ready" ? (
         <div className="asset-viewer-state">
           {state === "loading" ? <LoaderCircle className="spin" size={28} /> : <PackageOpen size={30} />}
-          <strong>{state === "loading" ? "Chargement de l'aperçu…" : state === "error" ? "Aperçu indisponible" : "Exporte l'asset pour l'afficher"}</strong>
-          <span>Le fichier {asset.format.toUpperCase()} est utilisé directement.</span>
+          <strong>{state === "loading" ? "Chargement de l'aperçu…" : state === "error" ? "Aperçu indisponible" : asset.status === "local" ? "Génère l’aperçu pour afficher cet asset" : "Exporte l’asset pour l’afficher"}</strong>
+          <span>{asset.status === "local" ? "L’aperçu reste dans le cache local du projet." : `Le fichier ${asset.format.toUpperCase()} est utilisé directement.`}</span>
         </div>
       ) : null}
     </div>

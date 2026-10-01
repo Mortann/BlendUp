@@ -8,7 +8,7 @@ from bpy.app.handlers import persistent
 
 from .core.bridge import acknowledge_open, clear_open_request, read_open_request, requested_blend_file
 from .core.project import find_project_root
-from .ops.export_ops import export_current
+from .ops.export_ops import current_asset, export_current
 from .prefs import preferences
 
 
@@ -27,6 +27,8 @@ def export_after_save(_filepath):
         return
     _exporting = True
     try:
+        if current_asset().project.engine == "none":
+            return
         asset = export_current()
         print(f"[BlendUp] Export automatique : {asset.output_relative}")
     except Exception as error:

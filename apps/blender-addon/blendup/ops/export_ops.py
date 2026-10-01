@@ -22,6 +22,9 @@ def current_asset() -> AssetLocation:
 def export_current(context=None) -> AssetLocation:
     context = context or bpy.context
     asset = current_asset()
+    if asset.project.engine == "none":
+        raise ValueError("Ce projet 3D n'a pas de moteur lié. Aucun export n'est nécessaire.")
+    assert asset.output is not None
     prefs = preferences(context)
     asset.output.parent.mkdir(parents=True, exist_ok=True)
     selected_only = bool(prefs and prefs.selected_only)
@@ -63,7 +66,10 @@ class BLENDUP_OT_export_asset(bpy.types.Operator):
 
     @classmethod
     def poll(cls, _context):
-        return bool(bpy.data.filepath)
+        try:
+            return current_asset().project.engine != "none"
+        except (ValueError, OSError):
+            return False
 
     def execute(self, context):
         try:
@@ -85,6 +91,8 @@ class BLENDUP_OT_open_location(bpy.types.Operator):
     def execute(self, _context):
         try:
             asset = current_asset()
+            if self.location == "OUTPUT" and asset.output is None:
+                raise ValueError("Ce projet 3D n'a pas de dossier d'export moteur.")
             path = asset.source.parent if self.location == "SOURCE" else asset.output.parent
             path.mkdir(parents=True, exist_ok=True)
             open_directory(Path(path))

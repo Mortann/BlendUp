@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { demoProjectSnapshot } from "./demoSnapshot";
+import { demoProjectSnapshot, standaloneDemoProjectSnapshot } from "./demoSnapshot";
 import type {
   AssetLod,
   AssetMutationResult,
@@ -16,11 +16,13 @@ import type {
 } from "./types";
 
 const userSettingsStorageKey = "blendup:user-settings";
+const activeDemoSnapshot = new URLSearchParams(window.location.search).get("demo") === "3d"
+  ? standaloneDemoProjectSnapshot : demoProjectSnapshot;
 
 function isBrowserDemo(projectRoot?: string): boolean {
   return import.meta.env.DEV
-    && new URLSearchParams(window.location.search).get("demo") === "1"
-    && (!projectRoot || projectRoot === demoProjectSnapshot.projectRoot);
+    && ["1", "3d"].includes(new URLSearchParams(window.location.search).get("demo") ?? "")
+    && (!projectRoot || projectRoot === activeDemoSnapshot.projectRoot);
 }
 
 export const defaultUserSettings: UserSettings = {
@@ -35,12 +37,12 @@ export const defaultUserSettings: UserSettings = {
 export async function loadProjectSnapshot(projectRoot: string): Promise<ProjectSnapshot> {
   const trimmed = projectRoot.trim();
   if (!trimmed) throw new Error("Choisis un dossier projet BlendUp.");
-  if (isBrowserDemo(trimmed)) return demoProjectSnapshot;
+  if (isBrowserDemo(trimmed)) return activeDemoSnapshot;
   return invoke<ProjectSnapshot>("read_project_snapshot", { projectRoot: trimmed });
 }
 
 export async function loadDefaultProjectSnapshot(): Promise<ProjectSnapshot> {
-  if (isBrowserDemo()) return demoProjectSnapshot;
+  if (isBrowserDemo()) return activeDemoSnapshot;
   return invoke<ProjectSnapshot>("read_default_project_snapshot");
 }
 
@@ -100,6 +102,18 @@ export async function exportAsset(options: {
   projectRoot: string;
 }): Promise<ExportAssetResult> {
   return invoke<ExportAssetResult>("export_asset", {
+    assetId: options.assetId,
+    blenderPath: options.blenderPath?.trim() || null,
+    projectRoot: options.projectRoot
+  });
+}
+
+export async function generateAssetPreview(options: {
+  assetId: string;
+  blenderPath?: string;
+  projectRoot: string;
+}): Promise<ExportAssetResult> {
+  return invoke<ExportAssetResult>("generate_asset_preview", {
     assetId: options.assetId,
     blenderPath: options.blenderPath?.trim() || null,
     projectRoot: options.projectRoot

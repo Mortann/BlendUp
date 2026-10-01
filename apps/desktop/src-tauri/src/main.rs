@@ -113,7 +113,9 @@ const ASSET_SUPPORT_DIRECTORIES: [&str; 3] = ["textures", "references", "renders
 #[serde(rename_all = "camelCase")]
 struct ProjectPaths {
     art_root: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     engine_root: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     engine_assets_root: String,
 }
 
@@ -449,10 +451,12 @@ fn create_project(options: CreateProjectOptions) -> Result<CreateProjectResult, 
     let project = new_project_config(project_name, &engine);
     fs::create_dir_all(root.join(&project.paths.art_root))
         .map_err(|error| format!("Impossible de creer le dossier Art: {error}"))?;
-    fs::create_dir_all(root.join(&project.paths.engine_assets_root))
-        .map_err(|error| format!("Impossible de creer le dossier Assets: {error}"))?;
+    if project.engine != "none" {
+        fs::create_dir_all(root.join(&project.paths.engine_assets_root))
+            .map_err(|error| format!("Impossible de creer le dossier Assets: {error}"))?;
+        write_json(&export_state_file(&root), &ExportState::default())?;
+    }
     write_json(&project_file(&root), &project)?;
-    write_json(&export_state_file(&root), &ExportState::default())?;
 
     Ok(CreateProjectResult {
         project_root: root.to_string_lossy().to_string(),
@@ -475,25 +479,31 @@ fn update_project_engine(
     if project.engine == engine {
         return Ok(UpdateProjectEngineResult {
             project,
-            message: "Ce moteur est deja actif.".to_string(),
+            message: "Ce type de projet est deja actif.".to_string(),
         });
     }
 
-    let previous_root = project.paths.engine_root.clone();
     project.engine = engine.clone();
-    project.paths.engine_root = engine_display_name(&engine).to_string();
-    project.paths.engine_assets_root = format!("{}/Assets", project.paths.engine_root);
+    let defaults = new_project_config(&project.name, &engine);
+    project.paths.engine_root = defaults.paths.engine_root;
+    project.paths.engine_assets_root = defaults.paths.engine_assets_root;
 
-    fs::create_dir_all(root.join(&project.paths.engine_assets_root))
-        .map_err(|error| format!("Impossible de creer la nouvelle destination: {error}"))?;
+    if engine != "none" {
+        fs::create_dir_all(root.join(&project.paths.engine_assets_root))
+            .map_err(|error| format!("Impossible de creer la nouvelle destination: {error}"))?;
+        write_json(&export_state_file(&root), &ExportState::default())?;
+    }
     write_json(&project_file(&root), &project)?;
-    write_json(&export_state_file(&root), &ExportState::default())?;
 
     Ok(UpdateProjectEngineResult {
-        message: format!(
-            "Les exports vont maintenant vers {}. Le dossier {} a ete conserve.",
-            project.paths.engine_assets_root, previous_root
-        ),
+        message: if engine == "none" {
+            "Projet 3D actif, sans moteur lie. Les fichiers existants sont conserves.".to_string()
+        } else {
+            format!(
+                "Les exports vont maintenant vers {}. Les fichiers existants sont conserves.",
+                project.paths.engine_assets_root
+            )
+        },
         project,
     })
 }
@@ -517,6 +527,35 @@ fn detect_blender(blender_path: Option<String>) -> ToolDetection {
 
 #[tauri::command]
 fn export_asset(
+    project_root: String,
+    asset_id: String,
+    blender_path: Option<String>,
+) -> Result<ExportAssetResult, String> {
+    let root = validated_project_root(&project_root)?;
+    require_project_engine(&read_project_config(&root)?)?;
+    export_asset_file(project_root, asset_id, blender_path)
+}
+
+#[tauri::command]
+fn generate_asset_preview(
+    project_root: String,
+    asset_id: String,
+    blender_path: Option<String>,
+) -> Result<ExportAssetResult, String> {
+    let root = validated_project_root(&project_root)?;
+    if read_project_config(&root)?.engine != "none" {
+        return Err("Les projets moteur utilisent leur export pour l'aperçu.".to_string());
+    }
+    let mut result = export_asset_file(project_root, asset_id, blender_path)?;
+    result.message = if result.success {
+        "Aperçu 3D genere.".to_string()
+    } else {
+        "Impossible de generer l'aperçu 3D.".to_string()
+    };
+    Ok(result)
+}
+
+fn export_asset_file(
     project_root: String,
     asset_id: String,
     blender_path: Option<String>,
@@ -561,6 +600,8 @@ fn export_asset(
     let process_output = Command::new(&blender_executable)
         .arg("--background")
         .arg(&source)
+        .arg("--python-exit-code")
+        .arg("1")
         .arg("--python")
         .arg(&script_path)
         .arg("--")
@@ -617,6 +658,7 @@ fn export_asset_version(
 ) -> Result<ExportAssetResult, String> {
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
+    require_project_engine(&project)?;
     let asset = find_asset(&root, &project, &asset_id)?;
     let (label, source_path, output_path) =
         asset_version_paths(&asset, &version_id, &version_kind)?;
@@ -654,6 +696,7 @@ fn export_asset_versions(
     let base_result = export_asset(project_root.clone(), asset_id.clone(), blender_path.clone())?;
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
+    require_project_engine(&project)?;
     let asset = find_asset(&root, &project, &asset_id)?;
     let mut versions = Vec::new();
     for variant in &asset.metadata.variants {
@@ -714,6 +757,7 @@ fn export_asset_versions(
 fn clear_asset_exports(project_root: String) -> Result<AssetMutationResult, String> {
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
+    require_project_engine(&project)?;
     let export_state = read_export_state(&root);
     let assets = scan_assets(&root, &project, &export_state)?;
     let export_root = root.join(safe_relative_path(&project.paths.engine_assets_root)?);
@@ -1402,7 +1446,7 @@ fn delete_asset_version(
     }
     if let Some(relative) = output_path {
         let target = root.join(safe_relative_path(&relative)?);
-        if !target.starts_with(root.join(&project.paths.engine_assets_root)) {
+        if !target.starts_with(root.join(asset_output_root(&project))) {
             return Err("L'export de version est hors du dossier Assets.".to_string());
         }
         if target.exists() {
@@ -1547,7 +1591,9 @@ fn delete_asset(project_root: String, asset_id: String) -> Result<AssetMutationR
     }
     let mut state = read_export_state(&root);
     state.exports.remove(&asset.id);
-    write_json(&export_state_file(&root), &state)?;
+    if project.engine != "none" {
+        write_json(&export_state_file(&root), &state)?;
+    }
     Ok(AssetMutationResult {
         message: format!("{} a ete place dans la corbeille.", asset.name),
         asset_id: None,
@@ -1620,7 +1666,9 @@ fn delete_folder(project_root: String, folder: String) -> Result<AssetMutationRe
         }
         state.exports.remove(&asset.id);
     }
-    write_json(&export_state_file(&root), &state)?;
+    if project.engine != "none" {
+        write_json(&export_state_file(&root), &state)?;
+    }
     Ok(AssetMutationResult {
         message: "Le dossier a ete place dans la corbeille.".to_string(),
         asset_id: None,
@@ -1750,7 +1798,7 @@ fn find_asset(
 }
 
 fn metadata_for_asset(root: &Path, asset: &BlendUpAsset) -> AssetMetadata {
-    read_asset_metadata(root)
+    let mut metadata = read_asset_metadata(root)
         .remove(&normalize_relative_string(&asset.source_path))
         .unwrap_or_else(|| AssetMetadata {
             schema_version: 2,
@@ -1758,7 +1806,9 @@ fn metadata_for_asset(root: &Path, asset: &BlendUpAsset) -> AssetMetadata {
             id: asset.id.clone(),
             source_path: asset.source_path.clone(),
             details: asset.metadata.clone(),
-        })
+        });
+    refresh_version_output_paths(&asset.output_path, &asset.format, &mut metadata.details);
+    metadata
 }
 
 fn write_asset_metadata(root: &Path, metadata: &AssetMetadata) -> Result<(), String> {
@@ -1855,7 +1905,11 @@ fn relocate_asset(
     if let Some(record) = state.exports.get_mut(&asset.id) {
         record.output_path = relative_string(root, &new_output)?;
     }
-    write_json(&export_state_file(root), &state)
+    if project.engine == "none" {
+        Ok(())
+    } else {
+        write_json(&export_state_file(root), &state)
+    }
 }
 
 fn asset_owns_workspace(root: &Path, project: &ProjectConfig, asset: &BlendUpAsset) -> bool {
@@ -2068,11 +2122,7 @@ fn prepare_copied_version_metadata(
     let output_parent = new_base_output
         .parent()
         .ok_or_else(|| "Dossier d'export invalide.".to_string())?;
-    let export_format = if project.engine == "godot" {
-        "glb"
-    } else {
-        "fbx"
-    };
+    let export_format = project_output_format(project);
 
     let prepare = |source_path: &mut Option<String>,
                    output_path: &mut Option<String>,
@@ -2304,7 +2354,11 @@ fn relocate_folder(
             write_asset_metadata(root, &metadata)?;
         }
     }
-    write_json(&export_state_file(root), &state)
+    if project.engine == "none" {
+        Ok(())
+    } else {
+        write_json(&export_state_file(root), &state)
+    }
 }
 
 fn output_path_for_source(
@@ -2315,12 +2369,8 @@ fn output_path_for_source(
     let relative = source
         .strip_prefix(root.join(&project.paths.art_root))
         .map_err(|_| "La source doit rester dans Art.".to_string())?;
-    let mut output = root.join(&project.paths.engine_assets_root).join(relative);
-    output.set_extension(if project.engine == "godot" {
-        "glb"
-    } else {
-        "fbx"
-    });
+    let mut output = root.join(asset_output_root(project)).join(relative);
+    output.set_extension(project_output_format(project));
     Ok(output)
 }
 
@@ -2332,7 +2382,7 @@ fn output_folder_for_art_path(
     let relative = art_path
         .strip_prefix(Path::new(&project.paths.art_root))
         .map_err(|_| "Le dossier doit rester dans Art.".to_string())?;
-    Ok(root.join(&project.paths.engine_assets_root).join(relative))
+    Ok(root.join(asset_output_root(project)).join(relative))
 }
 
 fn write_godot_lod_support(
@@ -2597,11 +2647,7 @@ fn scan_assets(
     let mut blend_files = Vec::new();
     collect_blend_files(&art_root, &mut blend_files)?;
     let metadata_by_source = read_asset_metadata(root);
-    let format = if project.engine == "godot" {
-        "glb"
-    } else {
-        "fbx"
-    };
+    let format = project_output_format(project);
     let mut assets = Vec::with_capacity(blend_files.len());
 
     for source in blend_files {
@@ -2609,7 +2655,7 @@ fn scan_assets(
             .strip_prefix(&art_root)
             .map_err(|error| format!("Chemin Art invalide: {error}"))?;
         let mut output = root
-            .join(&project.paths.engine_assets_root)
+            .join(asset_output_root(project))
             .join(source_relative_to_art);
         output.set_extension(format);
 
@@ -2627,16 +2673,20 @@ fn scan_assets(
         let failed_record = export_state
             .exports
             .get(&id)
-            .filter(|record| !record.success);
-        let status = match (source_time, output_time, failed_record) {
-            (_, _, Some(_)) => "error",
-            (Some(source_modified), Some(output_modified), _)
-                if output_modified >= source_modified =>
-            {
-                "exported"
+            .filter(|record| project.engine != "none" && !record.success);
+        let status = if project.engine == "none" {
+            "local"
+        } else {
+            match (source_time, output_time, failed_record) {
+                (_, _, Some(_)) => "error",
+                (Some(source_modified), Some(output_modified), _)
+                    if output_modified >= source_modified =>
+                {
+                    "exported"
+                }
+                (_, Some(_), _) => "outdated",
+                _ => "ready",
             }
-            (_, Some(_), _) => "outdated",
-            _ => "ready",
         };
 
         let folder = Path::new(&source_path)
@@ -2650,7 +2700,8 @@ fn scan_assets(
             .to_string();
 
         let mut details = metadata.map(|item| item.details).unwrap_or_default();
-        refresh_version_statuses(&root, &mut details);
+        refresh_version_output_paths(&output_path, format, &mut details);
+        refresh_version_statuses(&root, &mut details, project.engine == "none");
         if details.thumbnail_path.is_none() {
             let legacy_thumbnail = root
                 .join(".blendup")
@@ -2854,11 +2905,34 @@ fn normalize_version_status(value: &str) -> String {
     .to_string()
 }
 
-fn refresh_version_statuses(root: &Path, details: &mut AssetMetadataView) {
+fn refresh_version_output_paths(output_path: &str, format: &str, details: &mut AssetMetadataView) {
+    let Some(parent) = Path::new(output_path).parent() else {
+        return;
+    };
+    for variant in &mut details.variants {
+        if let Some(source) = &variant.source_path {
+            let key = managed_version_key(source, ".variant.", &variant.name);
+            variant.output_path = Some(normalize_path(
+                &parent.join("variants").join(format!("{key}.{format}")),
+            ));
+        }
+    }
+    for lod in &mut details.lods {
+        if let Some(source) = &lod.source_path {
+            let key = managed_version_key(source, ".lod.", &lod.level);
+            lod.output_path = Some(normalize_path(
+                &parent.join("lods").join(format!("{key}.{format}")),
+            ));
+        }
+    }
+}
+
+fn refresh_version_statuses(root: &Path, details: &mut AssetMetadataView, standalone: bool) {
     fn refresh(
         root: &Path,
         source_path: &Option<String>,
         output_path: &Option<String>,
+        standalone: bool,
     ) -> (String, Option<String>, Option<String>) {
         let Some(source_relative) = source_path else {
             return ("missing".to_string(), None, None);
@@ -2876,14 +2950,18 @@ fn refresh_version_statuses(root: &Path, details: &mut AssetMetadataView) {
             .and_then(|value| safe_relative_path(value).ok())
             .map(|value| root.join(value))
             .and_then(|path| modified_time(&path));
-        let status = match (source_time, output_time) {
-            (Some(source_modified), Some(output_modified))
-                if output_modified >= source_modified =>
-            {
-                "exported"
+        let status = if standalone {
+            "local"
+        } else {
+            match (source_time, output_time) {
+                (Some(source_modified), Some(output_modified))
+                    if output_modified >= source_modified =>
+                {
+                    "exported"
+                }
+                (_, Some(_)) => "outdated",
+                _ => "ready",
             }
-            (_, Some(_)) => "outdated",
-            _ => "ready",
         };
         (
             status.to_string(),
@@ -2894,14 +2972,14 @@ fn refresh_version_statuses(root: &Path, details: &mut AssetMetadataView) {
 
     for variant in &mut details.variants {
         let (status, source_modified, output_modified) =
-            refresh(root, &variant.source_path, &variant.output_path);
+            refresh(root, &variant.source_path, &variant.output_path, standalone);
         variant.status = status;
         variant.source_modified_at = source_modified;
         variant.output_modified_at = output_modified;
     }
     for lod in &mut details.lods {
         let (status, source_modified, output_modified) =
-            refresh(root, &lod.source_path, &lod.output_path);
+            refresh(root, &lod.source_path, &lod.output_path, standalone);
         lod.status = status;
         lod.source_modified_at = source_modified;
         lod.output_modified_at = output_modified;
@@ -2969,7 +3047,7 @@ fn collect_problems(
             None,
         ));
     }
-    if !assets_path.is_dir() {
+    if project.engine != "none" && !assets_path.is_dir() {
         problems.push(problem(
             "engine_assets_missing",
             "error",
@@ -3082,26 +3160,38 @@ fn normalize_project_config(value: &Value) -> Result<ProjectConfig, String> {
         }
     });
     let engine = validate_engine(inferred_engine)?;
-    let default_root = engine_display_name(&engine).to_string();
+    let default_root = if engine == "none" {
+        String::new()
+    } else {
+        engine_display_name(&engine).to_string()
+    };
     let art_root = json_string(paths, "artRoot").unwrap_or_else(|| "Art".to_string());
-    let engine_root = json_string(paths, "engineRoot")
-        .or_else(|| {
-            if engine == "unity" {
-                json_string(paths, "unityRoot")
-            } else {
-                json_string(paths, "godotRoot")
-            }
-        })
-        .unwrap_or(default_root);
-    let engine_assets_root = json_string(paths, "engineAssetsRoot")
-        .or_else(|| {
-            if engine == "unity" {
-                json_string(paths, "unityAssetsRoot")
-            } else {
-                json_string(paths, "godotAssetsRoot")
-            }
-        })
-        .unwrap_or_else(|| format!("{engine_root}/Assets"));
+    let engine_root = if engine == "none" {
+        String::new()
+    } else {
+        json_string(paths, "engineRoot")
+            .or_else(|| {
+                if engine == "unity" {
+                    json_string(paths, "unityRoot")
+                } else {
+                    json_string(paths, "godotRoot")
+                }
+            })
+            .unwrap_or(default_root)
+    };
+    let engine_assets_root = if engine == "none" {
+        String::new()
+    } else {
+        json_string(paths, "engineAssetsRoot")
+            .or_else(|| {
+                if engine == "unity" {
+                    json_string(paths, "unityAssetsRoot")
+                } else {
+                    json_string(paths, "godotAssetsRoot")
+                }
+            })
+            .unwrap_or_else(|| format!("{engine_root}/Assets"))
+    };
 
     Ok(ProjectConfig {
         schema_version: 2,
@@ -3122,7 +3212,11 @@ fn normalize_project_config(value: &Value) -> Result<ProjectConfig, String> {
 }
 
 fn new_project_config(name: &str, engine: &str) -> ProjectConfig {
-    let engine_root = engine_display_name(engine).to_string();
+    let engine_root = if engine == "none" {
+        String::new()
+    } else {
+        engine_display_name(engine).to_string()
+    };
     ProjectConfig {
         schema_version: 2,
         kind: "project".to_string(),
@@ -3131,7 +3225,11 @@ fn new_project_config(name: &str, engine: &str) -> ProjectConfig {
         engine: engine.to_string(),
         paths: ProjectPaths {
             art_root: "Art".to_string(),
-            engine_assets_root: format!("{engine_root}/Assets"),
+            engine_assets_root: if engine == "none" {
+                String::new()
+            } else {
+                format!("{engine_root}/Assets")
+            },
             engine_root,
         },
     }
@@ -3139,8 +3237,10 @@ fn new_project_config(name: &str, engine: &str) -> ProjectConfig {
 
 fn validate_project_paths(project: &ProjectConfig) -> Result<(), String> {
     safe_relative_path(&project.paths.art_root)?;
-    safe_relative_path(&project.paths.engine_root)?;
-    safe_relative_path(&project.paths.engine_assets_root)?;
+    if project.engine != "none" {
+        safe_relative_path(&project.paths.engine_root)?;
+        safe_relative_path(&project.paths.engine_assets_root)?;
+    }
     Ok(())
 }
 
@@ -3158,6 +3258,9 @@ fn record_export(
     success: bool,
     message: &str,
 ) -> Result<(), String> {
+    if asset.status == "local" {
+        return Ok(());
+    }
     state.exports.insert(
         asset.id.clone(),
         ExportRecord {
@@ -3214,16 +3317,50 @@ fn validate_engine(value: &str) -> Result<String, String> {
     match value.trim().to_lowercase().as_str() {
         "godot" => Ok("godot".to_string()),
         "unity" => Ok("unity".to_string()),
-        _ => Err("Le moteur doit etre Godot ou Unity.".to_string()),
+        "none" => Ok("none".to_string()),
+        _ => Err("Le type de projet doit etre 3D, Godot ou Unity.".to_string()),
     }
 }
 
 fn engine_display_name(engine: &str) -> &'static str {
-    if engine == "godot" {
-        "Godot"
-    } else {
-        "Unity"
+    match engine {
+        "godot" => "Godot",
+        "unity" => "Unity",
+        _ => "un projet 3D",
     }
+}
+
+fn asset_output_root(project: &ProjectConfig) -> &str {
+    if project.engine == "none" {
+        ".blendup/cache/previews"
+    } else {
+        &project.paths.engine_assets_root
+    }
+}
+
+fn project_output_format(project: &ProjectConfig) -> &str {
+    if project.engine == "unity" {
+        "fbx"
+    } else {
+        "glb"
+    }
+}
+
+fn require_project_engine(project: &ProjectConfig) -> Result<(), String> {
+    if project.engine == "none" {
+        Err("Ce projet 3D n'a pas de moteur lie. Utilise Generer l'aperçu pour visualiser un asset.".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn managed_version_key(source: &str, marker: &str, fallback: &str) -> String {
+    Path::new(source)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .and_then(|stem| stem.rsplit_once(marker))
+        .map(|(_, key)| key.to_string())
+        .unwrap_or_else(|| version_key(fallback))
 }
 
 fn relative_string(root: &Path, path: &Path) -> Result<String, String> {
@@ -3514,6 +3651,7 @@ fn main() {
             update_project_engine,
             detect_blender,
             export_asset,
+            generate_asset_preview,
             export_asset_version,
             export_asset_versions,
             clear_asset_exports,
@@ -3556,6 +3694,231 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn standalone_projects_are_asset_libraries_without_engine_directories() {
+        let root = test_root("standalone_library");
+        create_project(CreateProjectOptions {
+            project_root: root.to_string_lossy().to_string(),
+            project_name: "Sculptures".to_string(),
+            engine: "none".to_string(),
+        })
+        .unwrap();
+        let config: Value =
+            serde_json::from_str(&fs::read_to_string(project_file(&root)).unwrap()).unwrap();
+        assert_eq!(config["engine"], "none");
+        assert_eq!(config["paths"], serde_json::json!({ "artRoot": "Art" }));
+        assert!(!root.join("Godot").exists());
+        assert!(!root.join("Unity").exists());
+        assert!(!export_state_file(&root).exists());
+        let workspace = root.join("Art/Statue");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(workspace.join("Statue.blend"), b"source").unwrap();
+        let snapshot = read_project_snapshot(root.to_string_lossy().to_string()).unwrap();
+        assert!(snapshot.problems.is_empty());
+        assert_eq!(snapshot.assets[0].status, "local");
+        assert_eq!(
+            snapshot.assets[0].output_path,
+            ".blendup/cache/previews/Statue/Statue.glb"
+        );
+        assert_eq!(snapshot.assets[0].format, "glb");
+        let mut stale = ExportState::default();
+        stale.exports.insert(
+            snapshot.assets[0].id.clone(),
+            ExportRecord {
+                success: false,
+                message: "Old Unity error".to_string(),
+                output_path: "Unity/Assets/Statue.fbx".to_string(),
+            },
+        );
+        write_json(&export_state_file(&root), &stale).unwrap();
+        let snapshot = read_project_snapshot(root.to_string_lossy().to_string()).unwrap();
+        assert!(snapshot.problems.is_empty());
+        assert_eq!(snapshot.assets[0].status, "local");
+        assert!(snapshot.assets[0].last_error.is_none());
+        let project_root = root.to_string_lossy().to_string();
+        let id = snapshot.assets[0].id.clone();
+        assert!(export_asset(project_root.clone(), id.clone(), None).is_err());
+        assert!(export_asset_versions(project_root.clone(), id.clone(), None).is_err());
+        assert!(export_asset_version(
+            project_root.clone(),
+            id,
+            "none".to_string(),
+            "variant".to_string(),
+            None
+        )
+        .is_err());
+        assert!(clear_asset_exports(project_root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn project_type_changes_preserve_sources_and_retarget_all_versions() {
+        let root = test_root("standalone_transitions");
+        let project_root = root.to_string_lossy().to_string();
+        create_project(CreateProjectOptions {
+            project_root: project_root.clone(),
+            project_name: "Studio".to_string(),
+            engine: "godot".to_string(),
+        })
+        .unwrap();
+        fs::create_dir_all(root.join("Art/Table")).unwrap();
+        fs::write(root.join("Art/Table/Table.blend"), b"source").unwrap();
+        let id = read_project_snapshot(project_root.clone()).unwrap().assets[0]
+            .id
+            .clone();
+        create_asset_variant(project_root.clone(), id.clone(), "Red".to_string()).unwrap();
+        let godot = read_project_snapshot(project_root.clone()).unwrap();
+        let mut metadata = metadata_for_asset(&root, &godot.assets[0]);
+        metadata.details.notes = "Keep these notes".to_string();
+        metadata.details.tags = vec!["wood".to_string()];
+        let lod_source = "Art/Table/Table.lod.lod1.blend";
+        fs::write(root.join(lod_source), b"lod").unwrap();
+        metadata.details.lods.push(AssetLod {
+            id: asset_id_for_path(lod_source),
+            level: "LOD1".to_string(),
+            status: "ready".to_string(),
+            target_ratio: Some(50.0),
+            triangle_budget: None,
+            generated: true,
+            source_path: Some(lod_source.to_string()),
+            output_path: Some("Godot/Assets/Table/lods/lod1.glb".to_string()),
+            source_modified_at: None,
+            output_modified_at: None,
+            notes: "Keep LOD".to_string(),
+        });
+        write_asset_metadata(&root, &metadata).unwrap();
+        fs::create_dir_all(root.join("Godot/Assets/Table/variants")).unwrap();
+        let old_output = root.join("Godot/Assets/Table/variants/red.glb");
+        fs::write(&old_output, b"previous engine export").unwrap();
+        for (engine, destination, extension, status) in [
+            ("none", ".blendup/cache/previews", "glb", "local"),
+            ("unity", "Unity/Assets", "fbx", "ready"),
+            ("godot", "Godot/Assets", "glb", "ready"),
+            ("none", ".blendup/cache/previews", "glb", "local"),
+        ] {
+            update_project_engine(project_root.clone(), engine.to_string()).unwrap();
+            let snapshot = read_project_snapshot(project_root.clone()).unwrap();
+            let asset = &snapshot.assets[0];
+            assert_eq!(asset.id, id);
+            assert_eq!(asset.status, status);
+            assert_eq!(asset.metadata.notes, "Keep these notes");
+            assert_eq!(asset.metadata.tags, vec!["wood"]);
+            assert_eq!(
+                asset.metadata.variants[0].output_path.as_deref(),
+                Some(format!("{destination}/Table/variants/red.{extension}").as_str())
+            );
+            assert_eq!(
+                asset.metadata.lods[0].output_path.as_deref(),
+                Some(format!("{destination}/Table/lods/lod1.{extension}").as_str())
+            );
+            assert_eq!(asset.metadata.lods[0].notes, "Keep LOD");
+            assert!(root.join("Art/Table/Table.variant.red.blend").is_file());
+            assert!(root.join(lod_source).is_file());
+            assert_eq!(fs::read(&old_output).unwrap(), b"previous engine export");
+        }
+        // Renaming in standalone mode moves its cache, leaving detached engine exports alone.
+        let asset = read_project_snapshot(project_root.clone())
+            .unwrap()
+            .assets
+            .remove(0);
+        let preview = root.join(&asset.output_path);
+        fs::create_dir_all(preview.parent().unwrap()).unwrap();
+        fs::write(&preview, b"preview").unwrap();
+        rename_asset(project_root.clone(), id.clone(), "Desk".to_string()).unwrap();
+        let snapshot = read_project_snapshot(project_root).unwrap();
+        assert_eq!(snapshot.assets[0].id, id);
+        assert_eq!(snapshot.assets[0].status, "local");
+        assert!(root.join(&snapshot.assets[0].output_path).is_file());
+        assert!(old_output.is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "Requires BLENDUP_TEST_BLENDER pointing to a Blender executable"]
+    fn standalone_preview_and_lods_work_with_real_blender() {
+        let blender = env::var("BLENDUP_TEST_BLENDER").expect("BLENDUP_TEST_BLENDER is required");
+        let root = test_root("standalone_real_blender");
+        let project_root = root.to_string_lossy().to_string();
+        create_project(CreateProjectOptions {
+            project_root: project_root.clone(),
+            project_name: "Studio".to_string(),
+            engine: "none".to_string(),
+        })
+        .unwrap();
+        let result = create_asset(
+            project_root.clone(),
+            "Art".to_string(),
+            "Cube".to_string(),
+            Some(blender.clone()),
+        )
+        .unwrap();
+        let id = result.asset_id.unwrap();
+        let snapshot = read_project_snapshot(project_root.clone()).unwrap();
+        let source = root.join(&snapshot.assets[0].source_path);
+        let original = fs::read(&source).unwrap();
+        assert!(
+            generate_asset_preview(project_root.clone(), id.clone(), Some(blender.clone()))
+                .unwrap()
+                .success
+        );
+        generate_asset_lods(project_root.clone(), id.clone(), Some(blender)).unwrap();
+        create_asset_variant(project_root.clone(), id, "Red".to_string()).unwrap();
+        let snapshot = read_project_snapshot(project_root.clone()).unwrap();
+        let asset = &snapshot.assets[0];
+        assert_eq!(asset.status, "local");
+        assert!(snapshot.problems.is_empty());
+        assert_eq!(
+            &fs::read(root.join(&asset.output_path)).unwrap()[..4],
+            b"glTF"
+        );
+        assert_eq!(fs::read(source).unwrap(), original);
+        assert_eq!(asset.metadata.variants[0].status, "local");
+        assert_eq!(asset.metadata.lods.len(), 3);
+        assert!(asset.metadata.lods.iter().all(|lod| lod.status == "local"));
+        assert!(!root.join("Godot").exists());
+        assert!(!root.join("Unity").exists());
+        assert!(!export_state_file(&root).exists());
+        let copy = duplicate_asset(project_root.clone(), asset.id.clone()).unwrap();
+        let snapshot = read_project_snapshot(project_root.clone()).unwrap();
+        let copied = snapshot
+            .assets
+            .iter()
+            .find(|asset| Some(&asset.id) == copy.asset_id.as_ref())
+            .unwrap();
+        assert_eq!(copied.status, "local");
+        assert_eq!(copied.metadata.variants.len(), 1);
+        assert_eq!(copied.metadata.lods.len(), 3);
+        for source in copied
+            .metadata
+            .variants
+            .iter()
+            .filter_map(|version| version.source_path.as_ref())
+        {
+            assert!(root.join(source).is_file());
+        }
+        assert!(copied.metadata.variants[0]
+            .output_path
+            .as_ref()
+            .unwrap()
+            .ends_with(".glb"));
+        rename_folder(
+            project_root.clone(),
+            "Art/Cube".to_string(),
+            "Renamed".to_string(),
+        )
+        .unwrap();
+        let snapshot = read_project_snapshot(project_root).unwrap();
+        let renamed = snapshot
+            .assets
+            .iter()
+            .find(|asset| asset.folder == "Art/Renamed")
+            .unwrap();
+        assert!(root.join(&renamed.output_path).is_file());
+        assert_eq!(renamed.metadata.lods.len(), 3);
+        assert!(!export_state_file(&root).exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

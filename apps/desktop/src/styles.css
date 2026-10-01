@@ -145,7 +145,7 @@ h1, h2, p { margin-top: 0; }
 .input-action { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
 .input-action button { width: 40px; padding: 0; }
 
-.engine-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.engine-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .engine-picker button { min-height: 42px; color: #aeb9b4; background: #171d1b; }
 .engine-picker button.active { border-color: #58a993; color: #e8fff7; background: rgba(61, 137, 116, 0.2); }
 
@@ -409,7 +409,7 @@ h1, h2, p { margin-top: 0; }
 /* Parametres */
 .settings-section { display: grid; gap: 17px; padding: 19px; }
 .settings-section + .settings-section { margin-top: 0; }
-.engine-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.engine-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .engine-cards button { position: relative; display: grid; min-height: 82px; justify-items: start; align-content: center; gap: 4px; padding: 14px; background: #171d1b; }
 .engine-cards button.active { border-color: #4e9d87; background: rgba(53, 125, 105, 0.16); }
 .engine-cards button strong { font-size: 0.95rem; }

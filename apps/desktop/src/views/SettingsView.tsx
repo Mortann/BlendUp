@@ -41,24 +41,28 @@ export function SettingsView({
         <div>
           <span className="eyebrow">Projet et outils</span>
           <h1>Parametres</h1>
-          <p>Choisis le moteur et indique a BlendUp comment lancer Blender.</p>
+          <p>Choisis le type de projet et indique à BlendUp comment lancer Blender.</p>
         </div>
       </header>
 
       <section className="settings-section content-panel">
-        <div className="section-heading"><Gamepad2 size={20} /><div><h2>Moteur du projet</h2><p>Le changement cree la nouvelle destination sans supprimer l'ancien dossier.</p></div></div>
+        <div className="section-heading"><Gamepad2 size={20} /><div><h2>Type de projet</h2><p>Gère tes assets en 3D ou relie un moteur. Les fichiers existants sont conservés.</p></div></div>
         <div className="engine-cards">
-          <EngineCard active={project.project.engine === "godot"} format="GLB" label="Godot" onClick={() => onChangeEngine("godot")} />
-          <EngineCard active={project.project.engine === "unity"} format="FBX" label="Unity" onClick={() => onChangeEngine("unity")} />
+          <EngineCard active={project.project.engine === "none"} disabled={exportBusy || isReexporting} format="Sans moteur" label="3D" onClick={() => onChangeEngine("none")} />
+          <EngineCard active={project.project.engine === "godot"} disabled={exportBusy || isReexporting} format="Export GLB" label="Godot" onClick={() => onChangeEngine("godot")} />
+          <EngineCard active={project.project.engine === "unity"} disabled={exportBusy || isReexporting} format="Export FBX" label="Unity" onClick={() => onChangeEngine("unity")} />
         </div>
         <div className="path-stack">
           <PathRow label="Sources" onOpen={() => onOpenPath(project.project.paths.artRoot)} value={project.project.paths.artRoot} />
-          <PathRow label="Projet moteur" onOpen={() => onOpenPath(project.project.paths.engineRoot)} value={project.project.paths.engineRoot} />
-          <PathRow label="Exports" onOpen={() => onOpenPath(project.project.paths.engineAssetsRoot)} value={project.project.paths.engineAssetsRoot} />
+          {project.project.engine !== "none" ? <>
+            <PathRow label="Projet moteur" onOpen={() => onOpenPath(project.project.paths.engineRoot!)} value={project.project.paths.engineRoot!} />
+            <PathRow label="Exports" onOpen={() => onOpenPath(project.project.paths.engineAssetsRoot!)} value={project.project.paths.engineAssetsRoot!} />
+          </> : null}
         </div>
+        {project.project.engine === "none" ? <p>Les assets restent dans Art. Les aperçus 3D se génèrent à la demande depuis leur fiche, sans export moteur.</p> : null}
       </section>
 
-      <section className="settings-section content-panel">
+      {project.project.engine !== "none" ? <section className="settings-section content-panel">
         <div className="section-heading"><RefreshCw size={20} /><div><h2>Reconstruire les exports</h2><p>Place les exports générés dans la corbeille, puis réexporte chaque asset, ses variantes et ses LOD.</p></div></div>
         <div className="button-row">
           <button
@@ -70,7 +74,7 @@ export function SettingsView({
             type="button"
           >{isReexporting ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />} {isReexporting ? "Réexportation…" : "Tout réexporter"}</button>
         </div>
-      </section>
+      </section> : null}
 
       <section className="settings-section content-panel">
         <div className="section-heading"><Search size={20} /><div><h2>Blender</h2><p>Le chemin est optionnel si Blender est installe dans un emplacement standard.</p></div></div>
@@ -100,10 +104,10 @@ export function SettingsView({
   );
 }
 
-function EngineCard({ active, format, label, onClick }: { active: boolean; format: string; label: string; onClick: () => void }) {
+function EngineCard({ active, disabled, format, label, onClick }: { active: boolean; disabled: boolean; format: string; label: string; onClick: () => void }) {
   return (
-    <button className={active ? "active" : ""} onClick={onClick} type="button">
-      <strong>{label}</strong><span>Export {format}</span>{active ? <b>Actif</b> : null}
+    <button aria-pressed={active} className={active ? "active" : ""} disabled={disabled} onClick={onClick} type="button">
+      <strong>{label}</strong><span>{format}</span>{active ? <b>Actif</b> : null}
     </button>
   );
 }
