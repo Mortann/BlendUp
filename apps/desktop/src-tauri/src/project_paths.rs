@@ -203,15 +203,25 @@ pub(super) fn update(project_root: &str, paths: ProjectPaths) -> Result<ProjectC
         if art_changed {
             let path = root.join(".blendup/showcases.json");
             if path.is_file() {
-                let mut value: Value = serde_json::from_slice(&fs::read(&path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                let mut value: Value =
+                    serde_json::from_slice(&fs::read(&path).map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())?;
                 if let Some(configs) = value.as_array_mut() {
                     for config in configs {
                         if let Some(folder) = config["folder"].as_str() {
-                            config["folder"] = Value::String(replace_path_prefix(folder, &old.paths.art_root, &next.paths.art_root));
+                            config["folder"] = Value::String(replace_path_prefix(
+                                folder,
+                                &old.paths.art_root,
+                                &next.paths.art_root,
+                            ));
                         }
                     }
                 }
-                save(&path, &serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?, &mut originals)?;
+                save(
+                    &path,
+                    &serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?,
+                    &mut originals,
+                )?;
             }
             let directory = root.join(".blendup/uv-reports").join(&next.paths.art_root);
             let mut files = Vec::new();

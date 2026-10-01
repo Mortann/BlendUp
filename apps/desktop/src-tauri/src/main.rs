@@ -482,8 +482,20 @@ fn read_project_snapshot(project_root: String) -> Result<ProjectSnapshot, String
     let (showcases, integrations) = showcases::snapshot(&root, &project, &assets);
     for (index, scene) in showcases.iter().enumerate() {
         if let Some(error) = scene.error.as_ref().filter(|_| scene.status == "error") {
-            problems.push(BlendUpProblem { id: format!("showcase-{index}"), severity: "warning".into(), source: "blendup".into(), asset_id: None,
-                title: "Showcase incomplet".into(), detail: error.clone(), action_label: None, category: "project".into(), version_label: None, score: None, minimum_score: None, technical_details: None });
+            problems.push(BlendUpProblem {
+                id: format!("showcase-{index}"),
+                severity: "warning".into(),
+                source: "blendup".into(),
+                asset_id: None,
+                title: "Showcase incomplet".into(),
+                detail: error.clone(),
+                action_label: None,
+                category: "project".into(),
+                version_label: None,
+                score: None,
+                minimum_score: None,
+                technical_details: None,
+            });
         }
     }
 

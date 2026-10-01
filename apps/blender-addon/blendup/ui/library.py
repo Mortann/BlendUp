@@ -6,22 +6,31 @@ from pathlib import Path
 import subprocess
 
 import bpy
+from bpy.app.handlers import persistent
 from bpy.props import BoolProperty, CollectionProperty, IntProperty, StringProperty
 
-from ..core.library import source_assets
+from ..core.library import source_assets, publish_index
 from ..core.project import find_project_root
 from ..scripts.build_library import load_asset
 
 _process = None
 _process_root = None
+_session_project = None
 
 
 def associated_root():
+    global _session_project
     if bpy.data.filepath:
-        return find_project_root(bpy.data.filepath)
+        root = find_project_root(bpy.data.filepath)
+        if root is not None:
+            _session_project = root
+            return root
     roots = {find_project_root(bpy.path.abspath(library.filepath)) for library in bpy.data.libraries}
     roots.discard(None)
-    return next(iter(roots)) if len(roots) == 1 else None
+    if len(roots) == 1:
+        _session_project = next(iter(roots))
+        return _session_project
+    return _session_project if not bpy.data.filepath else None
 
 
 def refresh_list(context, root):
@@ -36,6 +45,18 @@ def refresh_list(context, root):
         item.search_text = (asset["name"] + " " + asset["folder"] + " " + " ".join(asset["tags"])).lower()
     context.window_manager.blendup_library_index = 0
     return manifest
+
+
+@persistent
+def library_after_load(_unused=None):
+    if os.environ.get("BLENDUP_BACKGROUND_TASK") == "1":
+        return
+    root = associated_root()
+    if root is not None:
+        try:
+            refresh_list(bpy.context, root)
+        except (OSError, ValueError):
+            pass
 
 
 class BLENDUP_LibraryItem(bpy.types.PropertyGroup):
@@ -67,6 +88,7 @@ class BLENDUP_OT_library_refresh(bpy.types.Operator):
             self.report({"WARNING"}, "Ouvre un asset ou une scène Showcase du projet BlendUp.")
             return {"CANCELLED"}
         refresh_list(context, root)
+        publish_index(root)
         return {"FINISHED"}
 
 
@@ -197,12 +219,8 @@ class BLENDUP_OT_library_browser(bpy.types.Operator):
                 with context.temp_override(area=existing, region=next(r for r in existing.regions if r.type == "WINDOW")):
                     bpy.ops.asset.library_refresh()
                 existing.tag_redraw()
-            except (ReferenceError, RuntimeError, TypeError):
-                # Dynamic enum identifiers differ across Blender versions; index 4 is first custom library.
-                try:
-                    browser.params.asset_library_reference = str(4 + list(libraries).index(library))
-                except (ReferenceError, TypeError):
-                    pass
+            except (ReferenceError, RuntimeError, TypeError) as error:
+                print(f"[BlendUp] Sélection de la bibliothèque impossible : {error}")
             return None
         bpy.app.timers.register(select_library, first_interval=0.1)
         return {"FINISHED"}
@@ -246,9 +264,13 @@ def register_properties():
     wm.blendup_library_index = IntProperty(default=0)
     wm.blendup_library_search = StringProperty()
     wm.blendup_library_link = BoolProperty(default=True)
+    bpy.app.handlers.load_post.append(library_after_load)
+    library_after_load()
 
 
 def unregister_properties():
+    if library_after_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(library_after_load)
     if bpy.app.timers.is_registered(library_ready):
         bpy.app.timers.unregister(library_ready)
     for name in ("blendup_library_items", "blendup_library_index", "blendup_library_search", "blendup_library_link"):

@@ -106,3 +106,31 @@ Pour chaque maillage : `score = 100 × validité × (0,8 × qualité d'étiremen
 Les diagnostics de coutures indiquent le nombre de coutures marquées, de coupures UV réelles, de coutures non ouvertes et de coupures non marquées. Leur emplacement souhaitable dépend de la forme, des textures et de l'usage : il n'entre pas dans le score.
 
 Les rapports sont conservés dans `.blendup/uv-reports`. Un fichier modifié, une nouvelle version de l'analyse ou un changement de tolérance aux chevauchements rendent son rapport ancien. Changer seulement le seuil réévalue immédiatement les rapports existants. Chaque export refait néanmoins l'analyse sur la géométrie réelle.
+
+
+## Showcases des dossiers
+
+Dans l’explorateur, ouvre un dossier puis active **Showcase** dans la barre du haut, ou utilise **clic droit → Activer le Showcase** sur le dossier. Une carte violette apparaît après ses dossiers et assets. Elle comprend les assets principaux de tous les sous-dossiers ; les sauvegardes `.blend1`, variantes et LOD n’ajoutent pas de doublons.
+
+BlendUp dispose les objets sur un sol neutre, conserve leur taille, les centre dans des cases adaptées à leurs dimensions et les pose sur le sol. Les options de la carte règlent l’espacement minimum. Un éclairage et une caméra permettent aussi de voir l’ensemble.
+
+- **Blender** ouvre `.blendup/showcases/<id>/Showcase.blend`, avec des instances liées aux sources.
+- Dans un projet Godot, **Godot** ouvre automatiquement `BlendUp/Showcases/<id>.tscn` dans le moteur. Lors du premier lancement, choisis l’exécutable si nécessaire. Le panneau Godot permet ensuite de réutiliser la session ouverte.
+- La scène Godot référence uniquement les GLB à jour. Les exports absents, anciens ou bloqués sont comptés sur la carte ; corrige-les et exporte-les pour les ajouter. La scène Blender reste indépendante du contrôle des exports.
+- Les scènes se régénèrent après un changement de sources, d’exports ou d’options lorsque BlendUp est ouvert. **Régénérer** permet de relancer manuellement une génération échouée.
+
+Ces scènes sont générées : fais-en une copie si tu veux modifier durablement leur disposition. Désactiver l’option retire la carte et arrête les mises à jour ; les fichiers déjà générés sont conservés. Le réglage suit les déplacements et renommages des dossiers et du dossier sources.
+
+## Bibliothèques Blender et Godot
+
+Dans **Paramètres → Bibliothèque dans les éditeurs** :
+
+1. Réinstalle `apps/blender-addon/blendup.zip` (version **0.6.0**) et redémarre Blender. Clique **Synchroniser la bibliothèque Blender**, ou utilise le bouton **Synchroniser** du panneau Blender.
+2. Dans Blender, ouvre un asset ou un Showcase et va dans `N → BlendUp → Bibliothèque du projet`. La liste permet une recherche et un placement au curseur. Le navigateur natif fournit le glisser-déposer. L’import lié est proposé par défaut ; la liste peut aussi importer une copie.
+3. Pour un projet Godot, clique **Installer et activer le panneau Godot** puis rouvre Godot. Le dock **BlendUp** présente les assets du projet associé, leurs aperçus, la recherche et un filtre par dossier. Glisse un asset dans la vue 3D ou utilise **Placer** / le double-clic. Le placement est annulable et reste lié au GLB.
+
+Le panneau Godot n’utilise pas les exports bloqués ou modifiés. Il relit l’index et les imports automatiquement. Les sauvegardes via l’add-on Blender actualisent cet index même quand BlendUp est fermé. Les instances liées suivent les mécanismes habituels de rechargement des bibliothèques Blender et des scènes Godot.
+
+Le plugin est installé sous `<projet moteur>/addons/blendup`. Les autres plugins activés sont conservés. Les fichiers de plugin remplacés sont sauvegardés en `.backup`. Les sources du plugin se trouvent dans `apps/godot-addon/addons/blendup` pour une installation manuelle.
+
+Les réglages Showcases et intégrations sont dans `.blendup/showcases.json` et `.blendup/integrations.json`. L’index, la bibliothèque Blender et les scènes Blender générées sont des caches ignorés par Git ; les scènes Godot et son plugin peuvent être versionnés. Le chemin local de l’exécutable Godot est mémorisé dans `.blendup/local-tools.json` (également ignoré).

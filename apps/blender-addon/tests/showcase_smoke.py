@@ -65,6 +65,15 @@ assert len(bpy.context.window_manager.blendup_library_items) == 2
 assert bpy.context.window_manager.blendup_library_link is True
 assert bpy.ops.blendup.library_place() == {"FINISHED"}
 assert len([obj for obj in bpy.context.scene.objects if obj.instance_type == "COLLECTION"]) == 3
+view = next(area for area in bpy.context.screen.areas if area.type == "VIEW_3D")
+with bpy.context.temp_override(area=view, region=next(region for region in view.regions if region.type == "WINDOW")):
+    assert bpy.ops.blendup.library_browser() == {"FINISHED"}
+assert any(area.type == "VIEW_3D" for area in bpy.context.screen.areas)
+assert any(area.type == "FILE_BROWSER" and area.ui_type == "ASSETS" for area in bpy.context.screen.areas)
+library_preference = next(lib for lib in bpy.context.preferences.filepaths.asset_libraries if Path(lib.path).resolve() == library.resolve())
+bpy.context.workspace.asset_library_reference = library_preference.name
+assert bpy.context.workspace.asset_library_reference == library_preference.name
+assert library_preference.import_method == "LINK"
 blendup.unregister()
 
 # Cached assets can be linked through Blender's native asset browser.
@@ -74,6 +83,29 @@ with bpy.data.libraries.load(str(cached), link=True, assets_only=True) as (avail
     assert len(available.collections) == 1
     loaded.collections = available.collections
 assert loaded.collections[0].asset_data is not None
+assert tuple(loaded.collections[0].preview.image_size) == (96, 96)
+
+# An asset may itself contain a collection instance without a direct mesh.
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.mesh.primitive_cube_add(location=(2, 0, 3))
+cube = bpy.context.object
+nested = bpy.data.collections.new("NestedGeometry")
+nested.objects.link(cube)
+for collection in list(cube.users_collection):
+    if collection != nested:
+        collection.objects.unlink(cube)
+instance = bpy.data.objects.new("NestedInstance", None)
+instance.instance_type = "COLLECTION"
+instance.instance_collection = nested
+instance.location = (4, 1, 0)
+bpy.context.scene.collection.objects.link(instance)
+nested_source = root / "Nested.blend"
+bpy.ops.wm.save_as_mainfile(filepath=str(nested_source))
+bpy.ops.wm.read_factory_settings(use_empty=True)
+from blendup.scripts.build_library import load_asset
+_collection, bounds = load_asset(nested_source, link=True)
+assert tuple(bounds[0]) == (5.0, 0.0, 2.0), bounds
+assert tuple(bounds[1]) == (7.0, 2.0, 4.0), bounds
 manifest["assets"][0]["godotReady"] = True
 manifest["assets"][0]["resourcePath"] = "res://Assets/Props/Small/Small.glb"
 manifest["assets"][1]["godotReady"] = True

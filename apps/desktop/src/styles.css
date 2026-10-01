@@ -842,6 +842,12 @@ h1, h2, p { margin-top: 0; }
 }
 /* Generated folder scenes remain distinct from editable assets. */
 .showcase-card { overflow: hidden; border: 1px solid #9a8bc7; border-radius: 20px; background: #f9f6ff; min-width: 0; box-shadow: 0 8px 24px #4031620b; }
+.asset-items.grid:has(.showcase-card) { align-items: start; }
+.asset-items.grid .showcase-card { grid-column: span 2; display: flex; }
+.asset-items.grid .showcase-visual { width: 32%; min-width: 92px; }
+.asset-items.grid .showcase-content { flex: 1; min-width: 0; }
+.browser-actions > button.showcase-toggle:not(.primary) { width: auto; padding: 0 12px; flex-shrink: 0; gap: 6px; }
+.browser-actions > button.showcase-toggle[aria-pressed="true"] { background: #ebe3f8; color: #584172; }
 .showcase-visual { min-height: 128px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; background: linear-gradient(145deg, #423757, #65517f); color: #efe6ff; }
 .showcase-visual span { font-size: 11px; font-weight: 800; letter-spacing: .18em; }
 .showcase-visual small { color: #dbd0ee; font-size: 11px; }
@@ -852,6 +858,7 @@ h1, h2, p { margin-top: 0; }
 .showcase-status { display: flex; align-items: center; gap: 5px; color: #685484; }
 .showcase-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
 .showcase-actions button { padding: 7px 9px; font-size: 12px; }
+.showcase-export { margin-top: 5px; padding: 5px 8px; font-size: 11px; color: #725925; }
 .showcase-content details { margin-top: 10px; }
 .showcase-content summary { cursor: pointer; color: #66517e; }
 .showcase-content label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 9px 0; }
@@ -861,3 +868,4 @@ h1, h2, p { margin-top: 0; }
 .asset-items.list .showcase-content, .asset-items.compact .showcase-content { flex: 1; }
 .editor-integrations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 22px; }
 @container asset-browser (max-width: 650px) { .showcase-toggle-label { display: none; } }
+@container asset-browser (max-width: 400px) { .asset-items.grid .showcase-card { grid-column: 1 / -1; } }

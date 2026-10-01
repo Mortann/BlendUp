@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from blendup.core.showcase import arrange
-from blendup.core.library import source_assets
+from blendup.core.library import source_assets, publish_index
 
 
 class ShowcaseTests(unittest.TestCase):
@@ -39,3 +39,23 @@ class ShowcaseTests(unittest.TestCase):
             assets = source_assets(root)["assets"]
             self.assertEqual(len(assets), 1)
             self.assertEqual(assets[0]["folder"], "Sources/Props")
+
+    def test_published_index_updates_without_desktop_and_excludes_blocked_exports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".blendup").mkdir()
+            config = {"schemaVersion": 2, "name":"Test", "engine":"godot", "paths":{"artRoot":"Art", "engineRoot":"Engine", "engineAssetsRoot":"Engine/Assets"}}
+            path = root / ".blendup/project.json"
+            path.write_text(json.dumps(config))
+            source = root / "Art/Table.blend"
+            source.parent.mkdir()
+            source.write_bytes(b"source")
+            output = root / "Engine/Assets/Table.glb"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"glb")
+            index = publish_index(root)
+            self.assertTrue(index["assets"][0]["godotReady"])
+            self.assertEqual(index["assets"][0]["resourcePath"], "res://Assets/Table.glb")
+            config["blender"] = {"validateUvs":True, "minimumUvScore":70}
+            path.write_text(json.dumps(config))
+            self.assertFalse(publish_index(root)["assets"][0]["godotReady"])

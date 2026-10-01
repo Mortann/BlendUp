@@ -10,9 +10,11 @@ import os
 from pathlib import Path
 import sys
 import uuid
+import time
+from contextlib import contextmanager
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
@@ -33,6 +35,22 @@ def save_json(path, value):
     os.replace(temporary, path)
 
 
+def geometry(collection, base=None, ancestors=()):
+    """Include nested collection instances, with their original transforms."""
+    if collection in ancestors:
+        return
+    base = Matrix.Identity(4) if base is None else base
+    for obj in collection.all_objects:
+        if obj.hide_render:
+            continue
+        if obj.type in {"MESH", "CURVE", "SURFACE", "FONT", "META", "VOLUME"}:
+            yield obj, base @ obj.matrix_world
+        if obj.instance_type == "COLLECTION" and obj.instance_collection:
+            nested = obj.instance_collection
+            transform = base @ obj.matrix_world @ Matrix.Translation(-nested.instance_offset)
+            yield from geometry(nested, transform, (*ancestors, collection))
+
+
 def load_asset(source, link=False):
     with bpy.data.libraries.load(str(source), link=link) as (available, loaded):
         loaded.scenes = available.scenes[:1]
@@ -40,8 +58,6 @@ def load_asset(source, link=False):
     if source_scene is None:
         raise ValueError("Le fichier ne contient pas de scène.")
     objects = [obj for obj in source_scene.objects if obj.type not in {"CAMERA", "LIGHT"} and not obj.hide_render]
-    if not any(obj.type in {"MESH", "CURVE", "SURFACE", "FONT", "META", "VOLUME"} for obj in objects):
-        raise ValueError("Aucun objet visible à exposer.")
     collection = bpy.data.collections.new("Asset")
     for obj in objects:
         collection.objects.link(obj)
@@ -49,10 +65,13 @@ def load_asset(source, link=False):
     bpy.context.view_layer.update()
     points = []
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    for obj in objects:
-        if obj.type in {"MESH", "CURVE", "SURFACE", "FONT", "META", "VOLUME"}:
-            evaluated = obj.evaluated_get(depsgraph)
-            points.extend(evaluated.matrix_world @ Vector(corner) for corner in evaluated.bound_box)
+    for obj, transform in geometry(collection):
+        evaluated = obj.evaluated_get(depsgraph)
+        points.extend(transform @ Vector(corner) for corner in evaluated.bound_box)
+    if not points:
+        bpy.context.scene.collection.children.unlink(collection)
+        bpy.data.collections.remove(collection)
+        raise ValueError("Aucun objet visible à exposer.")
     low = [min(point[axis] for point in points) for axis in range(3)]
     high = [max(point[axis] for point in points) for axis in range(3)]
     return collection, (low, high)
@@ -66,7 +85,7 @@ def asset_preview(collection):
     up = Vector((-1, 1, 2)).normalized()
     eye = Vector((1, -1, 1)).normalized()
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    for obj in collection.all_objects:
+    for obj, transform in geometry(collection):
         if obj.type not in {"MESH", "CURVE", "SURFACE", "FONT", "META"}:
             continue
         evaluated = obj.evaluated_get(depsgraph)
@@ -76,7 +95,7 @@ def asset_preview(collection):
         try:
             mesh.calc_loop_triangles()
             stride = max(1, math.ceil(len(mesh.loop_triangles) / 20000))
-            vertices = [evaluated.matrix_world @ vertex.co for vertex in mesh.vertices]
+            vertices = [transform @ vertex.co for vertex in mesh.vertices]
             for tri in list(mesh.loop_triangles)[::stride]:
                 points = [vertices[index] for index in tri.vertices]
                 normal = (points[1] - points[0]).cross(points[2] - points[0]).normalized()
@@ -115,18 +134,60 @@ def asset_preview(collection):
     preview = collection.preview_ensure()
     preview.image_size = (size, size)
     preview.image_pixels_float = pixels
+    preview.is_image_custom = True
+
+
+@contextmanager
+def catalog_lock(root):
+    """Serialize desktop and add-on builds; the OS releases this lock on process exit."""
+    directory = Path(root) / ".blendup/library/blender"
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / ".build.lock").open("a+b") as lock:
+        if lock.tell() == 0:
+            lock.write(b"0")
+            lock.flush()
+        deadline = time.monotonic() + 120
+        while True:
+            lock.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError("Une autre synchronisation utilise déjà la bibliothèque. Réessaie après sa fin.")
+                time.sleep(0.25)
+        try:
+            yield
+        finally:
+            lock.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def build_catalog(manifest):
+    with catalog_lock(manifest["root"]):
+        _build_catalog(manifest)
+
+
+def _build_catalog(manifest):
     root = Path(manifest["root"])
     cache = root / ".blendup/library/blender"
     cache.mkdir(parents=True, exist_ok=True)
     records = []
     failures = []
+    def cache_key(asset):
+        return uuid.uuid5(uuid.NAMESPACE_URL, manifest["projectId"] + "/" + asset["id"]).hex
     for asset in manifest["assets"]:
-        target = cache / (asset["id"] + ".blend")
-        record = cache / (asset["id"] + ".json")
-        expected = {"signature": asset["sourceSignature"], "folder": asset["folder"], "name": asset["name"], "tags": asset.get("tags", [])}
+        target = cache / (cache_key(asset) + ".blend")
+        record = cache / (cache_key(asset) + ".json")
+        expected = {"version": 2, "signature": asset["sourceSignature"], "folder": asset["folder"], "name": asset["name"], "tags": asset.get("tags", [])}
         if target.exists() and record.exists():
             try:
                 if json.loads(record.read_text(encoding="utf-8")) == expected:
@@ -138,13 +199,18 @@ def build_catalog(manifest):
             bpy.ops.wm.read_factory_settings(use_empty=True)
             collection, _bounds = load_asset(root / asset["sourcePath"])
             collection.name = asset["name"]
+            for obj in collection.all_objects:
+                if obj.asset_data:
+                    obj.asset_clear()
+                if obj.data and obj.data.asset_data:
+                    obj.data.asset_clear()
             collection.asset_mark()
             collection.asset_data.catalog_id = str(uuid.uuid5(uuid.NAMESPACE_URL, manifest["projectId"] + "/" + asset["folder"]))
             collection.asset_data.description = asset["folder"] + " · " + asset["sourcePath"]
             for tag in asset.get("tags", []):
                 collection.asset_data.tags.new(tag)
             asset_preview(collection)
-            temporary = cache / (asset["id"] + ".building.blend")
+            temporary = cache / (cache_key(asset) + ".building.blend")
             bpy.data.libraries.write(str(temporary), {collection}, path_remap="RELATIVE_ALL", fake_user=True, compress=True)
             os.replace(temporary, target)
             save_json(record, expected)
@@ -153,7 +219,7 @@ def build_catalog(manifest):
             failures.append({"id": asset["id"], "name": asset["name"], "error": str(error)})
             # Do not leave a stale asset draggable after a failed refresh.
             target.unlink(missing_ok=True)
-    allowed = {asset["id"] for asset in manifest["assets"]}
+    allowed = {cache_key(asset) for asset in manifest["assets"]}
     for target in cache.glob("*.blend"):
         if target.stem not in allowed and not target.name.endswith(".building.blend"):
             target.unlink()

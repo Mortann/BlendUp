@@ -7,6 +7,7 @@ var project_root := ""
 var assets: Array = []
 var index_text := ""
 var last_request := ""
+var source_times := ""
 var search: LineEdit
 var folders: OptionButton
 var list: ItemList
@@ -45,7 +46,7 @@ func _ready() -> void:
     summary = Label.new()
     summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     add_child(summary)
-    plugin.get_editor_interface().get_resource_filesystem().filesystem_changed.connect(func(): index_text = ""; refresh_index())
+    plugin.get_editor_interface().get_resource_filesystem().filesystem_changed.connect(filesystem_changed)
     timer = Timer.new()
     timer.wait_time = 1.0
     timer.timeout.connect(tick)
@@ -71,6 +72,12 @@ static func find_project_root() -> String:
 
 func tick() -> void:
     refresh_index()
+    var times := ""
+    for asset in assets:
+        times += str(FileAccess.get_modified_time(project_root.path_join(asset.get("sourcePath", "")))) + ";"
+    if times != source_times:
+        source_times = times
+        redraw()
     if project_root.is_empty():
         return
     var request_path := project_root.path_join(".blendup/bridge/godot-open.json")
@@ -91,6 +98,10 @@ func tick() -> void:
         var ack := FileAccess.open(project_root.path_join(".blendup/bridge/godot-open-ack.json"), FileAccess.WRITE)
         if ack:
             ack.store_string(JSON.stringify({"id": id}))
+
+func filesystem_changed() -> void:
+    index_text = ""
+    refresh_index()
 
 func refresh_index() -> void:
     if project_root.is_empty():
@@ -145,6 +156,10 @@ func redraw() -> void:
         list.set_item_metadata(i, asset)
         var path: String = asset.get("resourcePath", "") if asset.get("resourcePath") != null else ""
         var ready: bool = asset.get("godotReady", false) and not path.is_empty() and ResourceLoader.exists(path)
+        var signature_parts := str(asset.get("sourceSignature", "")).split(":")
+        if ready and signature_parts.size() == 2:
+            var recorded_seconds := int(int(signature_parts[1]) / 1000000000)
+            ready = FileAccess.get_modified_time(project_root.path_join(asset.get("sourcePath", ""))) == recorded_seconds
         # The JSON reflects BlendUp's export gate. Never drag a blocked/stale GLB.
         var display_asset: Dictionary = asset.duplicate()
         display_asset["godotReady"] = ready

@@ -4,7 +4,7 @@ Add-on léger pour relier un fichier `.blend` placé dans `Art` à son projet Bl
 
 ## Fonctions
 
-L'add-on 0.5.1 ouvre les assets dans la session Blender active, prépare les dossiers
+L'add-on 0.6.0 ouvre les assets dans la session Blender active, prépare les dossiers
 `textures`, `references` et `renders`, puis synchronise les exports avec BlendUp.
 
 - détection automatique du projet à partir du fichier Blender ouvert ;
@@ -31,3 +31,11 @@ Le cœur Python ne dépend pas de Blender et peut être testé avec :
 ```text
 python apps/blender-addon/tests/test_core.py
 ```
+
+## Bibliothèque du projet (0.6.0)
+
+Dans la vue 3D, ouvre `N → BlendUp → Bibliothèque du projet`. La liste se remplit à l’ouverture d’un asset ou d’un Showcase. Recherche par nom, dossier ou tag, puis utilise **Placer l’asset** : il arrive au curseur 3D avec son échelle et une instance liée par défaut. Décoche **Instance liée** pour importer une copie modifiable. Un nouveau fichier sans nom conserve le projet associé pendant cette session.
+
+Pour le glisser-déposer, utilise **Synchroniser**, puis **Navigateur d’assets · glisser-déposer**. Un navigateur natif s’ouvre à côté de la vue 3D, avec les collections, vignettes et catalogues du projet. Les fichiers intermédiaires se trouvent dans `.blendup/library/blender` ; les sources restent intactes. Le navigateur lie ses instances à cette bibliothèque générée. Après une modification, synchronise et recharge les bibliothèques liées avec les commandes Blender habituelles.
+
+L’application BlendUp peut également synchroniser cette bibliothèque dans ses paramètres ; elle la maintient ensuite à jour tant qu’elle est ouverte. Le bouton Blender **Synchroniser** fonctionne lorsque l’application est fermée. Chaque sauvegarde d’un asset actualise aussi l’index utilisé par le panneau Godot.

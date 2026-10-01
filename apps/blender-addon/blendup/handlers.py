@@ -78,6 +78,13 @@ def export_after_save(_filepath):
         print(f"[BlendUp] Échec de l'export automatique : {error}")
     finally:
         _exporting = False
+        root = find_project_root(bpy.data.filepath)
+        if root:
+            try:
+                from .core.library import publish_index
+                publish_index(root)
+            except Exception as error:
+                print(f"[BlendUp] Actualisation de la bibliothèque impossible : {error}")
 
 
 @persistent

@@ -2,13 +2,15 @@ import { Boxes, ExternalLink, LoaderCircle, RefreshCw, TriangleAlert } from "luc
 import { useState } from "react";
 import type { FolderShowcase } from "../../blendup/types";
 
-export function ShowcaseCard({ scene, busy, onOpen, onRefresh, onConfigure }: {
+export function ShowcaseCard({ scene, busy, onOpen, onRefresh, onConfigure, onExportMissing }: {
   scene: FolderShowcase; busy: boolean;
   onOpen: (editor: "blender" | "godot") => void;
   onRefresh: () => void;
   onConfigure: (enabled: boolean, spacing?: number) => void;
+  onExportMissing: () => Promise<void>;
 }) {
   const [spacing, setSpacing] = useState(scene.spacing);
+  const [exporting, setExporting] = useState(false);
   const generating = busy || scene.status === "generating";
   const missing = scene.assetCount - scene.godotCount;
   return <article className="showcase-card" aria-label={`Showcase ${scene.folder}`}>
@@ -18,6 +20,7 @@ export function ShowcaseCard({ scene, busy, onOpen, onRefresh, onConfigure }: {
       <p>{scene.assetCount} asset{scene.assetCount > 1 ? "s" : ""} · sous-dossiers inclus</p>
       <span className="showcase-status">{generating ? <><LoaderCircle className="spin" size={14} /> Génération…</> : scene.status === "error" ? <><TriangleAlert size={14} /> Génération partielle ou impossible</> : "Échelle réelle · sol neutre"}</span>
       {scene.godotPath && missing > 0 ? <p className="showcase-warning">Godot : {missing} asset{missing > 1 ? "s" : ""} à exporter ou à corriger.</p> : null}
+      {scene.godotPath && missing > 0 ? <button disabled={exporting} className="showcase-export" onClick={() => { setExporting(true); void onExportMissing().finally(() => setExporting(false)); }} type="button">{exporting ? <LoaderCircle className="spin" size={12} /> : null}{exporting ? "Export en cours…" : "Exporter les assets manquants"}</button> : null}
       <div className="showcase-actions">
         <button disabled={generating || (scene.status === "error" && scene.includedCount === 0)} onClick={() => onOpen("blender")} type="button"><ExternalLink size={14} /> Blender</button>
         {scene.godotPath ? <button disabled={generating} onClick={() => onOpen("godot")} type="button"><ExternalLink size={14} /> Godot</button> : null}
