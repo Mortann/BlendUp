@@ -1,4 +1,4 @@
-import { OperationBanner } from "./app/ui";
+import { OpeningAssetOverlay, OperationBanner } from "./app/ui";
 import { BrandLogo } from "./app/BrandLogo";
 import { useBlendUpController } from "./app/useBlendUpController";
 import { WorkspaceShell } from "./app/WorkspaceShell";
@@ -53,6 +53,8 @@ function App() {
     >
       {app.activeView === "assets" ? (
         <AssetsView
+          checkingUvAssetIds={app.checkingUvAssetIds}
+          onCheckUv={app.checkUvAsset}
           exportingAssetIds={app.exportingAssetIds}
           onAddAssetImages={app.handleAddAssetImages}
           onCopyAsset={app.handleCopyAsset}
@@ -77,12 +79,15 @@ function App() {
           onRenameFolder={app.handleRenameFolder}
           onSetAssetThumbnail={app.handleSetAssetThumbnail}
           onUpdateAssetMetadata={app.handleUpdateAssetMetadata}
+          openingAsset={app.openingAssetPath !== null}
           selectedAssetId={app.selectedAsset?.id ?? null}
           setSelectedAssetId={app.setSelectedAssetId}
           snapshot={app.project}
         />
       ) : app.activeView === "problems" ? (
         <ProblemsView
+          checkingUvAssetIds={app.checkingUvAssetIds}
+          onCheckUv={app.checkUvAsset}
           exportingAssetIds={app.exportingAssetIds}
           onExportAsset={app.handleExportAsset}
           onOpenAsset={app.revealAsset}
@@ -92,7 +97,10 @@ function App() {
         <SettingsView
           blenderDetection={app.blenderDetection}
           blenderPathInput={app.blenderPathInput}
-          exportBusy={app.exportingAssetIds.length > 0}
+          exportBusy={app.exportingAssetIds.length > 0 || app.checkingUvAssetIds.length > 0}
+          checkingUvs={app.checkingUvAssetIds.length > 0}
+          onCheckAllUvs={app.checkAllUvs}
+          onSaveProjectBlenderSettings={app.saveProjectBlenderSettings}
           isDetectingBlender={app.isDetectingBlender}
           isReexporting={app.isReexporting}
           onChangeEngine={app.changeProjectEngine}
@@ -105,8 +113,11 @@ function App() {
           setBlenderPathInput={app.setBlenderPathInput}
           setShowBlenderCommandPrompt={app.setShowBlenderCommandPrompt}
           showBlenderCommandPrompt={app.userSettings.showBlenderCommandPrompt}
+          setOpenAssetAfterCreation={app.setOpenAssetAfterCreation}
+          openAssetAfterCreation={app.userSettings.openAssetAfterCreation}
         />
       )}
+      {app.openingAssetPath ? <OpeningAssetOverlay path={app.openingAssetPath} /> : null}
     </WorkspaceShell>
   );
 }

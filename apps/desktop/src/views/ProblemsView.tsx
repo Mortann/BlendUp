@@ -2,18 +2,22 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Info, LoaderCircle, Upload } 
 import type { ProjectSnapshot } from "../blendup/types";
 
 export function ProblemsView({
+  checkingUvAssetIds,
+  onCheckUv,
   exportingAssetIds,
   onExportAsset,
   onOpenAsset,
   snapshot
 }: {
+  checkingUvAssetIds: string[];
+  onCheckUv: (assetId: string) => Promise<boolean>;
   exportingAssetIds: string[];
   onExportAsset: (assetId: string) => Promise<boolean>;
   onOpenAsset: (assetId: string) => void;
   snapshot: ProjectSnapshot;
 }) {
   return (
-    <div className="view-page narrow">
+    <div className="view-page">
       <header className="view-header">
         <div>
           <span className="eyebrow">Controle utile uniquement</span>
@@ -43,6 +47,7 @@ export function ProblemsView({
                 {problem.assetId ? (
                   <div className="problem-actions">
                     <button className="ghost" onClick={() => onOpenAsset(problem.assetId!)} type="button">Voir l'asset</button>
+                    {problem.actionLabel === "Vérifier" ? <button className="primary" disabled={exporting || checkingUvAssetIds.includes(problem.assetId)} onClick={() => void onCheckUv(problem.assetId!)} type="button">{checkingUvAssetIds.includes(problem.assetId) ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />} Vérifier les UV</button> : null}
                     {problem.actionLabel === "Exporter" ? (
                       <button className="primary" disabled={exporting} onClick={() => void onExportAsset(problem.assetId!)} type="button">
                         {exporting ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />} Exporter

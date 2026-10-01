@@ -16,44 +16,10 @@ use std::{
 };
 use tauri::Manager;
 
-const EXPORT_SCRIPT: &str = r#"
-import pathlib
-import sys
-import bpy
-
-def main():
-    marker = "--"
-    if marker not in sys.argv:
-        raise RuntimeError("BlendUp export arguments are missing.")
-
-    args = sys.argv[sys.argv.index(marker) + 1:]
-    output_path = pathlib.Path(args[0])
-    export_format = args[1]
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if export_format == "glb":
-        bpy.ops.export_scene.gltf(
-            filepath=str(output_path),
-            export_format='GLB',
-            use_selection=False,
-            export_apply=True,
-        )
-    elif export_format == "fbx":
-        bpy.ops.object.select_all(action='SELECT')
-        bpy.ops.export_scene.fbx(
-            filepath=str(output_path),
-            use_selection=False,
-            apply_unit_scale=True,
-            bake_space_transform=False,
-            object_types={'EMPTY', 'MESH', 'ARMATURE'},
-            add_leaf_bones=False,
-            mesh_smooth_type='FACE',
-        )
-    else:
-        raise RuntimeError(f"Unsupported export format: {export_format}")
-
-main()
-"#;
+const EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/export_asset.py");
+const UV_QUALITY_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/uv_quality.py");
+const UV_BLENDER_SCRIPT: &str = include_str!("../../../blender-addon/blendup/blender_uv.py");
+const UV_CHECK_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/check_uvs.py");
 
 const CREATE_BLEND_SCRIPT: &str = r#"
 import pathlib
@@ -128,6 +94,83 @@ struct ProjectConfig {
     name: String,
     engine: String,
     paths: ProjectPaths,
+    #[serde(default)]
+    blender: BlenderProjectSettings,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+struct BlenderProjectSettings {
+    apply_transforms_on_save: bool,
+    unwrap_on_save: bool,
+    validate_uvs: bool,
+    minimum_uv_score: f64,
+    allow_uv_overlap: bool,
+}
+
+impl Default for BlenderProjectSettings {
+    fn default() -> Self {
+        Self {
+            apply_transforms_on_save: false,
+            unwrap_on_save: false,
+            validate_uvs: false,
+            minimum_uv_score: 70.0,
+            allow_uv_overlap: false,
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UvObjectMetrics {
+    object_name: String,
+    score: f64,
+    triangle_count: usize,
+    missing_uv_triangles: usize,
+    degenerate_triangles: usize,
+    valid_uv_percent: f64,
+    stretch_score: f64,
+    density_score: f64,
+    overlap_percent: f64,
+    #[serde(default)]
+    marked_seams: usize,
+    #[serde(default)]
+    uv_cuts: usize,
+    #[serde(default)]
+    unused_seams: usize,
+    #[serde(default)]
+    unmarked_cuts: usize,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UvQualityReport {
+    algorithm_version: u32,
+    score: f64,
+    complete: bool,
+    allow_uv_overlap: bool,
+    source_path: String,
+    source_size: u64,
+    source_modified_ns: String,
+    checked_at: String,
+    #[serde(default)]
+    unsaved_changes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    objects: Vec<UvObjectMetrics>,
+    issues: Vec<String>,
+    #[serde(default)]
+    preparation_warnings: Vec<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UvQualitySummary {
+    #[serde(flatten)]
+    report: UvQualityReport,
+    stale: bool,
+    blocked: bool,
+    minimum_score: f64,
 }
 
 #[derive(Serialize)]
@@ -158,6 +201,8 @@ struct BlendUpAsset {
     last_error: Option<String>,
     size_bytes: u64,
     metadata: AssetMetadataView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uv_quality: Option<UvQualitySummary>,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -202,6 +247,8 @@ struct AssetVariant {
     output_modified_at: Option<String>,
     #[serde(default)]
     notes: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uv_quality: Option<UvQualitySummary>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -226,6 +273,8 @@ struct AssetLod {
     output_modified_at: Option<String>,
     #[serde(default)]
     notes: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uv_quality: Option<UvQualitySummary>,
 }
 
 #[derive(Serialize)]
@@ -289,6 +338,8 @@ struct UserSettings {
     blender_path: Option<String>,
     #[serde(default)]
     show_blender_command_prompt: bool,
+    #[serde(default)]
+    open_asset_after_creation: bool,
 }
 
 impl Default for UserSettings {
@@ -300,6 +351,7 @@ impl Default for UserSettings {
             recent_projects: Vec::new(),
             blender_path: None,
             show_blender_command_prompt: false,
+            open_asset_after_creation: false,
         }
     }
 }
@@ -593,12 +645,13 @@ fn export_asset_file(
     let temp_dir = root.join(".blendup").join("temp");
     fs::create_dir_all(&temp_dir)
         .map_err(|error| format!("Impossible de creer {}: {error}", temp_dir.display()))?;
-    let script_path = temp_dir.join("export_asset.py");
-    fs::write(&script_path, EXPORT_SCRIPT)
-        .map_err(|error| format!("Impossible de preparer l'export Blender: {error}"))?;
+    let script_path = prepare_uv_runtime(&root, "export_asset.py", EXPORT_SCRIPT)?;
 
-    let process_output = Command::new(&blender_executable)
+    let mut command = Command::new(&blender_executable);
+    command
+        .env("BLENDUP_BACKGROUND_TASK", "1")
         .arg("--background")
+        .arg("--factory-startup")
         .arg(&source)
         .arg("--python-exit-code")
         .arg("1")
@@ -607,7 +660,10 @@ fn export_asset_file(
         .arg("--")
         .arg(&output_path)
         .arg(&asset.format)
-        .output();
+        .arg(&root)
+        .arg(if project.engine == "none" { "0" } else { "1" });
+    apply_command_window_preference(&mut command, false);
+    let process_output = command.output();
 
     let blender_display = blender_executable.to_string_lossy().to_string();
     let output = match process_output {
@@ -694,6 +750,9 @@ fn export_asset_versions(
     blender_path: Option<String>,
 ) -> Result<ExportAssetResult, String> {
     let base_result = export_asset(project_root.clone(), asset_id.clone(), blender_path.clone())?;
+    if !base_result.success {
+        return Ok(base_result);
+    }
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
     require_project_engine(&project)?;
@@ -886,18 +945,24 @@ fn export_managed_file(
     let temp_dir = root.join(".blendup").join("temp");
     fs::create_dir_all(&temp_dir)
         .map_err(|error| format!("Impossible de preparer l'export: {error}"))?;
-    let script = temp_dir.join("export_asset.py");
-    fs::write(&script, EXPORT_SCRIPT)
-        .map_err(|error| format!("Impossible de preparer Blender: {error}"))?;
-    let process = Command::new(&blender)
+    let script = prepare_uv_runtime(root, "export_asset.py", EXPORT_SCRIPT)?;
+    let mut command = Command::new(&blender);
+    command
+        .env("BLENDUP_BACKGROUND_TASK", "1")
         .arg("--background")
+        .arg("--factory-startup")
         .arg(&source)
+        .arg("--python-exit-code")
+        .arg("1")
         .arg("--python")
         .arg(&script)
         .arg("--")
         .arg(&output)
         .arg(format)
-        .output();
+        .arg(root)
+        .arg("1");
+    apply_command_window_preference(&mut command, false);
+    let process = command.output();
     let blender_display = blender.to_string_lossy().to_string();
     let process = match process {
         Ok(process) => process,
@@ -917,6 +982,150 @@ fn export_managed_file(
     ))
 }
 
+fn prepare_uv_runtime(root: &Path, name: &str, script: &str) -> Result<PathBuf, String> {
+    let directory = root.join(".blendup/temp");
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    for (name, content) in [
+        ("blendup_uv_quality.py", UV_QUALITY_SCRIPT),
+        ("blendup_blender_uv.py", UV_BLENDER_SCRIPT),
+        (name, script),
+    ] {
+        fs::write(directory.join(name), content)
+            .map_err(|error| format!("Impossible de préparer le contrôle UV: {error}"))?;
+    }
+    Ok(directory.join(name))
+}
+
+fn read_uv_quality(
+    root: &Path,
+    project: &ProjectConfig,
+    source_path: &str,
+) -> Option<UvQualitySummary> {
+    let path = root
+        .join(".blendup/uv-reports")
+        .join(source_path)
+        .with_extension("json");
+    let report: UvQualityReport = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
+    if !report.score.is_finite() || !(0.0..=100.0).contains(&report.score) {
+        return None;
+    }
+    let metadata = fs::metadata(root.join(source_path)).ok()?;
+    let modified = metadata
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_nanos()
+        .to_string();
+    let stale = report.algorithm_version != 1
+        || report.unsaved_changes
+        || report.source_path != source_path
+        || report.source_size != metadata.len()
+        || report.source_modified_ns != modified
+        || report.allow_uv_overlap != project.blender.allow_uv_overlap;
+    let blocked = project.blender.validate_uvs
+        && !stale
+        && (!report.complete
+            || report.error.is_some()
+            || report.score < project.blender.minimum_uv_score);
+    Some(UvQualitySummary {
+        report,
+        stale,
+        blocked,
+        minimum_score: project.blender.minimum_uv_score,
+    })
+}
+
+#[tauri::command]
+fn update_project_blender_settings(
+    project_root: String,
+    settings: BlenderProjectSettings,
+) -> Result<ProjectConfig, String> {
+    let root = validated_project_root(&project_root)?;
+    let mut project = read_project_config(&root)?;
+    project.blender = settings;
+    validate_project_paths(&project)?;
+    write_json(&project_file(&root), &project)?;
+    Ok(project)
+}
+
+#[tauri::command]
+async fn check_asset_uvs(
+    project_root: String,
+    asset_id: String,
+    blender_path: Option<String>,
+) -> Result<AssetMutationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        check_asset_uvs_impl(project_root, asset_id, blender_path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn check_asset_uvs_impl(
+    project_root: String,
+    asset_id: String,
+    blender_path: Option<String>,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
+        "Blender est introuvable. Configure son chemin dans Paramètres.".to_string()
+    })?;
+    let script = prepare_uv_runtime(&root, "check_uvs.py", UV_CHECK_SCRIPT)?;
+    let mut sources = vec![asset.source_path.clone()];
+    sources.extend(
+        asset
+            .metadata
+            .variants
+            .iter()
+            .filter_map(|version| version.source_path.clone()),
+    );
+    sources.extend(
+        asset
+            .metadata
+            .lods
+            .iter()
+            .filter_map(|version| version.source_path.clone()),
+    );
+    let mut scores = Vec::new();
+    for source in sources {
+        let mut command = Command::new(&blender);
+        command
+            .env("BLENDUP_BACKGROUND_TASK", "1")
+            .arg("--background")
+            .arg("--factory-startup")
+            .arg(root.join(safe_relative_path(&source)?))
+            .arg("--python-exit-code")
+            .arg("1")
+            .arg("--python")
+            .arg(&script)
+            .arg("--")
+            .arg(&root);
+        apply_command_window_preference(&mut command, false);
+        let output = command.output().map_err(|error| error.to_string())?;
+        if !output.status.success() {
+            return Err(format!(
+                "Contrôle UV impossible pour {source}: {}",
+                command_log(&output.stdout, &output.stderr)
+            ));
+        }
+        let summary = read_uv_quality(&root, &project, &source)
+            .ok_or_else(|| "Blender n'a pas produit de rapport UV valide.".to_string())?;
+        scores.push(summary.report.score);
+    }
+    Ok(AssetMutationResult {
+        asset_id: Some(asset_id),
+        message: format!(
+            "UV de {} vérifiés : {:.1}/100 pour l'original, {} fichier(s) contrôlé(s).",
+            asset.name,
+            scores[0],
+            scores.len()
+        ),
+    })
+}
+
 #[tauri::command]
 fn open_project_path(project_root: String, relative_path: String) -> Result<(), String> {
     let root = validated_project_root(&project_root)?;
@@ -933,7 +1142,25 @@ fn open_project_path(project_root: String, relative_path: String) -> Result<(), 
 }
 
 #[tauri::command]
-fn open_blend_file(
+async fn open_blend_file(
+    project_root: String,
+    relative_path: String,
+    blender_path: Option<String>,
+    show_command_prompt: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        open_blend_file_impl(
+            project_root,
+            relative_path,
+            blender_path,
+            show_command_prompt,
+        )
+    })
+    .await
+    .map_err(|error| format!("Impossible d'ouvrir Blender: {error}"))?
+}
+
+fn open_blend_file_impl(
     project_root: String,
     relative_path: String,
     blender_path: Option<String>,
@@ -1100,7 +1327,20 @@ fn create_folder(
 }
 
 #[tauri::command]
-fn create_asset(
+async fn create_asset(
+    project_root: String,
+    parent_dir: String,
+    name: String,
+    blender_path: Option<String>,
+) -> Result<AssetMutationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        create_asset_impl(project_root, parent_dir, name, blender_path)
+    })
+    .await
+    .map_err(|error| format!("Creation de l'asset impossible: {error}"))?
+}
+
+fn create_asset_impl(
     project_root: String,
     parent_dir: String,
     name: String,
@@ -1125,12 +1365,15 @@ fn create_asset(
     let script = temp_dir.join("create_asset.py");
     fs::write(&script, CREATE_BLEND_SCRIPT)
         .map_err(|error| format!("Impossible de preparer Blender: {error}"))?;
-    let output = Command::new(&blender)
+    let mut command = Command::new(&blender);
+    command
         .arg("--background")
         .arg("--python")
         .arg(&script)
         .arg("--")
-        .arg(&target)
+        .arg(&target);
+    apply_command_window_preference(&mut command, false);
+    let output = command
         .output()
         .map_err(|error| format!("Impossible de lancer Blender: {error}"))?;
     if !output.status.success() || !target.is_file() {
@@ -1273,6 +1516,7 @@ fn create_asset_variant(
         source_modified_at: modified_time(&target).map(time_label),
         output_modified_at: None,
         notes: String::new(),
+        uv_quality: None,
     });
     write_asset_metadata(&root, &metadata)?;
 
@@ -1378,6 +1622,7 @@ fn generate_asset_lods(
             source_modified_at: modified_time(&target).map(time_label),
             output_modified_at: None,
             notes: "Genere automatiquement avec un modificateur Decimate editable.".to_string(),
+            uv_quality: None,
         });
     }
     metadata.details.lods.sort_by(|left, right| {
@@ -2717,6 +2962,19 @@ fn scan_assets(
             };
         }
 
+        let uv_quality = read_uv_quality(root, project, &source_path);
+        for version in &mut details.variants {
+            version.uv_quality = version
+                .source_path
+                .as_deref()
+                .and_then(|path| read_uv_quality(root, project, path));
+        }
+        for version in &mut details.lods {
+            version.uv_quality = version
+                .source_path
+                .as_deref()
+                .and_then(|path| read_uv_quality(root, project, path));
+        }
         assets.push(BlendUpAsset {
             id,
             name,
@@ -2730,6 +2988,7 @@ fn scan_assets(
             last_error: failed_record.map(|record| record.message.clone()),
             size_bytes: fs::metadata(&source).map(|item| item.len()).unwrap_or(0),
             metadata: details,
+            uv_quality,
         });
     }
 
@@ -2841,6 +3100,7 @@ fn normalize_asset_metadata(value: &Value) -> Option<AssetMetadata> {
                         source_modified_at: json_string(item, "sourceModifiedAt"),
                         output_modified_at: json_string(item, "outputModifiedAt"),
                         notes: json_string(item, "notes").unwrap_or_default(),
+                        uv_quality: None,
                     })
                 })
                 .collect()
@@ -2873,6 +3133,7 @@ fn normalize_asset_metadata(value: &Value) -> Option<AssetMetadata> {
                         source_modified_at: json_string(item, "sourceModifiedAt"),
                         output_modified_at: json_string(item, "outputModifiedAt"),
                         notes: json_string(item, "notes").unwrap_or_default(),
+                        uv_quality: None,
                     })
                 })
                 .collect()
@@ -3074,6 +3335,49 @@ fn collect_problems(
     }
 
     for asset in assets {
+        let mut uv_blocked = false;
+        if project.blender.validate_uvs {
+            let mut versions = vec![(asset.name.as_str(), asset.uv_quality.as_ref())];
+            versions.extend(
+                asset
+                    .metadata
+                    .variants
+                    .iter()
+                    .filter(|v| v.source_path.is_some())
+                    .map(|v| (v.name.as_str(), v.uv_quality.as_ref())),
+            );
+            versions.extend(
+                asset
+                    .metadata
+                    .lods
+                    .iter()
+                    .filter(|v| v.source_path.is_some())
+                    .map(|v| (v.level.as_str(), v.uv_quality.as_ref())),
+            );
+            for (index, (label, quality)) in versions.into_iter().enumerate() {
+                let (title, detail, severity, action) = match quality {
+                    Some(quality) if quality.blocked => {
+                        uv_blocked = true;
+                        ("Qualité UV insuffisante", format!("{} : {:.1}/100, minimum {:.1}/100. {} {}", label, quality.report.score, quality.minimum_score,
+                            if project.engine == "none" { "" } else { "Export bloqué." }, quality.report.issues.join(" ")), "error", "Ouvrir")
+                    }
+                    Some(quality) if !quality.stale => continue,
+                    _ => ("UV à vérifier", format!("{} : aucun contrôle UV à jour. Le prochain export sera vérifié dans Blender.", label), "warning", "Vérifier"),
+                };
+                problems.push(problem(
+                    &format!("{}_uv_{index}", asset.id),
+                    severity,
+                    "blender",
+                    Some(asset.id.clone()),
+                    title,
+                    &detail,
+                    Some(if index == 0 { action } else { "Ouvrir" }),
+                ));
+            }
+        }
+        if uv_blocked {
+            continue;
+        }
         match asset.status.as_str() {
             "ready" => problems.push(problem(
                 &format!("{}_not_exported", asset.id),
@@ -3203,6 +3507,13 @@ fn normalize_project_config(value: &Value) -> Result<ProjectConfig, String> {
             .unwrap_or_else(|| format!("project_{}", slug(name))),
         name: name.to_string(),
         engine,
+        blender: serde_json::from_value(
+            value
+                .get("blender")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({})),
+        )
+        .map_err(|error| format!("Paramètres Blender invalides: {error}"))?,
         paths: ProjectPaths {
             art_root: normalize_relative_string(&art_root),
             engine_root: normalize_relative_string(&engine_root),
@@ -3223,6 +3534,7 @@ fn new_project_config(name: &str, engine: &str) -> ProjectConfig {
         project_id: format!("project_{}", slug(name)),
         name: name.trim().to_string(),
         engine: engine.to_string(),
+        blender: BlenderProjectSettings::default(),
         paths: ProjectPaths {
             art_root: "Art".to_string(),
             engine_assets_root: if engine == "none" {
@@ -3236,6 +3548,11 @@ fn new_project_config(name: &str, engine: &str) -> ProjectConfig {
 }
 
 fn validate_project_paths(project: &ProjectConfig) -> Result<(), String> {
+    if !project.blender.minimum_uv_score.is_finite()
+        || !(1.0..=100.0).contains(&project.blender.minimum_uv_score)
+    {
+        return Err("Le score UV minimum doit être compris entre 1 et 100.".to_string());
+    }
     safe_relative_path(&project.paths.art_root)?;
     if project.engine != "none" {
         safe_relative_path(&project.paths.engine_root)?;
@@ -3657,6 +3974,8 @@ fn main() {
             clear_asset_exports,
             open_project_path,
             open_blend_file,
+            update_project_blender_settings,
+            check_asset_uvs,
             read_project_file_data_url,
             list_project_images,
             create_folder,
@@ -3684,6 +4003,293 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn uv_report_fixture(root: &Path, source: &str, score: f64) -> Value {
+        let metadata = fs::metadata(root.join(source)).unwrap();
+        serde_json::json!({
+            "algorithmVersion": 1, "score": score, "complete": true, "allowUvOverlap": false,
+            "sourcePath": source, "sourceSize": metadata.len(),
+            "sourceModifiedNs": metadata.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_nanos().to_string(),
+            "checkedAt": "1", "objects": [], "issues": []
+        })
+    }
+
+    #[test]
+    fn blender_project_options_are_opt_in_and_invalid_thresholds_are_rejected() {
+        let mut legacy = serde_json::to_value(new_project_config("Test", "none")).unwrap();
+        legacy.as_object_mut().unwrap().remove("blender");
+        let project = normalize_project_config(&legacy).unwrap();
+        assert!(!project.blender.apply_transforms_on_save);
+        assert!(!project.blender.unwrap_on_save);
+        assert!(!project.blender.validate_uvs);
+        assert_eq!(project.blender.minimum_uv_score, 70.0);
+        let root = test_root("uv_settings");
+        create_project(CreateProjectOptions {
+            project_root: root.to_string_lossy().to_string(),
+            project_name: "Test".into(),
+            engine: "none".into(),
+        })
+        .unwrap();
+        let original = fs::read(project_file(&root)).unwrap();
+        for threshold in [0.0, 101.0, f64::NAN] {
+            assert!(update_project_blender_settings(
+                root.to_string_lossy().to_string(),
+                BlenderProjectSettings {
+                    minimum_uv_score: threshold,
+                    ..Default::default()
+                }
+            )
+            .is_err());
+            assert_eq!(fs::read(project_file(&root)).unwrap(), original);
+        }
+        update_project_blender_settings(
+            root.to_string_lossy().to_string(),
+            BlenderProjectSettings {
+                validate_uvs: true,
+                unwrap_on_save: true,
+                minimum_uv_score: 85.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let project = read_project_config(&root).unwrap();
+        assert!(project.blender.validate_uvs && project.blender.unwrap_on_save);
+        assert_eq!(project.blender.minimum_uv_score, 85.0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn uv_reports_follow_the_source_and_current_policy() {
+        let root = test_root("uv_freshness");
+        let source = "Art/Table/Table.blend";
+        fs::create_dir_all(root.join("Art/Table")).unwrap();
+        fs::write(root.join(source), b"blend").unwrap();
+        let mut project = new_project_config("Test", "none");
+        project.blender.validate_uvs = true;
+        let mut report = uv_report_fixture(&root, source, 50.0);
+        let path = root.join(".blendup/uv-reports/Art/Table/Table.json");
+        write_json(&path, &report).unwrap();
+        let summary = read_uv_quality(&root, &project, source).unwrap();
+        assert!(!summary.stale && summary.blocked);
+        project.blender.minimum_uv_score = 50.0;
+        assert!(!read_uv_quality(&root, &project, source).unwrap().blocked);
+        project.blender.allow_uv_overlap = true;
+        assert!(read_uv_quality(&root, &project, source).unwrap().stale);
+        project.blender.allow_uv_overlap = false;
+        report["unsavedChanges"] = Value::Bool(true);
+        write_json(&path, &report).unwrap();
+        assert!(read_uv_quality(&root, &project, source).unwrap().stale);
+        report["unsavedChanges"] = Value::Bool(false);
+        report["complete"] = Value::Bool(false);
+        write_json(&path, &report).unwrap();
+        assert!(read_uv_quality(&root, &project, source).unwrap().blocked);
+        fs::write(root.join(source), b"changed source").unwrap();
+        let summary = read_uv_quality(&root, &project, source).unwrap();
+        assert!(summary.stale && !summary.blocked);
+        report["score"] = serde_json::json!(101);
+        write_json(&path, &report).unwrap();
+        assert!(read_uv_quality(&root, &project, source).is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn uv_problems_cover_originals_and_versions_in_standalone_projects() {
+        let root = test_root("uv_problems");
+        let project_root = root.to_string_lossy().to_string();
+        create_project(CreateProjectOptions {
+            project_root: project_root.clone(),
+            project_name: "Test".into(),
+            engine: "none".into(),
+        })
+        .unwrap();
+        fs::create_dir_all(root.join("Art/Table")).unwrap();
+        let source = "Art/Table/Table.blend";
+        fs::write(root.join(source), b"blend").unwrap();
+        let id = read_project_snapshot(project_root.clone()).unwrap().assets[0]
+            .id
+            .clone();
+        create_asset_variant(project_root.clone(), id, "Red".into()).unwrap();
+        update_project_blender_settings(
+            project_root.clone(),
+            BlenderProjectSettings {
+                validate_uvs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let snapshot = read_project_snapshot(project_root.clone()).unwrap();
+        assert_eq!(
+            snapshot
+                .problems
+                .iter()
+                .filter(|p| p.title == "UV à vérifier")
+                .count(),
+            2
+        );
+        write_json(
+            &root
+                .join(".blendup/uv-reports")
+                .join(source)
+                .with_extension("json"),
+            &uv_report_fixture(&root, source, 100.0),
+        )
+        .unwrap();
+        let version_source = snapshot.assets[0].metadata.variants[0]
+            .source_path
+            .as_ref()
+            .unwrap();
+        write_json(
+            &root
+                .join(".blendup/uv-reports")
+                .join(version_source)
+                .with_extension("json"),
+            &uv_report_fixture(&root, version_source, 0.0),
+        )
+        .unwrap();
+        let snapshot = read_project_snapshot(project_root).unwrap();
+        assert_eq!(snapshot.problems.len(), 1);
+        assert_eq!(snapshot.problems[0].title, "Qualité UV insuffisante");
+        assert_eq!(snapshot.problems[0].severity, "error");
+        assert!(
+            snapshot.assets[0].metadata.variants[0]
+                .uv_quality
+                .as_ref()
+                .unwrap()
+                .blocked
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "Requires BLENDUP_TEST_BLENDER pointing to a Blender executable"]
+    fn desktop_uv_gate_preserves_exports_and_allows_local_previews() {
+        let blender = env::var("BLENDUP_TEST_BLENDER").expect("BLENDUP_TEST_BLENDER is required");
+        let root = test_root("uv_real_blender");
+        let project_root = root.to_string_lossy().to_string();
+        create_project(CreateProjectOptions {
+            project_root: project_root.clone(),
+            project_name: "Test".into(),
+            engine: "godot".into(),
+        })
+        .unwrap();
+        fs::create_dir_all(root.join("Art/Plane")).unwrap();
+        let source = root.join("Art/Plane/Plane.blend");
+        let script = root.join("fixture.py");
+        fs::write(&script, "import bpy,sys\nfrom pathlib import Path\na=sys.argv[sys.argv.index('--')+1:]\nif a[1]=='good':\n bpy.ops.wm.read_factory_settings(use_empty=True)\n bpy.ops.mesh.primitive_plane_add()\nelse:\n for obj in bpy.context.scene.objects:\n  if obj.type=='MESH':\n   for loop in obj.data.uv_layers.active.data: loop.uv=(0,0)\nbpy.ops.wm.save_as_mainfile(filepath=a[0])\n").unwrap();
+        let make_source = |bad: bool| {
+            let mut command = Command::new(&blender);
+            command
+                .env("BLENDUP_BACKGROUND_TASK", "1")
+                .args(["--background", "--factory-startup"]);
+            if bad {
+                command.arg(&source);
+            }
+            command
+                .args(["--python-exit-code", "1", "--python"])
+                .arg(&script)
+                .arg("--")
+                .arg(&source)
+                .arg(if bad { "bad" } else { "good" });
+            apply_command_window_preference(&mut command, false);
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                command_log(&output.stdout, &output.stderr)
+            );
+        };
+        make_source(false);
+        update_project_blender_settings(
+            project_root.clone(),
+            BlenderProjectSettings {
+                validate_uvs: true,
+                minimum_uv_score: 90.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let id = read_project_snapshot(project_root.clone()).unwrap().assets[0]
+            .id
+            .clone();
+        assert!(
+            export_asset(project_root.clone(), id.clone(), Some(blender.clone()))
+                .unwrap()
+                .success
+        );
+        let output = root.join("Godot/Assets/Plane/Plane.glb");
+        let previous = fs::read(&output).unwrap();
+        make_source(true);
+        let source_bytes = fs::read(&source).unwrap();
+        let rejected =
+            export_asset(project_root.clone(), id.clone(), Some(blender.clone())).unwrap();
+        assert!(!rejected.success && rejected.log.contains("Export bloqué"));
+        assert_eq!(fs::read(&output).unwrap(), previous);
+        create_asset_variant(project_root.clone(), id.clone(), "Bad".into()).unwrap();
+        let snapshot = read_project_snapshot(project_root.clone()).unwrap();
+        let variant = &snapshot.assets[0].metadata.variants[0];
+        assert!(
+            !export_asset_version(
+                project_root.clone(),
+                id.clone(),
+                variant.id.clone(),
+                "variant".into(),
+                Some(blender.clone())
+            )
+            .unwrap()
+            .success
+        );
+        assert!(!root.join(variant.output_path.as_ref().unwrap()).exists());
+        check_asset_uvs_impl(project_root.clone(), id.clone(), Some(blender.clone())).unwrap();
+        let snapshot = read_project_snapshot(project_root.clone()).unwrap();
+        assert!(snapshot.assets[0].uv_quality.as_ref().unwrap().blocked);
+        assert!(!snapshot.assets[0].uv_quality.as_ref().unwrap().stale);
+        assert_eq!(
+            snapshot
+                .problems
+                .iter()
+                .filter(|p| p.title == "Qualité UV insuffisante")
+                .count(),
+            2
+        );
+        update_project_engine(project_root.clone(), "unity".into()).unwrap();
+        assert!(
+            !export_asset(project_root.clone(), id.clone(), Some(blender.clone()))
+                .unwrap()
+                .success
+        );
+        assert!(!root.join("Unity/Assets/Plane/Plane.fbx").exists());
+        update_project_engine(project_root.clone(), "none".into()).unwrap();
+        assert!(
+            generate_asset_preview(project_root.clone(), id, Some(blender))
+                .unwrap()
+                .success
+        );
+        let snapshot = read_project_snapshot(project_root).unwrap();
+        assert_eq!(snapshot.assets[0].status, "local");
+        assert!(root.join(&snapshot.assets[0].output_path).is_file());
+        assert!(snapshot.assets[0].uv_quality.as_ref().unwrap().blocked);
+        assert_eq!(fs::read(source).unwrap(), source_bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn asset_opening_preference_is_backward_compatible_and_persists() {
+        let legacy: UserSettings = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2, "kind": "user_settings", "showBlenderCommandPrompt": true
+        }))
+        .unwrap();
+        assert!(!legacy.open_asset_after_creation);
+        assert!(legacy.show_blender_command_prompt);
+        let settings = normalize_user_settings(UserSettings {
+            open_asset_after_creation: true,
+            ..legacy
+        });
+        let saved = serde_json::to_value(&settings).unwrap();
+        assert_eq!(saved["openAssetAfterCreation"], true);
+        let loaded: UserSettings = serde_json::from_value(saved).unwrap();
+        assert!(loaded.open_asset_after_creation);
+        assert!(loaded.show_blender_command_prompt);
+    }
 
     fn test_root(label: &str) -> PathBuf {
         env::temp_dir().join(format!(
@@ -3787,6 +4393,7 @@ mod tests {
             source_modified_at: None,
             output_modified_at: None,
             notes: "Keep LOD".to_string(),
+            uv_quality: None,
         });
         write_asset_metadata(&root, &metadata).unwrap();
         fs::create_dir_all(root.join("Godot/Assets/Table/variants")).unwrap();
@@ -3847,7 +4454,7 @@ mod tests {
             engine: "none".to_string(),
         })
         .unwrap();
-        let result = create_asset(
+        let result = create_asset_impl(
             project_root.clone(),
             "Art".to_string(),
             "Cube".to_string(),
@@ -4053,6 +4660,7 @@ mod tests {
             source_modified_at: None,
             output_modified_at: None,
             notes: String::new(),
+            uv_quality: None,
         });
         write_asset_metadata(&root, &metadata).unwrap();
         relocate_asset_to_directory(&root, &project, &asset, &target).unwrap();
@@ -4186,6 +4794,7 @@ mod tests {
             source_modified_at: None,
             output_modified_at: None,
             notes: String::new(),
+            uv_quality: None,
         });
         write_asset_metadata(&root, &metadata).unwrap();
         let result =
@@ -4252,6 +4861,7 @@ mod tests {
             source_modified_at: None,
             output_modified_at: None,
             notes: String::new(),
+            uv_quality: None,
         });
         write_asset_metadata(&root, &metadata).unwrap();
 
@@ -4390,6 +5000,7 @@ mod tests {
             source_modified_at: None,
             output_modified_at: None,
             notes: String::new(),
+            uv_quality: None,
         });
 
         let scene = write_godot_lod_support(&root, &project, &asset)

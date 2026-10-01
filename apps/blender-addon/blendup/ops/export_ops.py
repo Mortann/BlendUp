@@ -11,6 +11,7 @@ import bpy
 from ..core.export_state import record_export
 from ..core.project import AssetLocation, locate_asset
 from ..prefs import preferences
+from ..blender_uv import check_and_record, project_policy, passes_uv_gate, uv_gate_message
 
 
 def current_asset() -> AssetLocation:
@@ -19,18 +20,23 @@ def current_asset() -> AssetLocation:
     return locate_asset(bpy.data.filepath)
 
 
-def export_current(context=None) -> AssetLocation:
+def export_current(context=None, uv_report=None) -> AssetLocation:
     context = context or bpy.context
     asset = current_asset()
     if asset.project.engine == "none":
         raise ValueError("Ce projet 3D n'a pas de moteur lié. Aucun export n'est nécessaire.")
     assert asset.output is not None
     prefs = preferences(context)
-    asset.output.parent.mkdir(parents=True, exist_ok=True)
     selected_only = bool(prefs and prefs.selected_only)
     apply_modifiers = prefs.apply_modifiers if prefs else True
     export_animations = prefs.export_animations if prefs else True
     try:
+        policy = project_policy(asset.project.root)
+        if policy.validate_uvs:
+            report = uv_report if uv_report is not None else check_and_record(asset.project.root, asset.source, context)
+            if not passes_uv_gate(report, policy):
+                raise ValueError(uv_gate_message(report, policy))
+        asset.output.parent.mkdir(parents=True, exist_ok=True)
         if asset.export_format == "glb":
             bpy.ops.export_scene.gltf(
                 filepath=str(asset.output),

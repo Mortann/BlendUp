@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { demoProjectSnapshot, standaloneDemoProjectSnapshot } from "./demoSnapshot";
 import type {
+  BlenderProjectSettings,
+  BlendUpProject,
   AssetLod,
   AssetMutationResult,
   AssetVariant,
@@ -31,7 +33,8 @@ export const defaultUserSettings: UserSettings = {
   lastProjectRoot: null,
   recentProjects: [],
   blenderPath: null,
-  showBlenderCommandPrompt: false
+  showBlenderCommandPrompt: false,
+  openAssetAfterCreation: false
 };
 
 export async function loadProjectSnapshot(projectRoot: string): Promise<ProjectSnapshot> {
@@ -90,6 +93,14 @@ export async function updateProjectEngine(
   engine: GameEngine
 ): Promise<UpdateProjectEngineResult> {
   return invoke<UpdateProjectEngineResult>("update_project_engine", { projectRoot, engine });
+}
+
+export async function updateProjectBlenderSettings(projectRoot: string, settings: BlenderProjectSettings): Promise<BlendUpProject> {
+  return invoke<BlendUpProject>("update_project_blender_settings", { projectRoot, settings });
+}
+
+export async function checkAssetUvs(projectRoot: string, assetId: string, blenderPath?: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("check_asset_uvs", { projectRoot, assetId, blenderPath });
 }
 
 export async function detectBlender(blenderPath?: string): Promise<ToolDetection> {

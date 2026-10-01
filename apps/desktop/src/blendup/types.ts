@@ -4,6 +4,48 @@ export type AssetExportStatus = "local" | "ready" | "exported" | "outdated" | "e
 
 export type AssetVersionStatus = AssetExportStatus | "missing";
 
+export interface BlenderProjectSettings {
+  applyTransformsOnSave: boolean;
+  unwrapOnSave: boolean;
+  validateUvs: boolean;
+  minimumUvScore: number;
+  allowUvOverlap: boolean;
+}
+
+export const defaultBlenderProjectSettings: BlenderProjectSettings = {
+  applyTransformsOnSave: false, unwrapOnSave: false, validateUvs: false,
+  minimumUvScore: 70, allowUvOverlap: false
+};
+
+export interface UvObjectMetrics {
+  objectName: string;
+  score: number;
+  triangleCount: number;
+  missingUvTriangles: number;
+  degenerateTriangles: number;
+  validUvPercent: number;
+  stretchScore: number;
+  densityScore: number;
+  overlapPercent: number;
+  markedSeams: number;
+  uvCuts: number;
+  unusedSeams: number;
+  unmarkedCuts: number;
+}
+
+export interface UvQualitySummary {
+  score: number;
+  complete: boolean;
+  stale: boolean;
+  blocked: boolean;
+  minimumScore: number;
+  checkedAt: string;
+  error?: string;
+  objects: UvObjectMetrics[];
+  issues: string[];
+  preparationWarnings: string[];
+}
+
 export interface AssetVariant {
   id: string;
   name: string;
@@ -13,6 +55,7 @@ export interface AssetVariant {
   sourceModifiedAt?: string;
   outputModifiedAt?: string;
   notes: string;
+  uvQuality?: UvQualitySummary;
 }
 
 export interface AssetLod {
@@ -27,6 +70,7 @@ export interface AssetLod {
   sourceModifiedAt?: string;
   outputModifiedAt?: string;
   notes: string;
+  uvQuality?: UvQualitySummary;
 }
 
 export interface AssetMetadata {
@@ -43,6 +87,7 @@ export interface BlendUpProject {
   projectId: string;
   name: string;
   engine: GameEngine;
+  blender: BlenderProjectSettings;
   paths: {
     artRoot: string;
     engineRoot?: string;
@@ -64,6 +109,7 @@ export interface BlendUpAsset {
   lastError?: string;
   sizeBytes: number;
   metadata: AssetMetadata;
+  uvQuality?: UvQualitySummary;
 }
 
 export interface BlendUpProblem {
@@ -73,7 +119,7 @@ export interface BlendUpProblem {
   assetId?: string;
   title: string;
   detail: string;
-  actionLabel?: "Exporter" | "Ouvrir";
+  actionLabel?: "Exporter" | "Ouvrir" | "Vérifier";
 }
 
 export interface ProjectSnapshot {
@@ -91,6 +137,7 @@ export interface UserSettings {
   recentProjects: string[];
   blenderPath: string | null;
   showBlenderCommandPrompt: boolean;
+  openAssetAfterCreation: boolean;
 }
 
 export interface ToolDetection {
@@ -125,6 +172,7 @@ export interface UpdateProjectEngineResult {
 }
 
 export interface AssetMutationResult {
+  asset?: BlendUpAsset;
   message: string;
   assetId?: string;
 }

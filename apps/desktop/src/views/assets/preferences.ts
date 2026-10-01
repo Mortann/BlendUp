@@ -4,6 +4,18 @@ function key(projectId: string, name: string) {
   return `blendup:${projectId}:assets:${name}`;
 }
 
+export function loadCollapsedFolders(projectId: string): string[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key(projectId, "collapsed-folders")) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch { return []; }
+}
+
+export function saveCollapsedFolders(projectId: string, folders: string[]) {
+  try { window.localStorage.setItem(key(projectId, "collapsed-folders"), JSON.stringify(folders)); }
+  catch { /* Préférence locale non critique. */ }
+}
+
 export function loadExplorerSettings(projectId: string): AssetExplorerSettings {
   try {
     const raw = window.localStorage.getItem(key(projectId, "settings"));

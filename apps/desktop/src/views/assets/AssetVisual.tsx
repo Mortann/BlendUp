@@ -5,6 +5,8 @@ import type { BlendUpAsset } from "../../blendup/types";
 import type { AssetDisplayMode, AssetThumbSize } from "./model";
 import { formatBytes, formatTimestamp, statusLabel } from "./utils";
 
+import { UvScoreBadge } from "./UvQuality";
+
 export function AssetThumbnail({ asset, projectRoot }: { asset: BlendUpAsset; projectRoot: string }) {
   const [source, setSource] = useState("");
 
@@ -141,7 +143,8 @@ export function AssetCard({
     <article
       className={`explorer-asset ${displayMode} thumb-${thumbnailSize} ${selected ? "selected" : ""}`}
       draggable
-      onClick={onSelect}
+      onClick={(event) => { event.currentTarget.focus(); onSelect(); }}
+      onFocus={onSelect}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
       onDragStart={(event) => {
@@ -153,6 +156,7 @@ export function AssetCard({
       <div className="asset-visual"><AssetThumbnail asset={asset} projectRoot={projectRoot} /></div>
       <div className="asset-card-main">
         <strong title={asset.name}>{asset.name}</strong>
+        <UvScoreBadge quality={asset.uvQuality} />
         <span>{displayMode === "compact" ? (asset.status === "local" ? "BLEND" : asset.format.toUpperCase()) : asset.folder}</span>
         {displayMode === "list" ? <small>{formatBytes(asset.sizeBytes)} · {formatTimestamp(asset.sourceModifiedAt)}</small> : null}
       </div>
@@ -194,6 +198,7 @@ export function FolderCard({
   onDropFolder,
   onOpen,
   path,
+  onSelect,
   previewAssets,
   projectRoot,
   thumbnailSize
@@ -206,6 +211,7 @@ export function FolderCard({
   onDropFolder: (folder: string) => void;
   onOpen: () => void;
   path: string;
+  onSelect: () => void;
   previewAssets: BlendUpAsset[];
   projectRoot: string;
   thumbnailSize: AssetThumbSize;
@@ -217,6 +223,7 @@ export function FolderCard({
       className={`explorer-folder ${displayMode} thumb-${thumbnailSize} ${dragOver ? "drag-over" : ""}`}
       draggable
       onClick={onOpen}
+      onFocus={onSelect}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
       onDragStart={(event) => {

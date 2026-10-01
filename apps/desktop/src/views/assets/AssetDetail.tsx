@@ -16,14 +16,18 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { AssetLod, AssetVariant, AssetVersionStatus, BlendUpAsset } from "../../blendup/types";
+import type { AssetLod, AssetVariant, AssetVersionStatus, BlendUpAsset, UvQualitySummary } from "../../blendup/types";
 import { formatBytes, formatTimestamp, statusLabel } from "./utils";
 import { AssetImageGallery, AssetViewer } from "./AssetViewer";
+
+import { UvQualityPanel, UvScoreBadge } from "./UvQuality";
 
 type DetailTab = "overview" | "preview" | "variants" | "lods" | "files";
 
 export function AssetDetail({
   asset,
+  checkingUv,
+  onCheckUv,
   exporting,
   onAddImages,
   onClose,
@@ -41,6 +45,8 @@ export function AssetDetail({
   projectRoot
 }: {
   asset: BlendUpAsset;
+  checkingUv: boolean;
+  onCheckUv: () => void;
   exporting: boolean;
   onAddImages: (kind: "renders" | "textures") => void;
   onClose: () => void;
@@ -118,6 +124,7 @@ export function AssetDetail({
               <AssetViewer asset={asset} projectRoot={projectRoot} />
               <button className="small" onClick={onSetThumbnail} type="button"><ImageIcon size={14} /> Choisir la miniature</button>
             </div>
+            <UvQualityPanel quality={asset.uvQuality} checking={checkingUv || exporting} onCheck={onCheckUv} />
             <label className="field"><span>Notes</span><textarea onChange={(event) => setNotes(event.target.value)} placeholder="Intention, remarques ou points à vérifier…" rows={5} value={notes} /></label>
             <label className="field"><span><Tag size={13} /> Tags</span><input onChange={(event) => setTags(event.target.value)} placeholder="environment, stone, modular" value={tags} /></label>
             <div className="detail-info-grid">
@@ -250,6 +257,7 @@ function VariantManager({
           exporting={exporting}
           key={variant.id}
           label={variant.name}
+          quality={variant.uvQuality}
           notes={variant.notes}
           onDelete={() => void onDelete(variant.id)}
           onExport={() => onExport(variant.id)}
@@ -337,6 +345,7 @@ function LodManager({
           exporting={exporting}
           key={lod.id}
           label={lod.level}
+          quality={lod.uvQuality}
           notes={lod.notes}
           onDelete={() => void onDelete(lod.id)}
           onExport={() => onExport(lod.id)}
@@ -356,6 +365,7 @@ function VersionCard({
   badge,
   exporting,
   label,
+  quality,
   notes,
   onDelete,
   onExport,
@@ -369,6 +379,7 @@ function VersionCard({
   standalone?: boolean;
   exporting: boolean;
   label: string;
+  quality?: UvQualitySummary;
   notes: string;
   onDelete: () => void;
   onExport: () => void;
@@ -380,7 +391,7 @@ function VersionCard({
 }) {
   return (
     <article className="asset-version-card">
-      <header><div><strong>{label}</strong>{badge ? <span>{badge}</span> : null}</div><b className={`asset-status ${status === "missing" ? "error" : status}`}>{versionStatusLabel(status)}</b></header>
+      <header><div><strong>{label}</strong>{badge ? <span>{badge}</span> : null}<UvScoreBadge quality={quality} /></div><b className={`asset-status ${status === "missing" ? "error" : status}`}>{versionStatusLabel(status)}</b></header>
       <div className="version-paths"><code title={sourcePath}>{sourcePath ?? "Aucun fichier Blender lié"}</code>{!standalone && outputPath ? <code title={outputPath}>{outputPath}</code> : null}</div>
       <textarea onChange={(event) => onNotes(event.target.value)} placeholder="Notes sur cette version…" rows={2} value={notes} />
       <footer>

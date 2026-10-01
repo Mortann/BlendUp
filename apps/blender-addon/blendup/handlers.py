@@ -10,26 +10,69 @@ from .core.bridge import acknowledge_open, clear_open_request, read_open_request
 from .core.project import find_project_root
 from .ops.export_ops import current_asset, export_current
 from .prefs import preferences
+from .blender_uv import check_and_record, prepare_before_save, project_policy
 
 
 _exporting = False
 _last_open_request_id = ""
 _BRIDGE_INTERVAL = 0.25
+_preparing = False
+_preparation_warnings = []
+
+
+def background_task():
+    return os.environ.get("BLENDUP_BACKGROUND_TASK") == "1" or os.environ.get("BLENDUP_LOD_GENERATION") == "1"
+
+
+@persistent
+def prepare_on_save(filepath):
+    global _preparing, _preparation_warnings
+    if _preparing or background_task(): return
+    _preparation_warnings = []
+    try:
+        from .core.project import locate_asset
+        path = filepath if isinstance(filepath, str) and filepath else bpy.data.filepath
+        if not path: return
+        asset = locate_asset(path)
+        policy = project_policy(asset.project.root)
+    except (ValueError, OSError):
+        # Ordinary Blender files outside Art are not managed by BlendUp.
+        return
+    try:
+        _preparing = True
+        _preparation_warnings = prepare_before_save(policy)
+    except Exception as error:
+        import traceback
+        traceback.print_exc()
+        _preparation_warnings = [f"Préparation automatique impossible : {error}"]
+        print(f"[BlendUp] {_preparation_warnings[0]}")
+    finally:
+        _preparing = False
 
 
 @persistent
 def export_after_save(_filepath):
     global _exporting
-    if os.environ.get("BLENDUP_LOD_GENERATION") == "1":
+    if background_task():
         return
     prefs = preferences()
-    if _exporting or not prefs or not prefs.auto_export or not bpy.data.filepath:
+    if _exporting or not bpy.data.filepath:
         return
     _exporting = True
     try:
-        if current_asset().project.engine == "none":
+        asset = current_asset()
+        policy = project_policy(asset.project.root)
+        report = None
+        if policy.validate_uvs:
+            report = check_and_record(asset.project.root, asset.source)
+            if _preparation_warnings:
+                from .blender_uv import write_report
+                report["preparationWarnings"] = list(_preparation_warnings)
+                write_report(asset.project.root, asset.source, report)
+            print(f"[BlendUp] Score UV : {report['score']}/100")
+        if not prefs or not prefs.auto_export or asset.project.engine == "none":
             return
-        asset = export_current()
+        asset = export_current(uv_report=report)
         print(f"[BlendUp] Export automatique : {asset.output_relative}")
     except Exception as error:
         print(f"[BlendUp] Échec de l'export automatique : {error}")
@@ -78,6 +121,8 @@ def open_requested_blend_file():
 
 
 def register_handlers():
+    if prepare_on_save not in bpy.app.handlers.save_pre:
+        bpy.app.handlers.save_pre.append(prepare_on_save)
     if export_after_save not in bpy.app.handlers.save_post:
         bpy.app.handlers.save_post.append(export_after_save)
     if not bpy.app.timers.is_registered(open_requested_blend_file):
@@ -85,6 +130,8 @@ def register_handlers():
 
 
 def unregister_handlers():
+    if prepare_on_save in bpy.app.handlers.save_pre:
+        bpy.app.handlers.save_pre.remove(prepare_on_save)
     if export_after_save in bpy.app.handlers.save_post:
         bpy.app.handlers.save_post.remove(export_after_save)
     if bpy.app.timers.is_registered(open_requested_blend_file):

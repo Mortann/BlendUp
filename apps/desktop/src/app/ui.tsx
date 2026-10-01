@@ -1,4 +1,4 @@
-import { CheckCircle2, Wrench } from "lucide-react";
+import { CheckCircle2, LoaderCircle, Wrench } from "lucide-react";
 import type { ToolDetection } from "../blendup/types";
 import type { OperationMessage } from "./types";
 
@@ -9,6 +9,17 @@ export function OperationBanner({ message, onClose }: { message: OperationMessag
       <button onClick={onClose} type="button">Fermer</button>
     </div>
   );
+}
+
+export function OpeningAssetOverlay({ path }: { path: string }) {
+  return <div className="modal-backdrop opening-asset-overlay">
+    <div className="opening-asset-card" role="status" aria-live="polite">
+      <LoaderCircle className="spin" size={30} />
+      <strong>Ouverture dans Blender…</strong>
+      <span>{path.split("/").pop()}</span>
+      <p>Le fichier est en cours d’ouverture.</p>
+    </div>
+  </div>;
 }
 
 export function ToolStatus({ status }: { status: ToolDetection | null }) {

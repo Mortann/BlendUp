@@ -32,9 +32,15 @@ export function assetMatchesFilter(asset: BlendUpAsset, filter: AssetQuickFilter
   if (filter === "favorites") return favorites.includes(asset.id);
   if (filter === "pending") return asset.status === "ready" || asset.status === "outdated";
   if (filter === "outdated") return asset.status === "outdated";
-  if (filter === "errors") return asset.status === "error";
+  if (filter === "errors") return assetHasError(asset);
   if (filter === "exported") return asset.status === "exported";
   return true;
+}
+
+export function assetHasError(asset: BlendUpAsset) {
+  return asset.status === "error" || Boolean(asset.uvQuality?.blocked)
+    || asset.metadata.variants.some((version) => version.uvQuality?.blocked)
+    || asset.metadata.lods.some((version) => version.uvQuality?.blocked);
 }
 
 export function sortAssets(assets: BlendUpAsset[], mode: AssetSortMode) {

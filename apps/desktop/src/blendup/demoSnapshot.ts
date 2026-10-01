@@ -1,3 +1,4 @@
+import { defaultBlenderProjectSettings } from "./types";
 import type { ProjectSnapshot } from "./types";
 
 export const demoProjectSnapshot: ProjectSnapshot = {
@@ -8,6 +9,7 @@ export const demoProjectSnapshot: ProjectSnapshot = {
     projectId: "project_demo",
     name: "Démo Godot",
     engine: "godot",
+    blender: defaultBlenderProjectSettings,
     paths: {
       artRoot: "Art",
       engineRoot: "Godot",

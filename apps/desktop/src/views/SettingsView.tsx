@@ -1,6 +1,7 @@
-import { ExternalLink, FolderOpen, Gamepad2, LoaderCircle, RefreshCw, Save, Search, X } from "lucide-react";
+import { ExternalLink, FolderOpen, Gamepad2, Gauge, LoaderCircle, RefreshCw, Save, Search, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { ToolStatus } from "../app/ui";
-import type { GameEngine, ProjectSnapshot, ToolDetection } from "../blendup/types";
+import type { BlenderProjectSettings, GameEngine, ProjectSnapshot, ToolDetection } from "../blendup/types";
 
 export function SettingsView({
   blenderDetection,
@@ -17,7 +18,12 @@ export function SettingsView({
   project,
   setBlenderPathInput,
   setShowBlenderCommandPrompt,
-  showBlenderCommandPrompt
+  showBlenderCommandPrompt,
+  openAssetAfterCreation,
+  setOpenAssetAfterCreation,
+  checkingUvs,
+  onCheckAllUvs,
+  onSaveProjectBlenderSettings
 }: {
   blenderDetection: ToolDetection | null;
   blenderPathInput: string;
@@ -34,14 +40,32 @@ export function SettingsView({
   setBlenderPathInput: (value: string) => void;
   setShowBlenderCommandPrompt: (show: boolean) => void;
   showBlenderCommandPrompt: boolean;
+  openAssetAfterCreation: boolean;
+  setOpenAssetAfterCreation: (open: boolean) => void;
+  checkingUvs: boolean;
+  onCheckAllUvs: () => Promise<void>;
+  onSaveProjectBlenderSettings: (settings: BlenderProjectSettings) => Promise<boolean>;
 }) {
+  const [blenderSettings, setBlenderSettings] = useState(project.project.blender);
+  const [savingProject, setSavingProject] = useState(false);
+  const settingsSignature = JSON.stringify(project.project.blender);
+  useEffect(() => { setBlenderSettings(project.project.blender); }, [project.project.projectId, settingsSignature]);
+  const validThreshold = Number.isFinite(blenderSettings.minimumUvScore) && blenderSettings.minimumUvScore >= 1 && blenderSettings.minimumUvScore <= 100;
+  const unsaved = JSON.stringify(blenderSettings) !== settingsSignature;
+  const saveBlenderSettings = async () => {
+    if (!validThreshold || savingProject) return;
+    setSavingProject(true);
+    try { await onSaveProjectBlenderSettings(blenderSettings); }
+    finally { setSavingProject(false); }
+  };
+  const updateBlenderSettings = (patch: Partial<BlenderProjectSettings>) => setBlenderSettings((current) => ({ ...current, ...patch }));
   return (
-    <div className="view-page narrow">
+    <div className="view-page">
       <header className="view-header">
         <div>
           <span className="eyebrow">Projet et outils</span>
-          <h1>Parametres</h1>
-          <p>Choisis le type de projet et indique à BlendUp comment lancer Blender.</p>
+          <h1>Paramètres</h1>
+          <p>Configure le projet, la préparation des assets et le lancement de Blender.</p>
         </div>
       </header>
 
@@ -62,6 +86,32 @@ export function SettingsView({
         {project.project.engine === "none" ? <p>Les assets restent dans Art. Les aperçus 3D se génèrent à la demande depuis leur fiche, sans export moteur.</p> : null}
       </section>
 
+      <section className="settings-section content-panel">
+        <div className="section-heading"><Gauge size={20} /><div><h2>Préparation et qualité dans Blender</h2><p>Options de ce projet, partagées avec l’add-on BlendUp 0.5.0 ou plus récent.</p></div></div>
+        <div className="uv-settings-grid">
+          <div className="settings-option-group">
+            <h3>À chaque sauvegarde du .blend</h3>
+            <label className="check-field"><input checked={blenderSettings.applyTransformsOnSave} disabled={savingProject} onChange={(event) => updateBlenderSettings({ applyTransformsOnSave: event.target.checked })} type="checkbox" /><span>Appliquer position, rotation et échelle des maillages</span></label>
+            <label className="check-field"><input checked={blenderSettings.unwrapOnSave} disabled={savingProject} onChange={(event) => updateBlenderSettings({ unwrapOnSave: event.target.checked })} type="checkbox" /><span>Refaire automatiquement l’unwrap Angle Based</span></label>
+            <p>Ces actions modifient tous les maillages locaux de la scène. L’unwrap remplace les UV de rendu en utilisant les coutures existantes.</p>
+          </div>
+          <div className="settings-option-group">
+            <h3>Contrôle des UV</h3>
+            <label className="check-field"><input checked={blenderSettings.validateUvs} disabled={savingProject} onChange={(event) => updateBlenderSettings({ validateUvs: event.target.checked })} type="checkbox" /><span>Vérifier automatiquement les UV et bloquer les exports insuffisants</span></label>
+            <label className="field uv-threshold"><span>Score minimum autorisé (sur 100)</span><input disabled={savingProject || !blenderSettings.validateUvs} min={1} max={100} step={1} type="number" value={blenderSettings.minimumUvScore} onChange={(event) => updateBlenderSettings({ minimumUvScore: Number(event.target.value) })} /></label>
+            {!validThreshold ? <p className="field-error" role="alert">Choisis un score minimum compris entre 1 et 100.</p> : null}
+            <label className="check-field"><input checked={blenderSettings.allowUvOverlap} disabled={savingProject} onChange={(event) => updateBlenderSettings({ allowUvOverlap: event.target.checked })} type="checkbox" /><span>Tolérer les chevauchements UV intentionnels</span></label>
+            <p>Score de 0 à 100 selon les UV valides, l’étirement, la densité et les chevauchements. Les UV sur plusieurs tuiles sont acceptées. Les coutures sont analysées séparément.</p>
+          </div>
+        </div>
+        <p>Le contrôle s’effectue à la sauvegarde et avant tout export moteur, y compris pour les variantes et LOD. Un score ancien est marqué à revérifier. L’aperçu 3D reste disponible.</p>
+        <div className="button-row">
+          <button className="primary" disabled={savingProject || exportBusy || !validThreshold || !unsaved} onClick={() => void saveBlenderSettings()} type="button">{savingProject ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />} Enregistrer les options du projet</button>
+          <button disabled={savingProject || exportBusy || unsaved || !project.assets.length} onClick={() => void onCheckAllUvs()} type="button">{checkingUvs ? <LoaderCircle className="spin" size={16} /> : <Gauge size={16} />}{checkingUvs ? "Vérification…" : "Vérifier tous les assets"}</button>
+          {unsaved ? <span className="settings-unsaved">Modifications à enregistrer</span> : null}
+        </div>
+      </section>
+
       {project.project.engine !== "none" ? <section className="settings-section content-panel">
         <div className="section-heading"><RefreshCw size={20} /><div><h2>Reconstruire les exports</h2><p>Place les exports générés dans la corbeille, puis réexporte chaque asset, ses variantes et ses LOD.</p></div></div>
         <div className="button-row">
@@ -77,7 +127,7 @@ export function SettingsView({
       </section> : null}
 
       <section className="settings-section content-panel">
-        <div className="section-heading"><Search size={20} /><div><h2>Blender</h2><p>Le chemin est optionnel si Blender est installe dans un emplacement standard.</p></div></div>
+        <div className="section-heading"><Search size={20} /><div><h2>Application et lancement de Blender</h2><p>Préférences locales à cet ordinateur. Le chemin est optionnel si Blender est installé dans un emplacement standard.</p></div></div>
         <label className="field">
           <span>Chemin vers blender.exe</span>
           <input onChange={(event) => setBlenderPathInput(event.target.value)} placeholder="Detection automatique" value={blenderPathInput} />
@@ -86,6 +136,10 @@ export function SettingsView({
         <label className="check-field">
           <input checked={showBlenderCommandPrompt} onChange={(event) => void setShowBlenderCommandPrompt(event.target.checked)} type="checkbox" />
           <span>Afficher la fenetre de commande au lancement de Blender</span>
+        </label>
+        <label className="check-field">
+          <input checked={openAssetAfterCreation} onChange={(event) => setOpenAssetAfterCreation(event.target.checked)} type="checkbox" />
+          <span>Ouvrir automatiquement les nouveaux assets dans Blender</span>
         </label>
         <div className="button-row">
           <button className="ghost" disabled={isDetectingBlender} onClick={onDetectBlender} type="button"><Search size={16} /> {isDetectingBlender ? "Detection…" : "Detecter"}</button>

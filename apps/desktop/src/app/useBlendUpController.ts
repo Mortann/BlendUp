@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addAssetImages,
+  checkAssetUvs,
+  updateProjectBlenderSettings,
   clearAssetExports,
   copyAsset,
   createAsset,
@@ -37,6 +39,7 @@ import {
   updateProjectEngine
 } from "../blendup/projectLoader";
 import type {
+  BlenderProjectSettings,
   AssetLod,
   AssetMutationResult,
   AssetVariant,
@@ -59,14 +62,25 @@ export function useBlendUpController() {
   const [blenderPathInput, setBlenderPathInput] = useState("");
   const [blenderDetection, setBlenderDetection] = useState<ToolDetection | null>(null);
   const [operationMessage, setOperationMessage] = useState<OperationMessage | null>(null);
+  const [openingAssetPath, setOpeningAssetPath] = useState<string | null>(null);
+  const openingAsset = useRef(false);
   const [isBooting, setIsBooting] = useState(true);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isDetectingBlender, setIsDetectingBlender] = useState(false);
   const [isReexporting, setIsReexporting] = useState(false);
+  const [checkingUvAssetIds, setCheckingUvAssetIds] = useState<string[]>([]);
   const [exportingAssetIds, setExportingAssetIds] = useState<string[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const activeProjectRoot = project?.projectRoot ?? null;
+  const currentProjectRoot = useRef(activeProjectRoot);
+  currentProjectRoot.current = activeProjectRoot;
+
+  useEffect(() => {
+    if (!operationMessage) return;
+    const timer = window.setTimeout(() => setOperationMessage(null), operationMessage.tone === "error" ? 8000 : 5000);
+    return () => window.clearTimeout(timer);
+  }, [operationMessage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,7 +232,7 @@ export function useBlendUpController() {
   };
 
   const handleExportAsset = async (assetId: string, quiet = false): Promise<boolean> => {
-    if (!project || exportingAssetIds.includes(assetId)) return false;
+    if (!project || exportingAssetIds.includes(assetId) || checkingUvAssetIds.includes(assetId)) return false;
     setExportingAssetIds((current) => [...current, assetId]);
     try {
       const result = await (project.project.engine === "none" ? generateAssetPreview : exportAsset)({
@@ -248,7 +262,7 @@ export function useBlendUpController() {
     versionId: string,
     versionKind: "variant" | "lod"
   ): Promise<boolean> => {
-    if (!project || exportingAssetIds.includes(assetId)) return false;
+    if (!project || exportingAssetIds.includes(assetId) || checkingUvAssetIds.includes(assetId)) return false;
     setExportingAssetIds((current) => [...current, assetId]);
     try {
       const result = await exportAssetVersion({
@@ -274,7 +288,7 @@ export function useBlendUpController() {
   };
 
   const handleExportAssetVersions = async (assetId: string): Promise<boolean> => {
-    if (!project || exportingAssetIds.includes(assetId)) return false;
+    if (!project || exportingAssetIds.includes(assetId) || checkingUvAssetIds.includes(assetId)) return false;
     setExportingAssetIds((current) => [...current, assetId]);
     try {
       const result = await exportAssetVersions({
@@ -298,7 +312,7 @@ export function useBlendUpController() {
   };
 
   const reexportAllAssets = async () => {
-    if (!project || isReexporting || exportingAssetIds.length) return;
+    if (!project || isReexporting || exportingAssetIds.length || checkingUvAssetIds.length) return;
     const assets = [...project.assets];
     if (!assets.length) {
       setOperationMessage({ title: "Aucun asset a exporter.", tone: "info" });
@@ -340,22 +354,11 @@ export function useBlendUpController() {
     }
   };
 
-  const openAssetInBlender = async (asset: BlendUpAsset) => {
-    if (!project) return;
-    try {
-      await openBlendFile({
-        blenderPath: userSettings.blenderPath ?? undefined,
-        projectRoot: project.projectRoot,
-        relativePath: asset.sourcePath,
-        showCommandPrompt: userSettings.showBlenderCommandPrompt
-      });
-    } catch (error) {
-      showError("Impossible d'ouvrir Blender", error);
-    }
-  };
-
   const openAssetPathInBlender = async (relativePath: string) => {
-    if (!project) return;
+    if (!project || openingAsset.current) return;
+    openingAsset.current = true;
+    setOpeningAssetPath(relativePath);
+    const started = performance.now();
     try {
       await openBlendFile({
         blenderPath: userSettings.blenderPath ?? undefined,
@@ -364,9 +367,16 @@ export function useBlendUpController() {
         showCommandPrompt: userSettings.showBlenderCommandPrompt
       });
     } catch (error) {
-      showError("Impossible d'ouvrir cette version dans Blender", error);
+      showError("Impossible d'ouvrir Blender", error);
+    } finally {
+      // Keep fast bridge acknowledgements visible long enough to confirm the click.
+      await new Promise((resolve) => window.setTimeout(resolve, Math.max(0, 400 - (performance.now() - started))));
+      openingAsset.current = false;
+      setOpeningAssetPath(null);
     }
   };
+
+  const openAssetInBlender = (asset: BlendUpAsset) => openAssetPathInBlender(asset.sourcePath);
 
   const openContentPath = async (relativePath: string) => {
     if (!project) return;
@@ -388,6 +398,46 @@ export function useBlendUpController() {
     }
   };
 
+  const saveProjectBlenderSettings = async (settings: BlenderProjectSettings): Promise<boolean> => {
+    if (!project) return false;
+    try {
+      await updateProjectBlenderSettings(project.projectRoot, settings);
+      await refreshProject();
+      setOperationMessage({ title: "Options Blender du projet enregistrées", tone: "success" });
+      return true;
+    } catch (error) { showError("Enregistrement impossible", error); return false; }
+  };
+
+  const checkUvAsset = async (assetId: string, quiet = false): Promise<boolean> => {
+    if (!project || checkingUvAssetIds.includes(assetId) || exportingAssetIds.includes(assetId)) return false;
+    setCheckingUvAssetIds((current) => [...current, assetId]);
+    try {
+      const result = await checkAssetUvs(project.projectRoot, assetId, userSettings.blenderPath ?? undefined);
+      if (currentProjectRoot.current !== project.projectRoot) return false;
+      const snapshot = await loadProjectSnapshot(project.projectRoot);
+      if (currentProjectRoot.current !== project.projectRoot) return false;
+      setProject(snapshot);
+      const asset = snapshot.assets.find((asset) => asset.id === assetId);
+      const qualities = asset ? [asset.uvQuality, ...asset.metadata.variants.filter((v) => v.sourcePath).map((v) => v.uvQuality), ...asset.metadata.lods.filter((v) => v.sourcePath).map((v) => v.uvQuality)] : [];
+      const blocked = qualities.some((quality) => quality?.blocked);
+      if (!quiet) setOperationMessage({ title: result.message, detail: blocked ? "Un score insuffisant est signalé dans Problèmes." : undefined, tone: blocked ? "error" : "success" });
+      return Boolean(qualities.length && qualities.every((quality) => quality && quality.complete && !quality.stale));
+    } catch (error) { showError("Contrôle UV impossible", error); return false; }
+    finally { setCheckingUvAssetIds((current) => current.filter((id) => id !== assetId)); }
+  };
+
+  const checkAllUvs = async () => {
+    if (!project || checkingUvAssetIds.length || exportingAssetIds.length) return;
+    let checked = 0;
+    for (const asset of project.assets) {
+      if (currentProjectRoot.current !== project.projectRoot) return;
+      if (await checkUvAsset(asset.id, true)) checked++;
+    }
+    if (currentProjectRoot.current !== project.projectRoot) return;
+    await refreshProject();
+    setOperationMessage({ title: "Contrôle UV terminé", detail: `${checked}/${project.assets.length} asset(s) vérifiés. Les scores insuffisants sont signalés dans Problèmes.`, tone: checked === project.assets.length ? "success" : "error" });
+  };
+
   const saveLocalSettings = async () => {
     try {
       const next = await persistSettings({
@@ -403,7 +453,7 @@ export function useBlendUpController() {
   };
 
   const changeProjectEngine = async (engine: GameEngine) => {
-    if (!project || exportingAssetIds.length || isReexporting || engine === project.project.engine) return;
+    if (!project || exportingAssetIds.length || checkingUvAssetIds.length || isReexporting || engine === project.project.engine) return;
     try {
       const result = await updateProjectEngine(project.projectRoot, engine);
       await refreshProject();
@@ -424,7 +474,7 @@ export function useBlendUpController() {
       setProject(snapshot);
       if (result.assetId) setSelectedAssetId(result.assetId);
       setOperationMessage({ title: result.message, tone: "success" });
-      return result;
+      return { ...result, asset: snapshot.assets.find((asset) => asset.id === result.assetId) };
     } catch (error) {
       showError(title, error);
       return null;
@@ -434,10 +484,15 @@ export function useBlendUpController() {
   const handleCreateFolder = (parentDir: string, name: string) =>
     runAssetMutation("Creation du dossier impossible", (root) => createFolder(root, parentDir, name));
 
-  const handleCreateAsset = (parentDir: string, name: string) =>
-    runAssetMutation("Creation de l'asset impossible", (root) =>
+  const handleCreateAsset = async (parentDir: string, name: string) => {
+    const result = await runAssetMutation("Creation de l'asset impossible", (root) =>
       createAsset({ blenderPath: userSettings.blenderPath ?? undefined, name, parentDir, projectRoot: root })
     );
+    if (result?.asset && userSettings.openAssetAfterCreation) {
+      await openAssetInBlender(result.asset);
+    }
+    return result;
+  };
 
   const handleOrganizeAsset = (assetId: string) =>
     runAssetMutation("Organisation de l'asset impossible", (root) => organizeAsset(root, assetId));
@@ -519,7 +574,15 @@ export function useBlendUpController() {
   };
 
   const setShowBlenderCommandPrompt = async (show: boolean) => {
-    await persistSettings({ ...userSettings, showBlenderCommandPrompt: show });
+    try {
+      await persistSettings({ ...userSettings, showBlenderCommandPrompt: show });
+    } catch (error) { showError("Enregistrement impossible", error); }
+  };
+
+  const setOpenAssetAfterCreation = async (open: boolean) => {
+    try {
+      await persistSettings({ ...userSettings, openAssetAfterCreation: open });
+    } catch (error) { showError("Enregistrement impossible", error); }
   };
 
   const forgetLastProject = async () => {
@@ -538,6 +601,10 @@ export function useBlendUpController() {
     blenderDetection,
     blenderPathInput,
     changeProjectEngine,
+    saveProjectBlenderSettings,
+    checkUvAsset,
+    checkAllUvs,
+    checkingUvAssetIds,
     chooseCreateProjectDirectory,
     chooseProjectDirectory,
     createEngine,
@@ -577,6 +644,7 @@ export function useBlendUpController() {
     openDefaultProject,
     openProject,
     operationMessage,
+    openingAssetPath,
     project,
     projectPathInput,
     refreshBlenderDetection,
@@ -594,6 +662,7 @@ export function useBlendUpController() {
     setProjectPathInput,
     setSelectedAssetId,
     setShowBlenderCommandPrompt,
+    setOpenAssetAfterCreation,
     userSettings
   };
 }
