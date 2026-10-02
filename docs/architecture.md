@@ -33,6 +33,10 @@ Les données techniques d'export sont limitées à `.blendup/export-state.json`.
 
 ## Export
 
+Le champ `engine` accepte `none`, `godot` ou `unity`. Un projet 3D utilise `none` et ne sérialise que `paths.artRoot` : `engineRoot` et `engineAssetsRoot` sont absents. Les configurations des anciens projets restent compatibles.
+
+En mode 3D, les assets et versions présents ont le statut `local`, sans diagnostic d'export moteur. La commande `generate_asset_preview` génère un GLB à la demande sous `.blendup/cache/previews` ; elle ne crée pas d'état d'export et laisse le `.blend` intact. Les commandes d'export et de nettoyage moteur refusent ce mode. Les chemins des versions sont recalculés dans le snapshot et lors des mutations, afin de suivre les changements de type de projet.
+
 - Godot : `bpy.ops.export_scene.gltf`, format binaire GLB.
 - Unity : `bpy.ops.export_scene.fbx`.
 

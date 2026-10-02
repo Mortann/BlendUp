@@ -40,6 +40,55 @@ class FakeMesh:
 
 
 class ProjectTests(unittest.TestCase):
+    def test_custom_paths_keep_the_desktop_asset_identity_and_export_record(self):
+        with test_directory() as root:
+            self.make_project(root)
+            config_file = root / ".blendup/project.json"
+            config = json.loads(config_file.read_text(encoding="utf-8"))
+            config["paths"] = {"artRoot": "Mes modèles", "engineRoot": "Mon jeu", "engineAssetsRoot": "Mon jeu/Modeles"}
+            config_file.write_text(json.dumps(config), encoding="utf-8")
+            source = root / "Mes modèles/Rock/Rock.blend"
+            source.parent.mkdir(parents=True)
+            source.touch()
+            old_id = asset_id_for_path("Art/Rock/Rock.blend")
+            assets = root / ".blendup/assets"
+            assets.mkdir()
+            (assets / f"{old_id}.json").write_text(json.dumps({"id": old_id, "sourcePath": "Mes modèles/Rock/Rock.blend"}), encoding="utf-8")
+            (assets / "invalid.json").write_text("not json", encoding="utf-8")
+            asset = locate_asset(source)
+            self.assertEqual(asset.asset_id, old_id)
+            self.assertEqual(asset.output_relative, "Mon jeu/Modeles/Rock/Rock.glb")
+            record_export(asset, False, "A new export failure")
+            self.assertFalse(read_state(root)["exports"][old_id]["success"])
+
+    def test_standalone_project_has_no_engine_export_or_export_state(self):
+        with test_directory() as root:
+            config = {"schemaVersion": 2, "kind": "project", "name": "Sculptures",
+                      "engine": "none", "paths": {"artRoot": "Art"}}
+            (root / ".blendup").mkdir()
+            (root / ".blendup" / "project.json").write_text(json.dumps(config), encoding="utf-8")
+            source = root / "Art" / "Statue" / "Statue.blend"
+            source.parent.mkdir(parents=True)
+            source.touch()
+            project = load_project(root)
+            self.assertEqual(project.engine, "none")
+            self.assertEqual(project.engine_root, "")
+            self.assertEqual(project.engine_assets_root, "")
+            asset = locate_asset(source, project)
+            self.assertIsNone(asset.output)
+            self.assertIsNone(asset.export_format)
+            self.assertEqual(export_status(asset), "local")
+            record_export(asset, False, "An old export error")
+            self.assertFalse((root / ".blendup" / "export-state.json").exists())
+            self.assertFalse((root / "Godot").exists())
+            self.assertFalse((root / "Unity").exists())
+
+    def test_unknown_explicit_project_type_is_rejected(self):
+        with test_directory() as root:
+            self.make_project(root, "unsupported")
+            with self.assertRaises(ValueError):
+                load_project(root)
+
     def make_project(self, root: Path, engine="godot") -> None:
         config = {
             "schemaVersion": 2,

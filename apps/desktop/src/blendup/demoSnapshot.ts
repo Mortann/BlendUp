@@ -1,3 +1,4 @@
+import { defaultBlenderProjectSettings } from "./types";
 import type { ProjectSnapshot } from "./types";
 
 export const demoProjectSnapshot: ProjectSnapshot = {
@@ -8,6 +9,7 @@ export const demoProjectSnapshot: ProjectSnapshot = {
     projectId: "project_demo",
     name: "Démo Godot",
     engine: "godot",
+    blender: defaultBlenderProjectSettings,
     paths: {
       artRoot: "Art",
       engineRoot: "Godot",
@@ -66,4 +68,27 @@ export const demoProjectSnapshot: ProjectSnapshot = {
     }
   ],
   problems: []
+};
+
+export const standaloneDemoProjectSnapshot: ProjectSnapshot = {
+  ...demoProjectSnapshot,
+  projectRoot: "C:/BlendUp3DDemo",
+  project: {
+    ...demoProjectSnapshot.project,
+    projectId: "project_demo_3d",
+    name: "Démo 3D",
+    engine: "none",
+    paths: { artRoot: "Art" }
+  },
+  assets: demoProjectSnapshot.assets.map((asset) => ({
+    ...asset,
+    status: "local",
+    outputPath: asset.outputPath.replace("Godot/Assets", ".blendup/cache/previews"),
+    outputModifiedAt: undefined,
+    metadata: {
+      ...asset.metadata,
+      variants: asset.metadata.variants.map((variant) => ({ ...variant, status: "local", outputPath: undefined })),
+      lods: asset.metadata.lods.map((lod) => ({ ...lod, status: "local", outputPath: undefined, outputModifiedAt: undefined }))
+    }
+  }))
 };

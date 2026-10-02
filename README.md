@@ -4,9 +4,9 @@
 
 # BlendUp
 
-**De Blender à Godot ou Unity, sans pipeline compliqué.**
+**Tes assets Blender, avec ou sans moteur de jeu.**
 
-BlendUp est une application de bureau pour organiser des assets Blender, vérifier leur état et les exporter vers le moteur du projet. Cette première version se concentre sur trois espaces : **Assets**, **Problèmes** et **Paramètres**.
+BlendUp est une application de bureau pour organiser des assets Blender dans un projet **3D sans moteur**, ou les exporter vers **Godot** ou **Unity**. Elle se concentre sur trois espaces : **Assets**, **Problèmes** et **Paramètres**.
 
 > État du projet : première version fonctionnelle en développement. Les installateurs publiés dans les Releases GitHub sont les versions recommandées pour les tests.
 
@@ -25,6 +25,8 @@ BlendUp est une application de bureau pour organiser des assets Blender, vérifi
 Les anciens modules Git, tâches, équipe, références, nomenclature, dashboard, widget Unity et génération de prefabs ont été retirés.
 
 ## Flux de travail
+
+Un projet **3D · Sans moteur** contient uniquement `Art` et la configuration `.blendup` : aucun projet Godot ou Unity n'est créé. Notes, tags, images, favoris, variantes et LOD restent disponibles. **Générer l'aperçu** produit un GLB temporaire dans `.blendup/cache/previews`, sans obligation d'export ni alerte d'export manquant. Le type de projet peut être changé dans les paramètres en conservant les fichiers existants.
 
 ```text
 MonProjet/

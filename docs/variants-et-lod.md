@@ -11,7 +11,7 @@ Art/Props/Table/Table.variant.bois_rouge.blend
 Godot/Assets/Props/Table/variants/bois_rouge.glb
 ```
 
-Depuis l'onglet **Variantes**, il est possible de créer la copie, l'ouvrir dans Blender, l'exporter ou la supprimer. **Tout exporter** traite la version principale puis toutes les variantes et tous les LOD.
+Depuis l'onglet **Variantes**, il est possible de créer la copie, l'ouvrir dans Blender ou la supprimer. Dans un projet Godot ou Unity, chaque version peut aussi être exportée et **Tout exporter** traite la version principale puis toutes les variantes et tous les LOD. Dans un projet **3D sans moteur**, les copies et les LOD restent des fichiers Blender éditables, sans export moteur.
 
 ## LOD Blender
 

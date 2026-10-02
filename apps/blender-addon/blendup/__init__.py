@@ -1,10 +1,10 @@
 bl_info = {
     "name": "BlendUp",
     "author": "BlendUp",
-    "version": (0, 4, 1),
+    "version": (0, 6, 3),
     "blender": (4, 2, 0),
     "location": "Vue 3D > Barre latérale > BlendUp",
-    "description": "Valide et exporte les assets d'un projet BlendUp vers Godot ou Unity",
+    "description": "Gère les assets 3D BlendUp et les exports vers Godot ou Unity",
     "category": "Import-Export",
 }
 
@@ -18,7 +18,8 @@ if bpy:
     from .ops import CLASSES as OPERATOR_CLASSES
     from .prefs import BLENDUP_AddonPreferences
     from .ui import CLASSES as UI_CLASSES
-    CLASSES = (BLENDUP_AddonPreferences, *OPERATOR_CLASSES, *UI_CLASSES)
+    from .ui.library import CLASSES as LIBRARY_CLASSES, register_properties, unregister_properties
+    CLASSES = (BLENDUP_AddonPreferences, *OPERATOR_CLASSES, *LIBRARY_CLASSES, *UI_CLASSES)
 else:
     CLASSES = ()
 
@@ -29,6 +30,7 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.blendup_validation_summary = bpy.props.StringProperty(default="")
+    register_properties()
     register_handlers()
 
 
@@ -36,6 +38,7 @@ def unregister():
     if not bpy:
         return
     unregister_handlers()
+    unregister_properties()
     if hasattr(bpy.types.WindowManager, "blendup_validation_summary"):
         del bpy.types.WindowManager.blendup_validation_summary
     for cls in reversed(CLASSES):

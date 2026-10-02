@@ -13,7 +13,7 @@ export function AssetViewer({ asset, projectRoot }: { asset: BlendUpAsset; proje
 
   useEffect(() => {
     const element = host.current;
-    if (!element || asset.status === "ready" || asset.status === "error") {
+    if (!element || !asset.outputPath || asset.status === "ready" || asset.status === "error") {
       setState("missing");
       return;
     }
@@ -51,7 +51,21 @@ export function AssetViewer({ asset, projectRoot }: { asset: BlendUpAsset; proje
     };
     render();
 
+    const disposeObject = (object: THREE.Object3D) => {
+      object.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry?.dispose();
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material) => {
+            Object.values(material).forEach((value) => { if (value instanceof THREE.Texture) value.dispose(); });
+            material.dispose();
+          });
+        }
+      });
+    };
     const fit = (object: THREE.Object3D) => {
+      // A previous version may finish loading after the user selects another.
+      if (disposed) { disposeObject(object); return; }
       scene.add(object);
       const bounds = new THREE.Box3().setFromObject(object);
       const size = bounds.getSize(new THREE.Vector3());
@@ -70,27 +84,23 @@ export function AssetViewer({ asset, projectRoot }: { asset: BlendUpAsset; proje
     setState("loading");
     void readProjectFileDataUrl(projectRoot, asset.outputPath)
       .then((url) => {
-        if (disposed || !url) return setState("missing");
+        if (disposed) return;
+        if (!url) return setState("missing");
+        const fail = () => { if (!disposed) setState("error"); };
         if (asset.format === "glb") {
-          new GLTFLoader().load(url, (result) => fit(result.scene), undefined, () => setState("error"));
+          new GLTFLoader().load(url, (result) => fit(result.scene), undefined, fail);
         } else {
-          new FBXLoader().load(url, fit, undefined, () => setState("error"));
+          new FBXLoader().load(url, fit, undefined, fail);
         }
       })
-      .catch(() => setState("missing"));
+      .catch(() => { if (!disposed) setState("missing"); });
 
     return () => {
       disposed = true;
       observer.disconnect();
       cancelAnimationFrame(animationFrame);
       controls.dispose();
-      scene.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.geometry?.dispose();
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach((material) => material?.dispose());
-        }
-      });
+      disposeObject(scene);
       renderer.dispose();
       element.replaceChildren();
     };
@@ -102,8 +112,8 @@ export function AssetViewer({ asset, projectRoot }: { asset: BlendUpAsset; proje
       {state !== "ready" ? (
         <div className="asset-viewer-state">
           {state === "loading" ? <LoaderCircle className="spin" size={28} /> : <PackageOpen size={30} />}
-          <strong>{state === "loading" ? "Chargement de l'aperçu…" : state === "error" ? "Aperçu indisponible" : "Exporte l'asset pour l'afficher"}</strong>
-          <span>Le fichier {asset.format.toUpperCase()} est utilisé directement.</span>
+          <strong>{state === "loading" ? "Chargement de l'aperçu…" : state === "error" ? "Aperçu indisponible" : asset.status === "local" ? "Génère l’aperçu pour afficher cet asset" : "Exporte l’asset pour l’afficher"}</strong>
+          <span>{asset.status === "local" ? "L’aperçu reste dans le cache local du projet." : `Le fichier ${asset.format.toUpperCase()} est utilisé directement.`}</span>
         </div>
       ) : null}
     </div>

@@ -1,9 +1,11 @@
-import { Box, Folder, Heart, Image as ImageIcon, MoreHorizontal, Upload } from "lucide-react";
+import { Box, Eye, Folder, Heart, Image as ImageIcon, MoreHorizontal, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { readProjectFileDataUrl } from "../../blendup/projectLoader";
 import type { BlendUpAsset } from "../../blendup/types";
 import type { AssetDisplayMode, AssetThumbSize } from "./model";
 import { formatBytes, formatTimestamp, statusLabel } from "./utils";
+
+import { UvScoreBadge } from "./UvQuality";
 
 export function AssetThumbnail({ asset, projectRoot }: { asset: BlendUpAsset; projectRoot: string }) {
   const [source, setSource] = useState("");
@@ -141,7 +143,8 @@ export function AssetCard({
     <article
       className={`explorer-asset ${displayMode} thumb-${thumbnailSize} ${selected ? "selected" : ""}`}
       draggable
-      onClick={onSelect}
+      onClick={(event) => { event.currentTarget.focus(); onSelect(); }}
+      onFocus={onSelect}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
       onDragStart={(event) => {
@@ -153,7 +156,8 @@ export function AssetCard({
       <div className="asset-visual"><AssetThumbnail asset={asset} projectRoot={projectRoot} /></div>
       <div className="asset-card-main">
         <strong title={asset.name}>{asset.name}</strong>
-        <span>{displayMode === "compact" ? asset.format.toUpperCase() : asset.folder}</span>
+        <UvScoreBadge quality={asset.uvQuality} ignored={asset.metadata.ignoreUvValidation} />
+        <span>{displayMode === "compact" ? (asset.status === "local" ? "BLEND" : asset.format.toUpperCase()) : asset.folder}</span>
         {displayMode === "list" ? <small>{formatBytes(asset.sizeBytes)} · {formatTimestamp(asset.sourceModifiedAt)}</small> : null}
       </div>
       <span className={`asset-status ${asset.status}`}>{statusLabel(asset.status)}</span>
@@ -166,13 +170,13 @@ export function AssetCard({
           type="button"
         ><Heart fill={favorite ? "currentColor" : "none"} size={15} /></button>
         <button
-          aria-label="Exporter toutes les versions"
+          aria-label={asset.status === "local" ? "Générer l’aperçu" : "Exporter toutes les versions"}
           className="icon-button"
           disabled={exporting}
           onClick={(event) => { event.stopPropagation(); onExport(); }}
-          title="Exporter l'original, les variantes et les LOD"
+          title={asset.status === "local" ? "Générer un aperçu 3D local" : "Exporter l’original, les variantes et les LOD"}
           type="button"
-        ><Upload size={15} /></button>
+        >{asset.status === "local" ? <Eye size={15} /> : <Upload size={15} />}</button>
         <button
           aria-label="Plus d'actions"
           className="icon-button"
@@ -194,6 +198,7 @@ export function FolderCard({
   onDropFolder,
   onOpen,
   path,
+  onSelect,
   previewAssets,
   projectRoot,
   thumbnailSize
@@ -206,6 +211,7 @@ export function FolderCard({
   onDropFolder: (folder: string) => void;
   onOpen: () => void;
   path: string;
+  onSelect: () => void;
   previewAssets: BlendUpAsset[];
   projectRoot: string;
   thumbnailSize: AssetThumbSize;
@@ -217,6 +223,7 @@ export function FolderCard({
       className={`explorer-folder ${displayMode} thumb-${thumbnailSize} ${dragOver ? "drag-over" : ""}`}
       draggable
       onClick={onOpen}
+      onFocus={onSelect}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
       onDragStart={(event) => {

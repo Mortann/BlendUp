@@ -6,6 +6,8 @@ import bmesh
 import bpy
 
 from ..core.validation import validate_meshes
+from ..blender_uv import check_and_record, project_policy, passes_uv_gate
+from .export_ops import current_asset
 
 
 @dataclass
@@ -56,3 +58,26 @@ class BLENDUP_OT_validate_asset(bpy.types.Operator):
         for issue in issues[:8]:
             self.report({"WARNING" if issue.severity == "warning" else "INFO"}, f"{issue.object_name} : {issue.message}")
         return {"FINISHED"}
+
+
+class BLENDUP_OT_check_uvs(bpy.types.Operator):
+    bl_idname = "blendup.check_uvs"
+    bl_label = "Vérifier les UV"
+    bl_description = "Mesure la qualité UV et les coutures, sans modifier le maillage"
+
+    def execute(self, context):
+        try:
+            asset = current_asset()
+            from ..core.asset_policy import uv_validation_ignored
+            if uv_validation_ignored(asset.project.root, asset.source):
+                context.window_manager.blendup_validation_summary = "Asset ignoré pour la vérification UV"
+                self.report({"INFO"}, context.window_manager.blendup_validation_summary)
+                return {"FINISHED"}
+            report = check_and_record(asset.project.root, asset.source, context)
+            context.window_manager.blendup_validation_summary = f"Score UV : {report['score']:.1f}/100"
+            passed = passes_uv_gate(report, project_policy(asset.project.root))
+            self.report({"INFO" if passed else "WARNING"}, context.window_manager.blendup_validation_summary)
+            return {"FINISHED"}
+        except Exception as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}

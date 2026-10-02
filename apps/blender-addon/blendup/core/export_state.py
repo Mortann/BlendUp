@@ -10,6 +10,9 @@ from .project import AssetLocation
 
 
 def export_status(asset: AssetLocation) -> str:
+    if asset.project.engine == "none":
+        return "local"
+    assert asset.output is not None
     if not asset.output.is_file():
         return "ready"
     try:
@@ -29,6 +32,8 @@ def read_state(root: Path) -> dict[str, Any]:
 
 
 def record_export(asset: AssetLocation, success: bool, message: str) -> None:
+    if asset.project.engine == "none":
+        return
     state = read_state(asset.project.root)
     exports = state.setdefault("exports", {})
     exports[asset.asset_id] = {

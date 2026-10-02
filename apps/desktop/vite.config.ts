@@ -9,7 +9,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: false
+    strictPort: true,
+    // Les binaires Rust peuvent être verrouillés pendant la compilation sous Windows.
+    watch: {
+      ignored: ["**/src-tauri/**"]
+    }
   }
 });
 

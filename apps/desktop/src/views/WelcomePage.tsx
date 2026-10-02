@@ -42,9 +42,9 @@ export function WelcomePage({
       <header className="welcome-brand">
         <BrandLogo large />
         <div>
-          <span className="eyebrow">Blender vers le moteur</span>
+          <span className="eyebrow">Tes assets Blender, organisés</span>
           <h1>BlendUp</h1>
-          <p>Un flux simple pour exporter tes assets vers Godot ou Unity.</p>
+          <p>Gère tes projets 3D et exporte vers Godot ou Unity quand tu en as besoin.</p>
         </div>
       </header>
 
@@ -86,7 +86,7 @@ export function WelcomePage({
         >
           <div className="panel-heading">
             <Gamepad2 size={20} />
-            <div><h2>Nouveau projet</h2><p>BlendUp prepare Art et le dossier Assets du moteur.</p></div>
+            <div><h2>Nouveau projet</h2><p>{createEngine === "none" ? "Une bibliothèque d'assets 3D, sans moteur lié." : "BlendUp prépare Art et le dossier Assets du moteur."}</p></div>
           </div>
           <label className="field">
             <span>Nom</span>
@@ -99,9 +99,10 @@ export function WelcomePage({
               <button onClick={onSelectCreateProjectDirectory} type="button"><FolderOpen size={16} /></button>
             </div>
           </label>
-          <div className="engine-picker" aria-label="Moteur du projet">
-            <button className={createEngine === "godot" ? "active" : ""} onClick={() => setCreateEngine("godot")} type="button">Godot · GLB</button>
-            <button className={createEngine === "unity" ? "active" : ""} onClick={() => setCreateEngine("unity")} type="button">Unity · FBX</button>
+          <div className="engine-picker" aria-label="Type de projet">
+            <button aria-pressed={createEngine === "none"} className={createEngine === "none" ? "active" : ""} onClick={() => setCreateEngine("none")} type="button">3D · Sans moteur</button>
+            <button aria-pressed={createEngine === "godot"} className={createEngine === "godot" ? "active" : ""} onClick={() => setCreateEngine("godot")} type="button">Godot · GLB</button>
+            <button aria-pressed={createEngine === "unity"} className={createEngine === "unity" ? "active" : ""} onClick={() => setCreateEngine("unity")} type="button">Unity · FBX</button>
           </div>
           <button className="primary full" disabled={isCreatingProject} type="submit">
             <Plus size={16} /> {isCreatingProject ? "Creation…" : "Creer le projet"}

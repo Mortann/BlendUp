@@ -1,4 +1,6 @@
 # Dependencies
+.dev-tools/
+release/
 node_modules/
 **/node_modules/
 
@@ -9,6 +11,8 @@ dist/
 *.tsbuildinfo
 __pycache__/
 *.py[cod]
+# Blender saved versions are local recovery files, not additional assets.
+*.blend[0-9]*
 
 # Tauri / Rust outputs
 target/
@@ -34,3 +38,8 @@ BlendUpTest/
 **/.blendup/cache/
 **/.blendup/tmp/
 **/.blendup/temp/
+**/.blendup/uv-reports/
+**/.blendup/library/
+**/.blendup/showcases/
+**/.blendup/bridge/
+**/.blendup/local-tools.json

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import bpy
+import json
 
 from ..core.export_state import export_status
 from ..ops.export_ops import current_asset
 from ..prefs import preferences
+from ..blender_uv import ALGORITHM_VERSION, project_policy, report_path, passes_uv_gate
 
 
 STATUS = {
@@ -42,22 +44,27 @@ class BLENDUP_PT_asset(bpy.types.Panel):
         row = project.row()
         row.label(text=asset.project.name, icon="FILE_FOLDER")
         row.operator("blendup.refresh", text="", icon="FILE_REFRESH")
-        project.label(text=f"Moteur : {asset.project.engine.title()}")
-        project.label(text=f"Format : {asset.export_format.upper()}")
+        standalone = asset.project.engine == "none"
+        project.label(text="Projet 3D · Sans moteur" if standalone else f"Moteur : {asset.project.engine.title()}")
+        if not standalone:
+            project.label(text=f"Format : {asset.export_format.upper()}")
 
-        status = export_status(asset)
-        label, icon, help_text = STATUS[status]
-        state = layout.box()
-        state.label(text=label, icon=icon)
-        state.label(text=help_text)
-        destination = state.column(align=True)
-        destination.label(text="Destination", icon="EXPORT")
-        for line in split_text(asset.output_relative, 38):
-            destination.label(text=line)
+        if standalone:
+            layout.label(text="Gestion des assets, sans export moteur", icon="FILE_BLEND")
+        else:
+            status = export_status(asset)
+            label, icon, help_text = STATUS[status]
+            state = layout.box()
+            state.label(text=label, icon=icon)
+            state.label(text=help_text)
+            destination = state.column(align=True)
+            destination.label(text="Destination", icon="EXPORT")
+            for line in split_text(asset.output_relative, 38):
+                destination.label(text=line)
 
-        button = layout.row()
-        button.scale_y = 1.35
-        button.operator("blendup.export_asset", text="Réexporter" if status == "exported" else "Exporter l'asset", icon="EXPORT")
+            button = layout.row()
+            button.scale_y = 1.35
+            button.operator("blendup.export_asset", text="Réexporter" if status == "exported" else "Exporter l'asset", icon="EXPORT")
 
         validation = layout.box()
         validation.label(text="Contrôle", icon="VIEWZOOM")
@@ -65,17 +72,33 @@ class BLENDUP_PT_asset(bpy.types.Panel):
         if summary:
             validation.label(text=summary, icon="INFO")
         validation.operator("blendup.validate_asset", icon="CHECKMARK")
+        validation.operator("blendup.check_uvs", icon="UV")
+        policy = project_policy(asset.project.root)
+        try:
+            report = json.loads(report_path(asset.project.root, asset.source).read_text(encoding="utf-8"))
+            stat = asset.source.stat()
+            fresh = (report.get("sourceModifiedNs") == str(stat.st_mtime_ns) and report.get("sourceSize") == stat.st_size
+                     and not report.get("unsavedChanges") and not bpy.data.is_dirty
+                     and report.get("algorithmVersion") == ALGORITHM_VERSION and report.get("allowUvOverlap") == policy.allow_uv_overlap)
+            validation.label(text=f"UV : {report['score']:.1f}/100" + (" · à vérifier" if not fresh else ""), icon="UV")
+            if policy.validate_uvs and fresh and not passes_uv_gate(report, policy):
+                validation.label(text=f"Minimum : {policy.minimum_uv_score:g} · export bloqué", icon="ERROR")
+        except (OSError, ValueError, KeyError):
+            pass
+        if policy.apply_transforms_on_save: validation.label(text="Position / rotation / échelle à la sauvegarde")
+        if policy.unwrap_on_save: validation.label(text="Unwrap Angle Based à la sauvegarde")
 
-        options = layout.box()
         prefs = preferences(context)
-        if prefs:
+        if prefs and not standalone:
+            options = layout.box()
             options.prop(prefs, "auto_export", icon="RECOVER_LAST")
             options.prop(prefs, "selected_only")
         row = layout.row(align=True)
         source = row.operator("blendup.open_location", text="Art", icon="FILE_FOLDER")
         source.location = "SOURCE"
-        output = row.operator("blendup.open_location", text="Assets", icon="FILE_FOLDER")
-        output.location = "OUTPUT"
+        if not standalone:
+            output = row.operator("blendup.open_location", text="Assets", icon="FILE_FOLDER")
+            output.location = "OUTPUT"
         layout.operator("blendup.prepare_workspace", text="Préparer les dossiers", icon="NEWFOLDER")
 
 

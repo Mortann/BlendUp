@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 id = "blendup"
-version = "0.4.1"
+version = "0.6.3"
 name = "BlendUp"
-tagline = "Export assets from BlendUp to Godot or Unity"
+tagline = "Manage 3D assets and export to Godot or Unity"
 maintainer = "BlendUp"
 type = "add-on"
 tags = ["Import-Export", "Pipeline"]

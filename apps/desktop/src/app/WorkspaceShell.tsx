@@ -46,6 +46,7 @@ export function WorkspaceShell({
               key={item.key}
               onClick={() => setActiveView(item.key)}
               title={item.label}
+              aria-label={item.label}
               type="button"
             >
               {item.icon}

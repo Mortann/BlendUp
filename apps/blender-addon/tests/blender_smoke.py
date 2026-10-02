@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -76,9 +77,40 @@ def main() -> None:
             }), encoding="utf-8")
             assert open_requested_blend_file() == 0.25
             acknowledgement = json.loads((bridge / "open-ack.json").read_text(encoding="utf-8"))
-            assert acknowledgement == {"id": request_id, "opened": True}
+            assert acknowledgement == {"id": request_id, "opened": True, "processId": os.getpid()}
             assert Path(bpy.data.filepath).resolve() == other.resolve()
             assert bpy.app.timers.is_registered(open_requested_blend_file)
+
+            # The same assets can be detached from an engine without implicit FBX exports.
+            config["engine"] = "none"
+            config["paths"] = {"artRoot": "Art"}
+            (metadata / "project.json").write_text(json.dumps(config), encoding="utf-8")
+            from blendup.ops.export_ops import current_asset, export_current
+            from blendup.core.export_state import export_status
+            asset = current_asset()
+            assert asset.project.engine == "none"
+            assert asset.output is None
+            assert export_status(asset) == "local"
+            assert not bpy.ops.blendup.export_asset.poll()
+            assert bpy.ops.blendup.prepare_workspace() == {"FINISHED"}
+            assert bpy.ops.blendup.validate_asset() == {"FINISHED"}
+            old_state = (metadata / "export-state.json").read_bytes()
+            import blendup.handlers as handlers
+            from types import SimpleNamespace
+            original_preferences = handlers.preferences
+            handlers.preferences = lambda: SimpleNamespace(auto_export=True)
+            try:
+                handlers.export_after_save(None)
+            finally:
+                handlers.preferences = original_preferences
+            assert (metadata / "export-state.json").read_bytes() == old_state
+            try:
+                export_current()
+                raise AssertionError("A standalone project must not export to an engine")
+            except ValueError:
+                pass
+            assert not (root / "Unity").exists()
+            assert not list((root / "Art").rglob("*.fbx"))
 
         print("BLENDUP_BLENDER_SMOKE_OK")
     finally:

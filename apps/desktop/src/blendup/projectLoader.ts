@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { demoProjectSnapshot } from "./demoSnapshot";
+import { demoProjectSnapshot, standaloneDemoProjectSnapshot } from "./demoSnapshot";
 import type {
+  BlenderProjectSettings,
+  BlendUpProject,
   AssetLod,
   AssetMutationResult,
   AssetVariant,
@@ -17,10 +19,28 @@ import type {
 
 const userSettingsStorageKey = "blendup:user-settings";
 
+export const configureShowcase = (projectRoot: string, folder: string, enabled: boolean, spacing = 1.5) =>
+  invoke<string>("configure_showcase", { projectRoot, folder, enabled, spacing });
+export const rebuildShowcase = (projectRoot: string, id: string, blenderPath?: string) =>
+  invoke<string>("rebuild_showcase", { projectRoot, id, blenderPath });
+export const setupEditorIntegration = (projectRoot: string, editor: "godot" | "blender") =>
+  invoke<string>("setup_editor_integration", { projectRoot, editor });
+export async function openShowcaseGodot(projectRoot: string, id: string): Promise<string> {
+  try { return await invoke<string>("open_showcase_godot", { projectRoot, id }); }
+  catch (error) {
+    if (!String(error).includes("GODOT_REQUIRED")) throw error;
+    const godotPath = await open({ title: "Choisir l’exécutable Godot", multiple: false, filters: [{ name: "Godot", extensions: ["exe"] }] });
+    if (!godotPath || Array.isArray(godotPath)) return "Ouverture annulée.";
+    return invoke<string>("open_showcase_godot", { projectRoot, id, godotPath });
+  }
+}
+const activeDemoSnapshot = new URLSearchParams(window.location.search).get("demo") === "3d"
+  ? standaloneDemoProjectSnapshot : demoProjectSnapshot;
+
 function isBrowserDemo(projectRoot?: string): boolean {
   return import.meta.env.DEV
-    && new URLSearchParams(window.location.search).get("demo") === "1"
-    && (!projectRoot || projectRoot === demoProjectSnapshot.projectRoot);
+    && ["1", "3d"].includes(new URLSearchParams(window.location.search).get("demo") ?? "")
+    && (!projectRoot || projectRoot === activeDemoSnapshot.projectRoot);
 }
 
 export const defaultUserSettings: UserSettings = {
@@ -29,18 +49,19 @@ export const defaultUserSettings: UserSettings = {
   lastProjectRoot: null,
   recentProjects: [],
   blenderPath: null,
-  showBlenderCommandPrompt: false
+  showBlenderCommandPrompt: false,
+  openAssetAfterCreation: false
 };
 
 export async function loadProjectSnapshot(projectRoot: string): Promise<ProjectSnapshot> {
   const trimmed = projectRoot.trim();
   if (!trimmed) throw new Error("Choisis un dossier projet BlendUp.");
-  if (isBrowserDemo(trimmed)) return demoProjectSnapshot;
+  if (isBrowserDemo(trimmed)) return activeDemoSnapshot;
   return invoke<ProjectSnapshot>("read_project_snapshot", { projectRoot: trimmed });
 }
 
 export async function loadDefaultProjectSnapshot(): Promise<ProjectSnapshot> {
-  if (isBrowserDemo()) return demoProjectSnapshot;
+  if (isBrowserDemo()) return activeDemoSnapshot;
   return invoke<ProjectSnapshot>("read_default_project_snapshot");
 }
 
@@ -90,6 +111,18 @@ export async function updateProjectEngine(
   return invoke<UpdateProjectEngineResult>("update_project_engine", { projectRoot, engine });
 }
 
+export async function updateProjectBlenderSettings(projectRoot: string, settings: BlenderProjectSettings): Promise<BlendUpProject> {
+  return invoke<BlendUpProject>("update_project_blender_settings", { projectRoot, settings });
+}
+
+export async function updateProjectPaths(projectRoot: string, paths: BlendUpProject["paths"]): Promise<BlendUpProject> {
+  return invoke<BlendUpProject>("update_project_paths", { projectRoot, paths: { artRoot: paths.artRoot, engineRoot: paths.engineRoot ?? "", engineAssetsRoot: paths.engineAssetsRoot ?? "" } });
+}
+
+export async function checkAssetUvs(projectRoot: string, assetId: string, blenderPath?: string): Promise<AssetMutationResult> {
+  return invoke<AssetMutationResult>("check_asset_uvs", { projectRoot, assetId, blenderPath });
+}
+
 export async function detectBlender(blenderPath?: string): Promise<ToolDetection> {
   return invoke<ToolDetection>("detect_blender", { blenderPath: blenderPath?.trim() || null });
 }
@@ -100,6 +133,18 @@ export async function exportAsset(options: {
   projectRoot: string;
 }): Promise<ExportAssetResult> {
   return invoke<ExportAssetResult>("export_asset", {
+    assetId: options.assetId,
+    blenderPath: options.blenderPath?.trim() || null,
+    projectRoot: options.projectRoot
+  });
+}
+
+export async function generateAssetPreview(options: {
+  assetId: string;
+  blenderPath?: string;
+  projectRoot: string;
+}): Promise<ExportAssetResult> {
+  return invoke<ExportAssetResult>("generate_asset_preview", {
     assetId: options.assetId,
     blenderPath: options.blenderPath?.trim() || null,
     projectRoot: options.projectRoot
@@ -287,6 +332,16 @@ export async function updateAssetMetadata(options: {
   variants: AssetVariant[];
 }): Promise<AssetMutationResult> {
   return invoke<AssetMutationResult>("update_asset_metadata", options);
+}
+
+export async function setAssetUvIgnored(projectRoot: string, assetId: string, ignored: boolean): Promise<AssetMutationResult> {
+  if (isBrowserDemo(projectRoot)) {
+    const asset = activeDemoSnapshot.assets.find((item) => item.id === assetId);
+    if (!asset) throw new Error("Asset introuvable.");
+    asset.metadata.ignoreUvValidation = ignored;
+    return { assetId, message: ignored ? "Asset ignoré pour la vérification UV." : "Vérification UV réactivée." };
+  }
+  return invoke<AssetMutationResult>("set_asset_uv_ignored", { projectRoot, assetId, ignored });
 }
 
 export async function setAssetThumbnail(
