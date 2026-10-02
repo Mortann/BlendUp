@@ -15,11 +15,14 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
+mod blender_window;
 mod project_paths;
 mod showcases;
 
 const EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/export_asset.py");
 const UV_QUALITY_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/uv_quality.py");
+const ASSET_POLICY_SCRIPT: &str =
+    include_str!("../../../blender-addon/blendup/core/asset_policy.py");
 const UV_BLENDER_SCRIPT: &str = include_str!("../../../blender-addon/blendup/blender_uv.py");
 const UV_CHECK_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/check_uvs.py");
 
@@ -173,6 +176,8 @@ struct UvQualitySummary {
     stale: bool,
     blocked: bool,
     minimum_score: f64,
+    #[serde(default)]
+    ignored: bool,
 }
 
 #[derive(Serialize)]
@@ -212,6 +217,8 @@ struct BlendUpAsset {
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AssetMetadataView {
+    #[serde(default)]
+    ignore_uv_validation: bool,
     #[serde(default)]
     notes: String,
     #[serde(default)]
@@ -302,6 +309,8 @@ struct OpenBlendRequest {
 struct OpenBlendAcknowledgement {
     id: String,
     opened: bool,
+    #[serde(default)]
+    process_id: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -756,7 +765,6 @@ fn export_asset_version(
 ) -> Result<ExportAssetResult, String> {
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
-    require_project_engine(&project)?;
     let asset = find_asset(&root, &project, &asset_id)?;
     let (label, source_path, output_path) =
         asset_version_paths(&asset, &version_id, &version_kind)?;
@@ -774,7 +782,9 @@ fn export_asset_version(
     Ok(ExportAssetResult {
         success,
         asset_id,
-        message: if success {
+        message: if project.engine == "none" && success {
+            format!("Aperçu de {} généré.", label)
+        } else if success {
             format!("{} a ete exporte.", label)
         } else {
             format!("L'export de {} a echoue.", label)
@@ -792,9 +802,6 @@ fn export_asset_versions(
     blender_path: Option<String>,
 ) -> Result<ExportAssetResult, String> {
     let base_result = export_asset(project_root.clone(), asset_id.clone(), blender_path.clone())?;
-    if !base_result.success {
-        return Ok(base_result);
-    }
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
     require_project_engine(&project)?;
@@ -833,7 +840,7 @@ fn export_asset_versions(
         logs.push(format!("{label}\n{log}"));
     }
 
-    let lod_scene = if project.engine == "godot" {
+    let lod_scene = if project.engine == "godot" && success_count == total {
         write_godot_lod_support(&root, &project, &asset)?
     } else {
         None
@@ -1002,7 +1009,11 @@ fn export_managed_file(
         .arg(&output)
         .arg(format)
         .arg(root)
-        .arg("1");
+        .arg(if read_project_config(root)?.engine == "none" {
+            "0"
+        } else {
+            "1"
+        });
     apply_command_window_preference(&mut command, false);
     let process = command.output();
     let blender_display = blender.to_string_lossy().to_string();
@@ -1029,6 +1040,7 @@ fn prepare_uv_runtime(root: &Path, name: &str, script: &str) -> Result<PathBuf, 
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     for (name, content) in [
         ("blendup_uv_quality.py", UV_QUALITY_SCRIPT),
+        ("blendup_asset_policy.py", ASSET_POLICY_SCRIPT),
         ("blendup_blender_uv.py", UV_BLENDER_SCRIPT),
         (name, script),
     ] {
@@ -1075,6 +1087,18 @@ fn read_uv_quality(
         stale,
         blocked,
         minimum_score: project.blender.minimum_uv_score,
+        ignored: false,
+    })
+}
+
+fn apply_uv_exemption(
+    quality: Option<UvQualitySummary>,
+    ignored: bool,
+) -> Option<UvQualitySummary> {
+    quality.map(|mut quality| {
+        quality.ignored = ignored;
+        quality.blocked &= !ignored;
+        quality
     })
 }
 
@@ -1112,6 +1136,12 @@ fn check_asset_uvs_impl(
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
     let asset = find_asset(&root, &project, &asset_id)?;
+    if asset.metadata.ignore_uv_validation {
+        return Ok(AssetMutationResult {
+            asset_id: Some(asset_id),
+            message: format!("{} est ignoré pour la vérification UV.", asset.name),
+        });
+    }
     let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
         "Blender est introuvable. Configure son chemin dans Paramètres.".to_string()
     })?;
@@ -1223,9 +1253,13 @@ fn open_blend_file_impl(
     })?;
     let mut command = blender_open_command(&blender, &target);
     apply_command_window_preference(&mut command, show_command_prompt);
-    command
+    let child = command
         .spawn()
         .map_err(|error| format!("Impossible de lancer {}: {error}", blender.display()))?;
+    let process_id = steam_blender_launcher(&blender)
+        .is_none()
+        .then_some(child.id());
+    blender_window::focus_when_ready(process_id, target);
     Ok(())
 }
 
@@ -1302,6 +1336,10 @@ fn request_open_in_running_blender(root: &Path, target: &Path) -> Result<bool, S
             .as_ref()
             .is_some_and(|value| value.id == request.id && value.opened)
         {
+            blender_window::focus_when_ready(
+                acknowledgement.as_ref().and_then(|value| value.process_id),
+                target.to_path_buf(),
+            );
             return Ok(true);
         }
     }
@@ -2010,6 +2048,29 @@ fn delete_folder(project_root: String, folder: String) -> Result<AssetMutationRe
     Ok(AssetMutationResult {
         message: "Le dossier a ete place dans la corbeille.".to_string(),
         asset_id: None,
+    })
+}
+
+#[tauri::command]
+fn set_asset_uv_ignored(
+    project_root: String,
+    asset_id: String,
+    ignored: bool,
+) -> Result<AssetMutationResult, String> {
+    let root = validated_project_root(&project_root)?;
+    let project = read_project_config(&root)?;
+    let asset = find_asset(&root, &project, &asset_id)?;
+    let mut metadata = metadata_for_asset(&root, &asset);
+    metadata.details.ignore_uv_validation = ignored;
+    write_asset_metadata(&root, &metadata)?;
+    Ok(AssetMutationResult {
+        asset_id: Some(asset.id),
+        message: if ignored {
+            "Asset ignoré pour la vérification UV (variantes et LOD inclus)."
+        } else {
+            "Vérification UV réactivée pour cet asset."
+        }
+        .into(),
     })
 }
 
@@ -3023,7 +3084,10 @@ fn scan_assets(
             .unwrap_or_else(|| asset_id_for_path(&source_path));
         let source_time = modified_time(&source);
         let output_time = modified_time(&output);
-        let uv_quality = read_uv_quality(root, project, &source_path);
+        let ignored = metadata
+            .as_ref()
+            .is_some_and(|m| m.details.ignore_uv_validation);
+        let uv_quality = apply_uv_exemption(read_uv_quality(root, project, &source_path), ignored);
         let failed_record = export_state
             .exports
             .get(&id)
@@ -3031,6 +3095,7 @@ fn scan_assets(
             .filter(|record| {
                 !is_uv_export_error(&record.message)
                     || (project.blender.validate_uvs
+                        && !ignored
                         && !uv_quality.as_ref().is_some_and(|q| !q.stale && !q.blocked))
             });
         let status = if project.engine == "none" {
@@ -3080,13 +3145,13 @@ fn scan_assets(
             version.uv_quality = version
                 .source_path
                 .as_deref()
-                .and_then(|path| read_uv_quality(root, project, path));
+                .and_then(|path| apply_uv_exemption(read_uv_quality(root, project, path), ignored));
         }
         for version in &mut details.lods {
             version.uv_quality = version
                 .source_path
                 .as_deref()
-                .and_then(|path| read_uv_quality(root, project, path));
+                .and_then(|path| apply_uv_exemption(read_uv_quality(root, project, path), ignored));
         }
         assets.push(BlendUpAsset {
             id,
@@ -3259,6 +3324,10 @@ fn normalize_asset_metadata(value: &Value) -> Option<AssetMetadata> {
         id,
         source_path: normalize_relative_string(&source_path),
         details: AssetMetadataView {
+            ignore_uv_validation: value
+                .get("ignoreUvValidation")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             notes,
             tags,
             thumbnail_path,
@@ -3450,7 +3519,7 @@ fn collect_problems(
     for asset in assets {
         let mut uv_blocked = false;
         let previous_uv_failure = asset.last_error.as_deref().is_some_and(is_uv_export_error);
-        if project.blender.validate_uvs {
+        if project.blender.validate_uvs && !asset.metadata.ignore_uv_validation {
             let mut versions = vec![(asset.name.as_str(), asset.uv_quality.as_ref())];
             versions.extend(
                 asset
@@ -4329,6 +4398,7 @@ fn main() {
             move_folder,
             delete_folder,
             update_asset_metadata,
+            set_asset_uv_ignored,
             set_asset_thumbnail,
             add_asset_images
         ])
@@ -4482,7 +4552,7 @@ mod tests {
             &uv_report_fixture(&root, version_source, 0.0),
         )
         .unwrap();
-        let snapshot = read_project_snapshot(project_root).unwrap();
+        let snapshot = read_project_snapshot(project_root.clone()).unwrap();
         assert_eq!(snapshot.problems.len(), 1);
         assert_eq!(snapshot.problems[0].title, "Qualité UV insuffisante");
         assert_eq!(snapshot.problems[0].severity, "error");
@@ -4493,6 +4563,55 @@ mod tests {
                 .unwrap()
                 .blocked
         );
+        let id = snapshot.assets[0].id.clone();
+        set_asset_uv_ignored(project_root.clone(), id.clone(), true).unwrap();
+        let ignored = read_project_snapshot(project_root.clone()).unwrap();
+        assert!(ignored.assets[0].metadata.ignore_uv_validation);
+        assert!(ignored
+            .problems
+            .iter()
+            .all(|problem| problem.category != "uv"));
+        assert!(
+            !ignored.assets[0].metadata.variants[0]
+                .uv_quality
+                .as_ref()
+                .unwrap()
+                .blocked
+        );
+        assert!(
+            ignored.assets[0].metadata.variants[0]
+                .uv_quality
+                .as_ref()
+                .unwrap()
+                .ignored
+        );
+        // No Blender process is required for an excluded asset.
+        assert!(check_asset_uvs_impl(
+            project_root.clone(),
+            id.clone(),
+            Some("missing-blender".into())
+        )
+        .unwrap()
+        .message
+        .contains("ignoré"));
+        set_asset_uv_ignored(project_root.clone(), id.clone(), false).unwrap();
+        assert!(
+            read_project_snapshot(project_root.clone()).unwrap().assets[0]
+                .metadata
+                .variants[0]
+                .uv_quality
+                .as_ref()
+                .unwrap()
+                .blocked
+        );
+        set_asset_uv_ignored(project_root.clone(), id.clone(), true).unwrap();
+        rename_asset(project_root.clone(), id, "Desk".into()).unwrap();
+        let renamed = read_project_snapshot(project_root).unwrap();
+        assert!(renamed.assets[0].metadata.ignore_uv_validation);
+        assert!(renamed
+            .problems
+            .iter()
+            .all(|problem| problem.category != "uv"));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -4587,6 +4706,61 @@ mod tests {
                 .count(),
             2
         );
+        // A blocked original must not prevent a healthy variant from exporting.
+        create_asset_variant(project_root.clone(), id.clone(), "Good".into()).unwrap();
+        let versions = read_project_snapshot(project_root.clone()).unwrap();
+        let good = &versions.assets[0].metadata.variants[1];
+        let mut command = Command::new(&blender);
+        command
+            .env("BLENDUP_BACKGROUND_TASK", "1")
+            .args([
+                "--background",
+                "--factory-startup",
+                "--python-exit-code",
+                "1",
+                "--python",
+            ])
+            .arg(&script)
+            .arg("--")
+            .arg(root.join(good.source_path.as_ref().unwrap()))
+            .arg("good");
+        apply_command_window_preference(&mut command, false);
+        let result = command.output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            command_log(&result.stdout, &result.stderr)
+        );
+        let batch =
+            export_asset_versions(project_root.clone(), id.clone(), Some(blender.clone())).unwrap();
+        assert!(
+            !batch.success && batch.message.contains("1 version(s) sur 3"),
+            "{}\n{}",
+            batch.message,
+            batch.log
+        );
+        assert!(root.join(good.output_path.as_ref().unwrap()).is_file());
+        assert_eq!(fs::read(&output).unwrap(), previous);
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+        set_asset_uv_ignored(project_root.clone(), id.clone(), true).unwrap();
+        assert!(
+            export_asset(project_root.clone(), id.clone(), Some(blender.clone()))
+                .unwrap()
+                .success
+        );
+        assert!(
+            export_asset_version(
+                project_root.clone(),
+                id.clone(),
+                variant.id.clone(),
+                "variant".into(),
+                Some(blender.clone())
+            )
+            .unwrap()
+            .success
+        );
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+        set_asset_uv_ignored(project_root.clone(), id.clone(), false).unwrap();
         update_project_engine(project_root.clone(), "unity".into()).unwrap();
         assert!(
             !export_asset(project_root.clone(), id.clone(), Some(blender.clone()))
@@ -5237,8 +5411,26 @@ mod tests {
                 .unwrap()
                 .success
         );
-        generate_asset_lods(project_root.clone(), id.clone(), Some(blender)).unwrap();
-        create_asset_variant(project_root.clone(), id, "Red".to_string()).unwrap();
+        generate_asset_lods(project_root.clone(), id.clone(), Some(blender.clone())).unwrap();
+        create_asset_variant(project_root.clone(), id.clone(), "Red".to_string()).unwrap();
+        let versions = read_project_snapshot(project_root.clone()).unwrap();
+        let variant = &versions.assets[0].metadata.variants[0];
+        let preview = export_asset_version(
+            project_root.clone(),
+            id,
+            variant.id.clone(),
+            "variant".into(),
+            Some(blender),
+        )
+        .unwrap();
+        assert!(preview.success, "{}", preview.log);
+        assert!(root
+            .join(variant.output_path.as_ref().unwrap())
+            .starts_with(root.join(".blendup/cache/previews")));
+        assert_eq!(
+            &fs::read(root.join(variant.output_path.as_ref().unwrap())).unwrap()[..4],
+            b"glTF"
+        );
         let snapshot = read_project_snapshot(project_root.clone()).unwrap();
         let asset = &snapshot.assets[0];
         assert_eq!(asset.status, "local");

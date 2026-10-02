@@ -11,7 +11,7 @@ import bpy
 from ..core.export_state import record_export
 from ..core.project import AssetLocation, locate_asset
 from ..prefs import preferences
-from ..blender_uv import check_and_record, project_policy, passes_uv_gate, uv_gate_message
+from ..blender_uv import check_and_record, project_policy, passes_uv_gate, uv_gate_message, uv_validation_ignored
 
 
 def current_asset() -> AssetLocation:
@@ -32,7 +32,7 @@ def export_current(context=None, uv_report=None) -> AssetLocation:
     export_animations = prefs.export_animations if prefs else True
     try:
         policy = project_policy(asset.project.root)
-        if policy.validate_uvs:
+        if policy.validate_uvs and not uv_validation_ignored(asset.project.root, asset.source):
             report = uv_report if uv_report is not None else check_and_record(asset.project.root, asset.source, context)
             if not passes_uv_gate(report, policy):
                 raise ValueError(uv_gate_message(report, policy))

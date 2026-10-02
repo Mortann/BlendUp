@@ -58,6 +58,7 @@ import {
 } from "./assets/utils";
 
 import { explorerShortcut, shortcutLabels, visibleNavigationFolders } from "./assets/shortcuts";
+import { folderHistoryPath, recordFolderNavigation } from "./assets/history";
 
 const AssetDetail = lazy(() => import("./assets/AssetDetail").then((module) => ({ default: module.AssetDetail })));
 
@@ -91,6 +92,9 @@ export function AssetsView({
   onRenameFolder,
   onSetAssetThumbnail,
   onUpdateAssetMetadata,
+  onSetAssetUvIgnored,
+  revealAssetRequest,
+  onAssetRevealed,
   openingAsset,
   selectedAssetId,
   setSelectedAssetId,
@@ -126,6 +130,9 @@ export function AssetsView({
   onRenameFolder: (folder: string, newName: string) => Mutation;
   onSetAssetThumbnail: (assetId: string) => Promise<void>;
   onUpdateAssetMetadata: (assetId: string, notes: string, tags: string[], variants: AssetVariant[], lods: AssetLod[]) => Mutation;
+  onSetAssetUvIgnored: (assetId: string, ignored: boolean) => Mutation;
+  revealAssetRequest: { assetId: string; serial: number } | null;
+  onAssetRevealed: () => void;
   openingAsset: boolean;
   selectedAssetId: string | null;
   setSelectedAssetId: (assetId: string | null) => void;
@@ -167,7 +174,9 @@ export function AssetsView({
     setSettings(loadExplorerSettings(projectId));
     setFavorites(loadFavorites(projectId));
     const stored = loadExplorerPath(projectId);
-    setCurrentPath(stored && folders.includes(stored) ? stored : explorerRoot);
+    const initial = stored && folders.includes(stored) ? stored : explorerRoot;
+    setCurrentPath(initial);
+    recordFolderNavigation(window.history, projectId, initial, true);
     setRecentFolders(loadRecentFolders(projectId));
   }, [projectId]);
 
@@ -176,6 +185,7 @@ export function AssetsView({
       setCurrentPath(explorerRoot);
       setActiveTarget({ kind: "background" });
       saveExplorerPath(projectId, explorerRoot);
+      recordFolderNavigation(window.history, projectId, explorerRoot, true);
     }
   }, [currentPath, explorerRoot, folders, projectId]);
 
@@ -195,17 +205,63 @@ export function AssetsView({
     setCollapsedFolders(next);
     saveCollapsedFolders(projectId, next);
   };
-  const navigate = (path: string) => {
+  const navigate = (path: string, fromHistory = false, selectAssetId: string | null = null) => {
     const normalized = normalizePath(path);
+    if (!fromHistory) recordFolderNavigation(window.history, projectId, normalized);
     setCurrentPath(normalized);
+    setQuery("");
+    setFilter("all");
+    setContextMenu(null);
     setActiveTarget({ kind: "folder", path: normalized });
     updateCollapsedFolders(collapsedFolders.filter((folder) => !normalized.startsWith(`${folder}/`)));
     saveExplorerPath(projectId, normalized);
     const next = [normalized, ...recentFolders.filter((folder) => folder !== normalized)].slice(0, 5);
     setRecentFolders(next);
     saveRecentFolders(projectId, next);
-    setSelectedAssetId(null);
+    setSelectedAssetId(selectAssetId);
   };
+
+  useEffect(() => {
+    if (!revealAssetRequest) return;
+    const asset = snapshot.assets.find((item) => item.id === revealAssetRequest.assetId);
+    if (asset) navigate(assetBrowserFolder(asset), false, asset.id);
+    onAssetRevealed();
+  }, [revealAssetRequest]);
+
+  useEffect(() => {
+    if (!selectedAssetId) return;
+    const frame = window.requestAnimationFrame(() => document.querySelector(".explorer-asset.selected")?.scrollIntoView({ block: "nearest" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentPath, selectedAssetId]);
+
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const path = folderHistoryPath(event.state, projectId);
+      if (path !== null) {
+        const target = folders.includes(path) ? path : explorerRoot;
+        if (target !== path) recordFolderNavigation(window.history, projectId, target, true);
+        navigate(target, true);
+      }
+    };
+    const preventMouseNavigation = (event: globalThis.MouseEvent) => {
+      if (event.button === 3 || event.button === 4) event.preventDefault();
+    };
+    const onMouseUp = (event: globalThis.MouseEvent) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      if (!dialog && !openingAsset) window.history.go(event.button === 3 ? -1 : 1);
+    };
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("mousedown", preventMouseNavigation, true);
+    window.addEventListener("mouseup", onMouseUp, true);
+    window.addEventListener("auxclick", preventMouseNavigation, true);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("mousedown", preventMouseNavigation, true);
+      window.removeEventListener("mouseup", onMouseUp, true);
+      window.removeEventListener("auxclick", preventMouseNavigation, true);
+    };
+  });
   const toggleFavorite = (assetId: string) => {
     const next = favorites.includes(assetId) ? favorites.filter((id) => id !== assetId) : [...favorites, assetId];
     setFavorites(next);
@@ -301,6 +357,8 @@ export function AssetsView({
         case "createAsset": setDialog({ kind: "createAsset", parent: folder }); break;
         case "createFolder": setDialog({ kind: "createFolder", parent: folder }); break;
         case "parent": if (currentPath !== explorerRoot) { setFilter("all"); navigate(parentPath(currentPath)); } break;
+        case "back": window.history.back(); break;
+        case "forward": window.history.forward(); break;
         case "close": if (!contextMenu) { setSelectedAssetId(null); setActiveTarget({ kind: "background" }); } break;
       }
     };
@@ -388,6 +446,7 @@ export function AssetsView({
           <AssetDetail
             checkingUv={checkingUvAssetIds.includes(selectedAsset.id)}
             onCheckUv={() => void onCheckUv(selectedAsset.id)}
+            onSetUvIgnored={(ignored) => onSetAssetUvIgnored(selectedAsset.id, ignored)}
             asset={selectedAsset}
             exporting={exportingAssetIds.includes(selectedAsset.id)}
             onAddImages={(kind) => void onAddAssetImages(selectedAsset.id, kind)}

@@ -15,7 +15,8 @@ func drag_payload(index: int) -> Dictionary:
     if index < 0:
         return {}
     var asset: Dictionary = get_item_metadata(index)
-    var path: String = asset.get("resourcePath", "") if asset.get("resourcePath") != null else ""
+    var value = asset.get("placementPath", asset.get("resourcePath"))
+    var path: String = str(value) if value != null else ""
     if not asset.get("godotReady", false) or path.is_empty() or not ResourceLoader.exists(path):
         return {}
     return {"type": "files", "files": PackedStringArray([path]), "from": self}

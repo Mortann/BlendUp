@@ -83,6 +83,9 @@ function App() {
           onRenameFolder={app.handleRenameFolder}
           onSetAssetThumbnail={app.handleSetAssetThumbnail}
           onUpdateAssetMetadata={app.handleUpdateAssetMetadata}
+          onSetAssetUvIgnored={app.handleSetAssetUvIgnored}
+          revealAssetRequest={app.revealAssetRequest}
+          onAssetRevealed={app.consumeAssetReveal}
           openingAsset={app.openingAssetPath !== null}
           selectedAssetId={app.selectedAsset?.id ?? null}
           setSelectedAssetId={app.setSelectedAssetId}

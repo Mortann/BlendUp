@@ -2,6 +2,7 @@
 extends VBoxContainer
 
 const DragList = preload("drag_list.gd")
+const Catalog = preload("instance_catalog.gd")
 var plugin: EditorPlugin
 var project_root := ""
 var assets: Array = []
@@ -13,6 +14,8 @@ var folders: OptionButton
 var list: ItemList
 var summary: Label
 var timer: Timer
+var variants: OptionButton
+var selected_versions: Dictionary = {}
 
 func _ready() -> void:
     custom_minimum_size = Vector2(240, 250)
@@ -31,7 +34,12 @@ func _ready() -> void:
     list.fixed_column_width = 120
     list.max_columns = 0
     list.item_activated.connect(func(_index: int): place_selected())
+    list.item_selected.connect(func(_index: int): update_variant_choices())
     add_child(list)
+    variants = OptionButton.new()
+    variants.tooltip_text = "Variante à placer. Elle pourra aussi être changée dans l’inspecteur une fois l’asset posé."
+    variants.item_selected.connect(select_variant)
+    add_child(variants)
     var actions := HBoxContainer.new()
     var place := Button.new()
     place.text = "Placer"
@@ -75,6 +83,8 @@ func tick() -> void:
     var times := ""
     for asset in assets:
         times += str(FileAccess.get_modified_time(project_root.path_join(asset.get("sourcePath", "")))) + ";"
+        for version in asset.get("variants", []):
+            times += str(FileAccess.get_modified_time(project_root.path_join(version.get("sourcePath", "")))) + ";"
     if times != source_times:
         source_times = times
         redraw()
@@ -146,6 +156,7 @@ func redraw() -> void:
     var folder: String = folders.get_item_metadata(folders.selected) if folders.selected >= 0 else ""
     var missing := 0
     for asset in assets:
+        var display_asset: Dictionary = Catalog.synchronize(asset, project_root)
         var asset_folder: String = asset.get("folder", "")
         if not folder.is_empty() and asset_folder != folder and not asset_folder.begins_with(folder + "/"):
             continue
@@ -154,17 +165,12 @@ func redraw() -> void:
             continue
         var i := list.add_item(asset.get("name", "Asset"), get_theme_icon("MeshInstance3D", "EditorIcons"))
         list.set_item_metadata(i, asset)
-        var path: String = asset.get("resourcePath", "") if asset.get("resourcePath") != null else ""
-        var ready: bool = asset.get("godotReady", false) and not path.is_empty() and ResourceLoader.exists(path)
-        var signature_parts := str(asset.get("sourceSignature", "")).split(":")
-        if ready and signature_parts.size() == 2:
-            var recorded_seconds := int(int(signature_parts[1]) / 1000000000)
-            ready = FileAccess.get_modified_time(project_root.path_join(asset.get("sourcePath", ""))) == recorded_seconds
-        # The JSON reflects BlendUp's export gate. Never drag a blocked/stale GLB.
-        var display_asset: Dictionary = asset.duplicate()
-        display_asset["godotReady"] = ready
+        var preferred: String = selected_versions.get(asset.get("id", ""), display_asset.get("placementVariant", "original"))
+        apply_version(display_asset, preferred)
+        var ready: bool = display_asset.get("godotReady", false)
+        var path: String = str(display_asset.get("previewPath", ""))
         list.set_item_metadata(i, display_asset)
-        list.set_item_tooltip(i, asset_folder + ("\nGlisse dans la vue 3D ou la scène." if ready else "\nExport manquant, modifié ou bloqué : actualise dans BlendUp."))
+        list.set_item_tooltip(i, asset_folder + "\n%d variante(s)" % asset.get("variants", []).size() + ("\nGlisse dans la vue 3D ; choisis ensuite la variante dans l’inspecteur." if ready else "\nExport manquant, modifié ou bloqué : actualise dans BlendUp."))
         if ready:
             plugin.get_editor_interface().get_resource_previewer().queue_resource_preview(path, self, "preview_ready", asset.get("id", ""))
         else:
@@ -172,13 +178,56 @@ func redraw() -> void:
             list.set_item_custom_fg_color(i, Color(0.65, 0.65, 0.65))
         if asset.get("id", "") == selected_id:
             list.select(i)
-    summary.text = "%d assets · %d à exporter\nGlisser-déposer : instance liée à l’export." % [list.item_count, missing]
+    summary.text = "%d assets · %d à exporter\nAprès placement : Inspecteur → Variante." % [list.item_count, missing]
+    update_variant_choices()
 
-func preview_ready(_path: String, preview: Texture2D, _small: Texture2D, asset_id: Variant) -> void:
+static func apply_version(asset: Dictionary, version_id: String) -> void:
+    for version in asset.get("versions", []):
+        if version.get("id", "") == version_id:
+            asset["placementVariant"] = version_id
+            asset["godotReady"] = version.get("godotReady", false)
+            asset["placementPath"] = version.get("placementPath", "")
+            asset["previewPath"] = version.get("resourcePath", "") if version.get("resourcePath") != null else ""
+            return
+
+func update_variant_choices() -> void:
+    variants.clear()
+    var selection := list.get_selected_items()
+    if selection.is_empty():
+        variants.add_item("Choisir un asset pour voir ses variantes")
+        variants.disabled = true
+        return
+    variants.disabled = false
+    var asset: Dictionary = list.get_item_metadata(selection[0])
+    for version in asset.get("versions", []):
+        var label: String = version.get("name", "Version")
+        if not version.get("godotReady", false):
+            label += " · " + Catalog.status_text(version.get("status", "ready"))
+        variants.add_item(label)
+        var i := variants.item_count - 1
+        variants.set_item_metadata(i, version.get("id", ""))
+        variants.set_item_disabled(i, not version.get("godotReady", false))
+        if version.get("id") == asset.get("placementVariant"):
+            variants.select(i)
+
+func select_variant(index: int) -> void:
+    var selection := list.get_selected_items()
+    if selection.is_empty():
+        return
+    var i := selection[0]
+    var asset: Dictionary = list.get_item_metadata(i)
+    var id: String = variants.get_item_metadata(index)
+    selected_versions[asset.get("id", "")] = id
+    apply_version(asset, id)
+    list.set_item_metadata(i, asset)
+    if asset.get("godotReady", false):
+        plugin.get_editor_interface().get_resource_previewer().queue_resource_preview(asset.get("previewPath", ""), self, "preview_ready", asset.get("id", ""))
+
+func preview_ready(path: String, preview: Texture2D, _small: Texture2D, asset_id: Variant) -> void:
     if not is_instance_valid(list) or preview == null:
         return
     for i in list.item_count:
-        if list.get_item_metadata(i).get("id", "") == asset_id:
+        if list.get_item_metadata(i).get("id", "") == asset_id and list.get_item_metadata(i).get("previewPath", path) == path:
             list.set_item_icon(i, preview)
             break
 
@@ -193,7 +242,7 @@ func place_selected() -> void:
     if root == null:
         summary.text = "Ouvre ou crée une scène 3D pour placer un asset."
         return
-    var packed := load(str(asset.get("resourcePath", ""))) as PackedScene
+    var packed := load(str(asset.get("placementPath", asset.get("resourcePath", "")))) as PackedScene
     if packed == null:
         return
     var instance := packed.instantiate()

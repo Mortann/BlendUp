@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -76,7 +77,7 @@ def main() -> None:
             }), encoding="utf-8")
             assert open_requested_blend_file() == 0.25
             acknowledgement = json.loads((bridge / "open-ack.json").read_text(encoding="utf-8"))
-            assert acknowledgement == {"id": request_id, "opened": True}
+            assert acknowledgement == {"id": request_id, "opened": True, "processId": os.getpid()}
             assert Path(bpy.data.filepath).resolve() == other.resolve()
             assert bpy.app.timers.is_registered(open_requested_blend_file)
 
