@@ -1,6 +1,6 @@
 {
   "name": "blendup",
-  "version": "0.1.2",
+  "version": "0.2.1",
   "private": true,
   "description": "BlendUp production workspace.",
   "type": "module",
@@ -17,6 +17,8 @@
     "test:blender-core": "python -m unittest discover -s apps/blender-addon/tests -p test_*.py",
     "preview": "npm --workspace @blendup/desktop run preview",
     "tauri:dev": "npm --workspace @blendup/desktop run tauri:dev",
-    "tauri:build": "npm --workspace @blendup/desktop run tauri:build"
+    "tauri:build": "npm --workspace @blendup/desktop run tauri:build",
+    "release:check": "python scripts/package_release.py --check",
+    "release:package": "python scripts/package_release.py"
   }
 }

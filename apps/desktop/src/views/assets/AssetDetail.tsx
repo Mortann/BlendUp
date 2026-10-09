@@ -21,6 +21,7 @@ import { formatBytes, formatTimestamp, statusLabel } from "./utils";
 import { AssetImageGallery, AssetViewer } from "./AssetViewer";
 
 import { UvQualityPanel, UvScoreBadge } from "./UvQuality";
+import { assetPreviewVersion, originalVariantId, savedPreviewVariant, savePreviewVariant } from "./variants";
 
 type DetailTab = "overview" | "preview" | "variants" | "lods" | "files";
 
@@ -28,6 +29,7 @@ export function AssetDetail({
   asset,
   checkingUv,
   onCheckUv,
+  onSetUvIgnored,
   exporting,
   onAddImages,
   onClose,
@@ -47,6 +49,7 @@ export function AssetDetail({
   asset: BlendUpAsset;
   checkingUv: boolean;
   onCheckUv: () => void;
+  onSetUvIgnored: (ignored: boolean) => Promise<unknown>;
   exporting: boolean;
   onAddImages: (kind: "renders" | "textures") => void;
   onClose: () => void;
@@ -70,6 +73,21 @@ export function AssetDetail({
   const [variants, setVariants] = useState(asset.metadata.variants);
   const [lods, setLods] = useState(asset.metadata.lods);
   const [saving, setSaving] = useState(false);
+  const [savingUv, setSavingUv] = useState(false);
+  const [previewId, setPreviewId] = useState(() => savedPreviewVariant(projectRoot, asset));
+  const previewVariant = asset.metadata.variants.find((item) => item.id === previewId);
+  const preview = assetPreviewVersion(asset, previewId);
+  const openPreview = () => previewVariant ? preview.sourcePath && onOpenVersion(preview.sourcePath) : onOpen();
+  const exportPreview = () => previewVariant ? onExportVersion(previewVariant.id, "variant") : onExport();
+  const choosePreview = (id: string) => {
+    setPreviewId(id);
+    savePreviewVariant(projectRoot, asset.id, id);
+  };
+  const setUvIgnored = async (ignored: boolean) => {
+    setSavingUv(true);
+    try { await onSetUvIgnored(ignored); }
+    finally { setSavingUv(false); }
+  };
   const versionsSignature = useMemo(
     () => JSON.stringify([asset.metadata.variants, asset.metadata.lods]),
     [asset.metadata.lods, asset.metadata.variants]
@@ -79,7 +97,8 @@ export function AssetDetail({
     setNotes(asset.metadata.notes);
     setTags(asset.metadata.tags.join(", "));
     setTab("overview");
-  }, [asset.id]);
+    setPreviewId(savedPreviewVariant(projectRoot, asset));
+  }, [asset.id, projectRoot]);
 
   useEffect(() => {
     setVariants(asset.metadata.variants);
@@ -103,8 +122,8 @@ export function AssetDetail({
       </header>
 
       <div className={`asset-detail-actions ${standalone ? "" : "has-export-all"}`}>
-        <button onClick={onOpen} type="button"><ExternalLink size={15} /> Blender</button>
-        <button className="primary" disabled={exporting} onClick={onExport} type="button">{standalone ? <Eye size={15} /> : <Upload size={15} />} {standalone ? (asset.outputModifiedAt ? "Actualiser l’aperçu" : "Générer l’aperçu") : asset.status === "exported" ? "Réexporter" : "Exporter"}</button>
+        <button disabled={!preview.sourcePath} onClick={openPreview} title={`Ouvrir ${previewVariant?.name ?? "l’original"} dans Blender`} type="button"><ExternalLink size={15} /> Blender</button>
+        <button className="primary" disabled={exporting || !preview.sourcePath} onClick={exportPreview} title={`Version : ${previewVariant?.name ?? "Originale"}`} type="button">{standalone ? <Eye size={15} /> : <Upload size={15} />} {standalone ? (preview.outputModifiedAt ? "Actualiser l’aperçu" : "Générer l’aperçu") : preview.status === "exported" ? "Réexporter" : "Exporter"}</button>
         {!standalone ? <button disabled={exporting} onClick={onExportAll} type="button"><Layers3 size={15} /> Tout exporter</button> : null}
       </div>
 
@@ -121,24 +140,28 @@ export function AssetDetail({
         {tab === "overview" ? (
           <>
             <div className="asset-overview-hero">
-              <AssetViewer asset={asset} projectRoot={projectRoot} />
-              <button className="small" onClick={onSetThumbnail} type="button"><ImageIcon size={14} /> Choisir la miniature</button>
+              <AssetViewer asset={preview} projectRoot={projectRoot} />
+              <PreviewVariantChoice asset={asset} onChange={choosePreview} value={previewVariant?.id ?? originalVariantId} />
             </div>
-            <UvQualityPanel quality={asset.uvQuality} checking={checkingUv || exporting} onCheck={onCheckUv} />
+            <UvQualityPanel quality={preview.uvQuality} versionLabel={previewVariant?.name ?? "Originale"} checking={checkingUv || exporting} onCheck={onCheckUv} ignored={!!asset.metadata.ignoreUvValidation} saving={savingUv} onSetIgnored={(ignored) => void setUvIgnored(ignored)} />
             <label className="field"><span>Notes</span><textarea onChange={(event) => setNotes(event.target.value)} placeholder="Intention, remarques ou points à vérifier…" rows={5} value={notes} /></label>
             <label className="field"><span><Tag size={13} /> Tags</span><input onChange={(event) => setTags(event.target.value)} placeholder="environment, stone, modular" value={tags} /></label>
             <div className="detail-info-grid">
-              <Info label="État" value={statusLabel(asset.status)} />
+              <Info label="État de la version" value={previewVariant ? versionStatusLabel(previewVariant.status) : statusLabel(asset.status)} />
               <Info label="Format" value={standalone ? "BLEND" : asset.format.toUpperCase()} />
-              <Info label="Taille source" value={formatBytes(asset.sizeBytes)} />
-              <Info label="Modifié" value={formatTimestamp(asset.sourceModifiedAt)} />
+              {previewVariant ? <Info label="Version affichée" value={previewVariant.name} /> : <Info label="Taille source" value={formatBytes(asset.sizeBytes)} />}
+              <Info label="Modifié" value={formatTimestamp(preview.sourceModifiedAt)} />
             </div>
           </>
         ) : null}
 
         {tab === "preview" ? (
           <>
-            <AssetViewer asset={asset} projectRoot={projectRoot} />
+            <div className="asset-overview-hero">
+              <AssetViewer asset={preview} projectRoot={projectRoot} />
+              <PreviewVariantChoice asset={asset} onChange={choosePreview} value={previewVariant?.id ?? originalVariantId} />
+            </div>
+            <button className="small" onClick={onSetThumbnail} type="button"><ImageIcon size={14} /> Choisir la miniature de l’asset</button>
             <AssetImageGallery asset={asset} kind="renders" onAdd={() => onAddImages("renders")} projectRoot={projectRoot} />
             <AssetImageGallery asset={asset} kind="textures" onAdd={() => onAddImages("textures")} projectRoot={projectRoot} />
           </>
@@ -156,6 +179,7 @@ export function AssetDetail({
             onExportOriginal={onExport}
             onOpen={onOpenVersion}
             onOpenOriginal={onOpen}
+            onPreview={(id) => { choosePreview(id); setTab("overview"); }}
             originalOutputPath={asset.outputPath}
             originalSourcePath={asset.sourcePath}
             originalStatus={asset.status}
@@ -178,8 +202,8 @@ export function AssetDetail({
 
         {tab === "files" ? (
           <div className="detail-file-list">
-            <FileRow label="Source Blender" onOpen={onOpen} path={asset.sourcePath} />
-            {!standalone ? <FileRow label={`Export ${asset.format.toUpperCase()}`} onOpen={() => onOpenPath(asset.outputPath)} path={asset.outputPath} /> : null}
+            <FileRow label={`Source Blender · ${previewVariant?.name ?? "Originale"}`} onOpen={openPreview} path={preview.sourcePath} />
+            {!standalone && preview.outputPath ? <FileRow label={`Export ${asset.format.toUpperCase()}`} onOpen={() => onOpenPath(preview.outputPath)} path={preview.outputPath} /> : null}
             <FileRow label="Dossier de travail" onOpen={() => onOpenPath(asset.folder)} path={asset.folder} />
           </div>
         ) : null}
@@ -203,6 +227,7 @@ function VariantManager({
   onExportOriginal,
   onOpen,
   onOpenOriginal,
+  onPreview,
   originalOutputPath,
   originalSourcePath,
   originalStatus
@@ -217,6 +242,7 @@ function VariantManager({
   onExportOriginal: () => void;
   onOpen: (path: string) => void;
   onOpenOriginal: () => void;
+  onPreview: (versionId: string) => void;
   originalOutputPath: string;
   originalSourcePath: string;
   originalStatus: BlendUpAsset["status"];
@@ -246,6 +272,7 @@ function VariantManager({
         exporting={exporting}
         onExport={onExportOriginal}
         onOpen={onOpenOriginal}
+        onPreview={() => onPreview(originalVariantId)}
         outputPath={originalOutputPath}
         sourcePath={originalSourcePath}
         status={originalStatus}
@@ -263,6 +290,7 @@ function VariantManager({
           onExport={() => onExport(variant.id)}
           onNotes={(notes) => onChange(items.map((item, current) => current === index ? { ...item, notes } : item))}
           onOpen={variant.sourcePath ? () => onOpen(variant.sourcePath!) : undefined}
+          onPreview={() => onPreview(variant.id)}
           outputPath={variant.outputPath}
           sourcePath={variant.sourcePath}
           status={variant.status}
@@ -277,6 +305,7 @@ function OriginalVersionCard({
   exporting,
   onExport,
   onOpen,
+  onPreview,
   outputPath,
   sourcePath,
   status
@@ -285,6 +314,7 @@ function OriginalVersionCard({
   exporting: boolean;
   onExport: () => void;
   onOpen: () => void;
+  onPreview: () => void;
   outputPath: string;
   sourcePath: string;
   status: BlendUpAsset["status"];
@@ -295,7 +325,8 @@ function OriginalVersionCard({
       <div className="version-paths"><code title={sourcePath}>{sourcePath}</code>{!standalone ? <code title={outputPath}>{outputPath}</code> : null}</div>
       <footer>
         <button onClick={onOpen} type="button"><ExternalLink size={14} /> Blender</button>
-        {!standalone ? <button className="primary" disabled={exporting} onClick={onExport} type="button"><Upload size={14} /> Exporter</button> : null}
+        <button onClick={onPreview} type="button"><Eye size={14} /> Aperçu</button>
+        <button className="primary" disabled={exporting} onClick={onExport} type="button">{standalone ? <Eye size={14} /> : <Upload size={14} />} {standalone ? "Générer l’aperçu" : "Exporter"}</button>
       </footer>
     </article>
   );
@@ -371,6 +402,7 @@ function VersionCard({
   onExport,
   onNotes,
   onOpen,
+  onPreview,
   outputPath,
   sourcePath,
   status
@@ -385,6 +417,7 @@ function VersionCard({
   onExport: () => void;
   onNotes: (notes: string) => void;
   onOpen?: () => void;
+  onPreview?: () => void;
   outputPath?: string;
   sourcePath?: string;
   status: AssetVersionStatus;
@@ -396,7 +429,8 @@ function VersionCard({
       <textarea onChange={(event) => onNotes(event.target.value)} placeholder="Notes sur cette version…" rows={2} value={notes} />
       <footer>
         <button disabled={!onOpen} onClick={onOpen} type="button"><ExternalLink size={14} /> Blender</button>
-        {!standalone ? <button className="primary" disabled={exporting || !sourcePath} onClick={onExport} type="button"><Upload size={14} /> Exporter</button> : null}
+        {onPreview ? <button onClick={onPreview} type="button"><Eye size={14} /> Aperçu</button> : null}
+        <button className="primary" disabled={exporting || !sourcePath} onClick={onExport} type="button">{standalone ? <Eye size={14} /> : <Upload size={14} />} {standalone ? "Générer l’aperçu" : "Exporter"}</button>
         <button aria-label={`Supprimer ${label}`} className="icon-button danger" onClick={onDelete} title="Mettre cette version à la corbeille" type="button"><Trash2 size={15} /></button>
       </footer>
     </article>
@@ -405,6 +439,15 @@ function VersionCard({
 
 function VersionEmpty({ icon, text }: { icon: React.ReactNode; text: string }) {
   return <div className="detail-empty">{icon}<p>{text}</p></div>;
+}
+
+function PreviewVariantChoice({ asset, onChange, value }: { asset: BlendUpAsset; onChange: (id: string) => void; value: string }) {
+  return <label className="preview-variant-choice"><Layers3 size={14} /><span>Variante</span>
+    <select aria-label="Variante affichée dans l’aperçu" onChange={(event) => onChange(event.target.value)} value={value}>
+      <option value={originalVariantId}>Originale</option>
+      {asset.metadata.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name}{variant.status === "missing" ? " · fichier absent" : variant.status === "ready" ? " · à exporter" : variant.status === "outdated" ? " · à actualiser" : variant.status === "error" ? " · erreur" : ""}</option>)}
+    </select>
+  </label>;
 }
 
 function versionStatusLabel(status: AssetVersionStatus) {

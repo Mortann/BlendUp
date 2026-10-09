@@ -132,6 +132,26 @@ def main():
             except ValueError as error:
                 assert "UV" in str(error)
             assert bpy.ops.blendup.check_uvs() == {"FINISHED"}
+            # An asset exclusion skips checks and bypasses the export gate,
+            # including on save. Re-enabling it must restore the same gate.
+            from blendup.core.project import locate_asset
+            asset = locate_asset(source)
+            metadata = root / ".blendup/assets" / (asset.asset_id + ".json")
+            metadata.parent.mkdir(parents=True, exist_ok=True)
+            metadata.write_text(json.dumps({"id": asset.asset_id, "sourcePath": asset.source_relative, "ignoreUvValidation": True}))
+            previous_report = report_path(root, source).read_bytes()
+            with patch.object(handlers, "check_and_record", side_effect=AssertionError("Ignored assets must not be analyzed")):
+                bpy.ops.wm.save_as_mainfile(filepath=str(source))
+            assert report_path(root, source).read_bytes() == previous_report
+            export_current()
+            assert bpy.ops.blendup.check_uvs() == {"FINISHED"}
+            assert "ignoré" in bpy.context.window_manager.blendup_validation_summary
+            metadata.write_text(json.dumps({"id": asset.asset_id, "sourcePath": asset.source_relative, "ignoreUvValidation": False}))
+            try:
+                export_current()
+                raise AssertionError("Re-enabling UV checks must restore the gate")
+            except ValueError as error:
+                assert "UV" in str(error)
             config["blender"]["validateUvs"] = False
             save_config()
             export_current()

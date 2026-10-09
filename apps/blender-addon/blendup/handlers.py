@@ -10,7 +10,7 @@ from .core.bridge import acknowledge_open, clear_open_request, read_open_request
 from .core.project import find_project_root
 from .ops.export_ops import current_asset, export_current
 from .prefs import preferences
-from .blender_uv import check_and_record, prepare_before_save, project_policy
+from .blender_uv import check_and_record, prepare_before_save, project_policy, uv_validation_ignored
 
 
 _exporting = False
@@ -63,7 +63,7 @@ def export_after_save(_filepath):
         asset = current_asset()
         policy = project_policy(asset.project.root)
         report = None
-        if policy.validate_uvs:
+        if policy.validate_uvs and not uv_validation_ignored(asset.project.root, asset.source):
             report = check_and_record(asset.project.root, asset.source, source_is_saved=True)
             if _preparation_warnings:
                 from .blender_uv import write_report
@@ -120,7 +120,7 @@ def open_requested_blend_file():
         clear_open_request(root, request.id)
         return _BRIDGE_INTERVAL
 
-    acknowledge_open(root, request.id, True)
+    acknowledge_open(root, request.id, True, process_id=os.getpid())
     clear_open_request(root, request.id)
     if target != current:
         bpy.ops.wm.open_mainfile(filepath=str(target))

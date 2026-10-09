@@ -53,12 +53,15 @@ def requested_blend_file(project_root: str | Path, request: OpenRequest) -> Path
     return target
 
 
-def acknowledge_open(project_root: str | Path, request_id: str, opened: bool) -> None:
+def acknowledge_open(project_root: str | Path, request_id: str, opened: bool, process_id: int | None = None) -> None:
     path = Path(project_root) / ACKNOWLEDGEMENT_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
+    acknowledgement = {"id": request_id, "opened": opened}
+    if process_id is not None:
+        acknowledgement["processId"] = process_id
     temporary.write_text(
-        json.dumps({"id": request_id, "opened": opened}, indent=2) + "\n",
+        json.dumps(acknowledgement, indent=2) + "\n",
         encoding="utf-8",
     )
     temporary.replace(path)

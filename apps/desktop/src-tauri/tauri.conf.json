@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "BlendUp",
-  "version": "0.1.2",
+  "version": "0.2.1",
   "identifier": "com.blendup.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -17,7 +17,7 @@
         "height": 800,
         "minWidth": 980,
         "minHeight": 640,
-        "windowClassname": "BlendUpMainWindowV012",
+        "windowClassname": "BlendUpMainWindowV021",
         "dragDropEnabled": false
       }
     ],
@@ -27,6 +27,7 @@
   },
   "bundle": {
     "active": true,
+    "useLocalToolsDir": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",

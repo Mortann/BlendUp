@@ -68,6 +68,11 @@ class BLENDUP_OT_check_uvs(bpy.types.Operator):
     def execute(self, context):
         try:
             asset = current_asset()
+            from ..core.asset_policy import uv_validation_ignored
+            if uv_validation_ignored(asset.project.root, asset.source):
+                context.window_manager.blendup_validation_summary = "Asset ignoré pour la vérification UV"
+                self.report({"INFO"}, context.window_manager.blendup_validation_summary)
+                return {"FINISHED"}
             report = check_and_record(asset.project.root, asset.source, context)
             context.window_manager.blendup_validation_summary = f"Score UV : {report['score']:.1f}/100"
             passed = passes_uv_gate(report, project_policy(asset.project.root))

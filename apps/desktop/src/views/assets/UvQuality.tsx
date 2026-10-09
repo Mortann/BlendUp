@@ -2,7 +2,8 @@ import { Gauge, LoaderCircle, RefreshCw } from "lucide-react";
 import type { UvQualitySummary } from "../../blendup/types";
 import { formatTimestamp } from "./utils";
 
-export function UvScoreBadge({ quality }: { quality?: UvQualitySummary }) {
+export function UvScoreBadge({ quality, ignored = false }: { quality?: UvQualitySummary; ignored?: boolean }) {
+  if (ignored || quality?.ignored) return <span className="uv-score-badge ignored" title="Cet asset est exclu du contrôle UV"><Gauge size={12} /> UV · ignoré</span>;
   if (!quality) return null;
   const incomplete = !quality.complete || Boolean(quality.error);
   const appearance = quality.stale ? "stale" : quality.blocked ? "blocked" : incomplete || quality.score < quality.minimumScore ? "stale" : "good";
@@ -11,12 +12,13 @@ export function UvScoreBadge({ quality }: { quality?: UvQualitySummary }) {
   </span>;
 }
 
-export function UvQualityPanel({ quality, checking, onCheck }: { quality?: UvQualitySummary; checking: boolean; onCheck: () => void }) {
+export function UvQualityPanel({ quality, versionLabel, checking, onCheck, ignored, onSetIgnored, saving }: { quality?: UvQualitySummary; versionLabel?: string; checking: boolean; onCheck: () => void; ignored: boolean; onSetIgnored: (ignored: boolean) => void; saving: boolean }) {
   return <section className="uv-quality-panel">
-    <header><div><strong>Qualité UV</strong><UvScoreBadge quality={quality} /></div>
-      <button disabled={checking} onClick={onCheck} type="button">{checking ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}{checking ? "Vérification…" : "Vérifier"}</button>
+    <header><div><strong>Qualité UV{versionLabel ? ` · ${versionLabel}` : ""}</strong><UvScoreBadge quality={quality} ignored={ignored} /></div>
+      <button disabled={checking || saving || ignored} onClick={onCheck} title="Vérifier l’original, les variantes et les LOD" type="button">{checking ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}{checking ? "Vérification…" : "Vérifier"}</button>
     </header>
-    {!quality ? <p>Vérifie les UV pour obtenir un score sans modifier le fichier Blender.</p> : <>
+    <label className="check-field uv-ignore-option"><input type="checkbox" checked={ignored} disabled={checking || saving} onChange={(event) => onSetIgnored(event.target.checked)} /><span>{saving ? "Enregistrement…" : "Ignorer cet asset pour la vérification UV"}</span></label>
+    {ignored ? <p>Le contrôle UV et son blocage à l’export sont désactivés pour cet asset, ses variantes et ses LOD.</p> : !quality ? <p>Vérifie les UV pour obtenir un score sans modifier le fichier Blender.</p> : <>
       <p>{quality.stale ? "Le fichier ou les critères ont changé. Relance la vérification." : quality.blocked ? `Score inférieur au minimum de ${quality.minimumScore}/100, ou contrôle incomplet. L’export est bloqué.` : `Vérifié le ${formatTimestamp(quality.checkedAt)}.`}</p>
       {quality.issues.length ? <ul>{quality.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul> : null}
       {quality.preparationWarnings.length ? <ul>{quality.preparationWarnings.map((issue, i) => <li key={i}>{issue}</li>)}</ul> : null}

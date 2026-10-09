@@ -156,7 +156,7 @@ export function AssetCard({
       <div className="asset-visual"><AssetThumbnail asset={asset} projectRoot={projectRoot} /></div>
       <div className="asset-card-main">
         <strong title={asset.name}>{asset.name}</strong>
-        <UvScoreBadge quality={asset.uvQuality} />
+        <UvScoreBadge quality={asset.uvQuality} ignored={asset.metadata.ignoreUvValidation} />
         <span>{displayMode === "compact" ? (asset.status === "local" ? "BLEND" : asset.format.toUpperCase()) : asset.folder}</span>
         {displayMode === "list" ? <small>{formatBytes(asset.sizeBytes)} · {formatTimestamp(asset.sourceModifiedAt)}</small> : null}
       </div>

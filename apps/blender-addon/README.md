@@ -4,7 +4,7 @@ Add-on léger pour relier un fichier `.blend` placé dans `Art` à son projet Bl
 
 ## Fonctions
 
-L'add-on 0.6.1 ouvre les assets dans la session Blender active, prépare les dossiers
+L'add-on 0.6.4 ouvre les assets dans la session Blender active, prépare les dossiers
 `textures`, `references` et `renders`, puis synchronise les exports avec BlendUp.
 
 - détection automatique du projet à partir du fichier Blender ouvert ;
@@ -18,12 +18,18 @@ L'add-on 0.6.1 ouvre les assets dans la session Blender active, prépare les dos
 - accès direct aux dossiers source et destination.
 - préparation des transformations et unwrap Angle Based à la sauvegarde, selon les options du projet ;
 - score UV et blocage des exports insuffisants, avec des rapports lisibles dans BlendUp.
+- exclusion UV par asset, variantes et LOD inclus, enregistrée dans sa fiche BlendUp ;
+- identification de la session Blender qui ouvre un fichier pour la ramener au premier plan sous Windows.
+
+Dans BlendUp, **Informations → Qualité UV → Ignorer cet asset pour la vérification UV** retire l’asset des contrôles et du blocage UV à l’export. Décoche l’option pour rétablir les contrôles. L’application des transformations et l’unwrap à la sauvegarde restent pilotés par les options du projet.
 
 ## Installation
 
 Dans Blender, ouvre **Édition > Préférences > Extensions > Installer depuis un disque**, puis sélectionne `blendup.zip`. Active ensuite **BlendUp**. Le panneau apparaît dans la barre latérale de la vue 3D (`N`), onglet **BlendUp**.
 
 Le fichier doit être enregistré dans le dossier `Art` d'un projet qui contient `.blendup/project.json`.
+
+La version 0.6.1 corrige l’erreur `_RestrictData ... filepath` à l’activation : la bibliothèque se charge après l’installation, dès que Blender autorise l’accès au fichier ouvert. Si l’installation de la version précédente a échoué, redémarre Blender puis réinstalle le ZIP corrigé.
 
 ## Développement
 
@@ -40,6 +46,12 @@ blender --background --factory-startup --python-exit-code 1 --python apps/blende
 ```
 
 Ajoute le chemin d'un personnage `.blend` après le dossier de sortie pour vérifier ses clips, les poses des os et leur durée, ainsi que les takes FBX. Le fichier source reste intact. Réinstalle `blendup.zip` après une mise à jour de l'add-on pour bénéficier du correctif d'export des animations.
+
+Pour tester l’installation et l’activation du ZIP avec un vrai Blender, dans un profil temporaire isolé :
+
+```text
+python apps/blender-addon/tests/blender_install_smoke.py --blender "C:/Program Files (x86)/Steam/steamapps/common/Blender/blender.exe"
+```
 
 ## Bibliothèque du projet (0.6.0)
 

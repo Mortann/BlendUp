@@ -264,15 +264,20 @@ def register_properties():
     wm.blendup_library_index = IntProperty(default=0)
     wm.blendup_library_search = StringProperty()
     wm.blendup_library_link = BoolProperty(default=True)
-    bpy.app.handlers.load_post.append(library_after_load)
-    library_after_load()
+    if library_after_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(library_after_load)
+    # Blender restricts bpy.data during add-on activation. Read the open file
+    # only after register() has finished and normal data access is restored.
+    if not bpy.app.timers.is_registered(library_after_load):
+        bpy.app.timers.register(library_after_load, first_interval=0.1)
 
 
 def unregister_properties():
     if library_after_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(library_after_load)
-    if bpy.app.timers.is_registered(library_ready):
-        bpy.app.timers.unregister(library_ready)
+    for callback in (library_after_load, library_ready):
+        if bpy.app.timers.is_registered(callback):
+            bpy.app.timers.unregister(callback)
     for name in ("blendup_library_items", "blendup_library_index", "blendup_library_search", "blendup_library_link"):
         if hasattr(bpy.types.WindowManager, name):
             delattr(bpy.types.WindowManager, name)

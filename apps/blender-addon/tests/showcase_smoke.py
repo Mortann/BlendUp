@@ -31,6 +31,24 @@ for relative, location, scale in [("Art/Props/Small/Small.blend", (7, -3, 5), (1
     bpy.ops.export_scene.gltf(filepath=str(output), export_format="GLB")
 
 from blendup.core.library import source_assets
+from blendup.core.project import locate_asset
+import shutil
+small = root / "Art/Props/Small/Small.blend"
+bpy.ops.wm.open_mainfile(filepath=str(small))
+bpy.context.scene.objects["Cube"].scale.x *= 3
+variant = small.with_name("Small.variant.wide.blend")
+bpy.ops.wm.save_as_mainfile(filepath=str(variant))
+variant_output = root / "Godot/Assets/Props/Small/variants/wide.glb"
+variant_output.parent.mkdir(parents=True, exist_ok=True)
+bpy.ops.export_scene.gltf(filepath=str(variant_output), export_format="GLB")
+unexported = small.with_name("Small.variant.not_exported.blend")
+shutil.copyfile(variant, unexported)
+identity = locate_asset(small).asset_id
+metadata = root / ".blendup/assets" / (identity + ".json")
+metadata.parent.mkdir(exist_ok=True)
+metadata.write_text(json.dumps({"id": identity, "sourcePath": small.relative_to(root).as_posix(), "variants": [
+    {"id": "variant-wide", "name": "Large", "sourcePath": variant.relative_to(root).as_posix(), "notes": ""},
+    {"id": "variant-not-exported", "name": "À exporter", "sourcePath": unexported.relative_to(root).as_posix(), "notes": ""}]}), encoding="utf-8")
 from blendup.scripts.build_library import build_catalog, build_showcase
 manifest = source_assets(root)
 assert len(manifest["assets"]) == 2

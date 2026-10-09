@@ -8,17 +8,57 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  BLENDUP_RELEASE_TAG: ${{ github.ref_name }}
+
 jobs:
+  prepare:
+    name: Préparer le brouillon
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Vérifier le tag et les versions
+        run: python scripts/package_release.py --check --tag "$BLENDUP_RELEASE_TAG"
+      - name: Créer ou reprendre le brouillon
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="docs/releases/$BLENDUP_RELEASE_TAG.md"
+          test -f "$notes"
+          if gh release view "$BLENDUP_RELEASE_TAG" --json id,isDraft > release.json; then
+            python -c 'import json; r=json.load(open("release.json")); assert r["isDraft"], "Cette release est déjà publiée : utiliser un nouveau tag."'
+          else
+            gh release create "$BLENDUP_RELEASE_TAG" --verify-tag --draft --title "BlendUp $BLENDUP_RELEASE_TAG" --notes-file "$notes"
+          fi
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$BLENDUP_RELEASE_TAG\" and .draft) | .id")
+          test -n "$release_id"
+          echo "id=$release_id" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.platform }}
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: windows-latest
             args: --bundles nsis
+            checksum_suffix: windows
           - platform: ubuntu-22.04
             args: --bundles deb,appimage
+            checksum_suffix: linux
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -35,6 +75,11 @@ jobs:
       - name: Installer Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Installer Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
@@ -44,10 +89,27 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils
 
       - name: Installer les dépendances du projet
         run: npm ci
+
+      - name: Vérifier la version et reconstruire les extensions
+        shell: bash
+        run: |
+          python scripts/package_release.py --check --tag "$BLENDUP_RELEASE_TAG"
+          python scripts/package_release.py --addons-only
+
+      - name: Charger les notes de version
+        id: notes
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          tag = os.environ['BLENDUP_RELEASE_TAG']
+          notes = Path(f'docs/releases/{tag}.md').read_text(encoding='utf-8')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'body<<BLENDUP_RELEASE_NOTES\n{notes}\nBLENDUP_RELEASE_NOTES\n')
 
       - name: Vérifier le projet
         run: npm test
@@ -60,16 +122,35 @@ jobs:
         with:
           projectPath: apps/desktop
           tauriScript: npm run tauri
+          releaseId: ${{ needs.prepare.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: BlendUp ${{ github.ref_name }}
-          releaseBody: Télécharge l'installateur correspondant à ton système. L'add-on Blender se trouve dans les fichiers de la release.
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
-          generateReleaseNotes: true
+          generateReleaseNotes: false
           args: ${{ matrix.args }}
 
-      - name: Joindre l'add-on Blender
+      - name: Préparer les archives et empreintes
+        shell: bash
+        run: python scripts/package_release.py --tag "$BLENDUP_RELEASE_TAG"
+
+      - name: Conserver les fichiers dans Actions
+        uses: actions/upload-artifact@v7
+        with:
+          name: BlendUp-${{ github.ref_name }}-${{ matrix.checksum_suffix }}
+          path: release/${{ github.ref_name }}/
+          if-no-files-found: error
+
+      - name: Joindre les extensions Blender et Godot
         if: matrix.platform == 'windows-latest'
-        run: gh release upload "${{ github.ref_name }}" "apps/blender-addon/blendup.zip" --clobber
+        shell: bash
+        run: gh release upload "$BLENDUP_RELEASE_TAG" "release/$BLENDUP_RELEASE_TAG/blendup.zip" "release/$BLENDUP_RELEASE_TAG/blendup-godot.zip" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Joindre les empreintes de cette plateforme
+        shell: bash
+        run: gh release upload "$BLENDUP_RELEASE_TAG" "release/$BLENDUP_RELEASE_TAG/SHA256SUMS-${{ matrix.checksum_suffix }}.txt" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

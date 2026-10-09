@@ -365,6 +365,10 @@ h1, h2, p { margin-top: 0; }
 .asset-detail-footer button { min-height: 36px; font-size: 0.74rem; }
 .asset-overview-hero { position: relative; }
 .asset-overview-hero > button { position: absolute; right: 8px; bottom: 8px; background: rgba(20, 26, 23, 0.88); }
+.preview-variant-choice { position: absolute; right: 10px; bottom: 10px; left: 10px; display: flex; align-items: center; gap: 8px; width: fit-content; max-width: calc(100% - 20px); margin-left: auto; padding: 7px 10px; border: 1px solid #67766f; border-radius: 9px; background: rgba(20, 26, 23, 0.94); color: #f3f6f4; font-size: 0.75rem; }
+.preview-variant-choice select { min-width: 0; max-width: 230px; width: auto; padding: 4px 7px; border: 1px solid #65716c; border-radius: 5px; background: #25302a; color: #fff; font-size: 0.78rem; }
+.preview-variant-choice svg { flex-shrink: 0; }
+.asset-version-card footer { flex-wrap: wrap; }
 .asset-viewer-wrap { position: relative; min-height: 245px; overflow: hidden; border: 1px solid #2c3833; border-radius: 10px; background: #121715; }
 .asset-viewer { position: absolute; inset: 0; }
 .asset-viewer canvas { display: block; }
@@ -766,6 +770,8 @@ h1, h2, p { margin-top: 0; }
 .uv-score-badge, .asset-card-main .uv-score-badge, .asset-version-card > header .uv-score-badge { display: inline-flex; width: fit-content; align-items: center; gap: 4px; flex: 0 0 auto; border-radius: 6px; padding: 3px 6px; color: #287347; background: #e3f3e9; font-size: 0.65rem; line-height: 1.4; }
 .uv-score-badge.blocked, .asset-card-main .uv-score-badge.blocked, .asset-version-card > header .uv-score-badge.blocked { color: #a3353b; background: #ffe4e5; }
 .uv-score-badge.stale, .asset-card-main .uv-score-badge.stale, .asset-version-card > header .uv-score-badge.stale { color: #856414; background: #fff1cd; }
+.uv-score-badge.ignored, .asset-card-main .uv-score-badge.ignored, .asset-version-card > header .uv-score-badge.ignored { color: #58636c; background: #eaf0f3; }
+.uv-ignore-option { font-size: 0.72rem; align-items: flex-start; }
 .uv-quality-panel { display: grid; gap: 10px; border: 1px solid #e4e7e9; border-radius: 12px; padding: 12px; color: #35403a; background: #fafbfc; }
 .uv-quality-panel > header, .uv-quality-panel > header > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .uv-quality-panel > header strong { font-size: 0.8rem; }

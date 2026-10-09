@@ -9,8 +9,10 @@ import time
 import bpy
 
 try:
+    from .core.asset_policy import uv_validation_ignored
     from .core.uv_quality import ALGORITHM_VERSION, UvPolicy, UvTriangle, measure_uv_quality, passes_uv_gate, uv_gate_message
 except ImportError:  # Also embedded as standalone modules by the desktop application.
+    from blendup_asset_policy import uv_validation_ignored
     from blendup_uv_quality import ALGORITHM_VERSION, UvPolicy, UvTriangle, measure_uv_quality, passes_uv_gate, uv_gate_message
 
 

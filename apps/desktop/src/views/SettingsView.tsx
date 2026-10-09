@@ -131,12 +131,12 @@ export function SettingsView({
       <section className="settings-section content-panel">
         <div className="section-heading"><ExternalLink size={20} /><div><h2>Bibliothèque dans les éditeurs</h2><p>Retrouve les assets du projet associé dans Blender et Godot, puis glisse-les dans ta scène.</p></div></div>
         <div className="editor-integrations">
-          <div><h3>Blender</h3><p>Installe l’add-on BlendUp 0.6.0, puis ouvre un asset ou un Showcase. Dans la barre latérale BlendUp, la bibliothèque permet de placer un asset au curseur 3D ou d’ouvrir le navigateur avec glisser-déposer. Les instances sont liées par défaut.</p>
+          <div><h3>Blender</h3><p>Installe l’add-on BlendUp 0.6.3, puis ouvre un asset ou un Showcase. Dans la barre latérale BlendUp, la bibliothèque permet de placer un asset au curseur 3D ou d’ouvrir le navigateur avec glisser-déposer. Les instances sont liées par défaut. Les sauvegardes publient aussi l’état des variantes pour le panneau Godot.</p>
             <button disabled={integrationBusy || project.integrations?.libraryStatus === "generating"} onClick={() => void onSetupIntegration("blender")} type="button"><RefreshCw size={16} />{project.integrations?.libraryStatus === "generating" ? "Synchronisation…" : "Synchroniser la bibliothèque Blender"}</button>
             {project.integrations?.blender ? <p>{project.integrations.libraryCount} assets prêts · synchronisation automatique lorsque BlendUp est ouvert.</p> : null}
             {project.integrations?.libraryErrors.map((error, i) => <p className="field-error" key={i}>{error.name} : {error.error}</p>)}
           </div>
-          {project.project.engine === "godot" ? <div><h3>Godot 4</h3><p>Le panneau comprend recherche, filtres par dossier, aperçus et glisser-déposer dans la vue 3D. Seuls les exports à jour sont utilisables. La scène reste liée à son export.</p>
+          {project.project.engine === "godot" ? <div><h3>Godot 4</h3><p>Le panneau comprend recherche, filtres par dossier, aperçus et choix de variante avant le glisser-déposer. Après placement, change la variante dans l’inspecteur en conservant les transformations. Chaque instance a son propre choix ; seuls les exports à jour sont utilisables.</p>
             <button disabled={integrationBusy} onClick={() => void onSetupIntegration("godot")} type="button"><ExternalLink size={16} />{project.integrations?.godot ? "Mettre à jour le panneau Godot" : "Installer et activer le panneau Godot"}</button>
             <p>Si Godot est déjà ouvert, rouvre le projet après l’installation.</p>
           </div> : null}

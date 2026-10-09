@@ -41,6 +41,7 @@ import {
   selectProjectDirectory,
   setAssetThumbnail,
   updateAssetMetadata,
+  setAssetUvIgnored,
   updateProjectEngine
 } from "../blendup/projectLoader";
 import type {
@@ -80,6 +81,8 @@ export function useBlendUpController() {
   const [checkingUvAssetIds, setCheckingUvAssetIds] = useState<string[]>([]);
   const [exportingAssetIds, setExportingAssetIds] = useState<string[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [revealAssetRequest, setRevealAssetRequest] = useState<{ assetId: string; serial: number } | null>(null);
+  const updatingUvExclusions = useRef(new Set<string>());
   const activeProjectRoot = project?.projectRoot ?? null;
   const currentProjectRoot = useRef(activeProjectRoot);
   currentProjectRoot.current = activeProjectRoot;
@@ -328,7 +331,7 @@ export function useBlendUpController() {
       });
       return result.success;
     } catch (error) {
-      showError("Export de la version impossible", error);
+      showError(project.project.engine === "none" ? "Aperçu de la version impossible" : "Export de la version impossible", error);
       return false;
     } finally {
       setExportingAssetIds((current) => current.filter((id) => id !== assetId));
@@ -489,13 +492,14 @@ export function useBlendUpController() {
   const checkAllUvs = async () => {
     if (!project || checkingUvAssetIds.length || exportingAssetIds.length) return;
     let checked = 0;
-    for (const asset of project.assets) {
+    const assets = project.assets.filter((asset) => !asset.metadata.ignoreUvValidation);
+    for (const asset of assets) {
       if (currentProjectRoot.current !== project.projectRoot) return;
       if (await checkUvAsset(asset.id, true)) checked++;
     }
     if (currentProjectRoot.current !== project.projectRoot) return;
     await refreshProject();
-    setOperationMessage({ title: "Contrôle UV terminé", detail: `${checked}/${project.assets.length} asset(s) vérifiés. Les scores insuffisants sont signalés dans Problèmes.`, tone: checked === project.assets.length ? "success" : "error" });
+    setOperationMessage({ title: "Contrôle UV terminé", detail: `${checked}/${assets.length} asset(s) vérifiés, ${project.assets.length - assets.length} ignoré(s). Les scores insuffisants sont signalés dans Problèmes.`, tone: checked === assets.length ? "success" : "error" });
   };
 
   const saveLocalSettings = async () => {
@@ -617,6 +621,14 @@ export function useBlendUpController() {
       updateAssetMetadata({ assetId, lods, notes, projectRoot: root, tags, variants })
     );
 
+  const handleSetAssetUvIgnored = async (assetId: string, ignored: boolean) => {
+    if (updatingUvExclusions.current.has(assetId) || checkingUvAssetIds.includes(assetId) || exportingAssetIds.includes(assetId)) return null;
+    updatingUvExclusions.current.add(assetId);
+    try {
+      return await runAssetMutation("Modification du contrôle UV impossible", (root) => setAssetUvIgnored(root, assetId, ignored));
+    } finally { updatingUvExclusions.current.delete(assetId); }
+  };
+
   const handleSetAssetThumbnail = async (assetId: string) => {
     const images = await selectImageFiles();
     if (images[0]) {
@@ -652,6 +664,8 @@ export function useBlendUpController() {
   };
 
   const revealAsset = (assetId: string) => {
+    if (!project?.assets.some((asset) => asset.id === assetId)) return;
+    setRevealAssetRequest((current) => ({ assetId, serial: (current?.serial ?? 0) + 1 }));
     setSelectedAssetId(assetId);
     setActiveView("assets");
   };
@@ -695,6 +709,9 @@ export function useBlendUpController() {
     handleRenameFolder,
     handleSetAssetThumbnail,
     handleUpdateAssetMetadata,
+    handleSetAssetUvIgnored,
+    revealAssetRequest,
+    consumeAssetReveal: () => setRevealAssetRequest(null),
     isBooting,
     isCreatingProject,
     isDetectingBlender,

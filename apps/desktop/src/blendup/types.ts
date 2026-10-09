@@ -34,6 +34,7 @@ export interface UvObjectMetrics {
 }
 
 export interface UvQualitySummary {
+  ignored?: boolean;
   score: number;
   complete: boolean;
   stale: boolean;
@@ -74,6 +75,7 @@ export interface AssetLod {
 }
 
 export interface AssetMetadata {
+  ignoreUvValidation?: boolean;
   notes: string;
   tags: string[];
   thumbnailPath?: string;

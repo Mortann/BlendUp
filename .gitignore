@@ -1,5 +1,6 @@
 # Dependencies
 .dev-tools/
+release/
 node_modules/
 **/node_modules/
 
@@ -32,6 +33,7 @@ desktop.ini
 .idea/
 *.af~lock~
 BlendUpTest/
+BlendUp_projet_Test/
 
 # BlendUp generated local caches
 **/.blendup/cache/

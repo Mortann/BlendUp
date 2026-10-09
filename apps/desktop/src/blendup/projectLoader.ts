@@ -334,6 +334,16 @@ export async function updateAssetMetadata(options: {
   return invoke<AssetMutationResult>("update_asset_metadata", options);
 }
 
+export async function setAssetUvIgnored(projectRoot: string, assetId: string, ignored: boolean): Promise<AssetMutationResult> {
+  if (isBrowserDemo(projectRoot)) {
+    const asset = activeDemoSnapshot.assets.find((item) => item.id === assetId);
+    if (!asset) throw new Error("Asset introuvable.");
+    asset.metadata.ignoreUvValidation = ignored;
+    return { assetId, message: ignored ? "Asset ignoré pour la vérification UV." : "Vérification UV réactivée." };
+  }
+  return invoke<AssetMutationResult>("set_asset_uv_ignored", { projectRoot, assetId, ignored });
+}
+
 export async function setAssetThumbnail(
   projectRoot: string,
   assetId: string,

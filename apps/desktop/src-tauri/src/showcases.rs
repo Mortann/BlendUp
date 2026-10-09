@@ -4,7 +4,7 @@ use std::sync::{Mutex, OnceLock};
 
 const BUILD_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/build_library.py");
 const LAYOUT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/showcase.py");
-const PLUGIN_FILES: [(&str, &str); 4] = [
+const PLUGIN_FILES: [(&str, &str); 9] = [
     (
         "plugin.cfg",
         include_str!("../../../godot-addon/addons/blendup/plugin.cfg"),
@@ -20,6 +20,26 @@ const PLUGIN_FILES: [(&str, &str); 4] = [
     (
         "drag_list.gd",
         include_str!("../../../godot-addon/addons/blendup/drag_list.gd"),
+    ),
+    (
+        "asset_definition.gd",
+        include_str!("../../../godot-addon/addons/blendup/asset_definition.gd"),
+    ),
+    (
+        "asset_instance.gd",
+        include_str!("../../../godot-addon/addons/blendup/asset_instance.gd"),
+    ),
+    (
+        "instance_catalog.gd",
+        include_str!("../../../godot-addon/addons/blendup/instance_catalog.gd"),
+    ),
+    (
+        "variant_inspector.gd",
+        include_str!("../../../godot-addon/addons/blendup/variant_inspector.gd"),
+    ),
+    (
+        "variant_property.gd",
+        include_str!("../../../godot-addon/addons/blendup/variant_property.gd"),
     ),
 ];
 
@@ -160,14 +180,75 @@ fn browser_folder(asset: &BlendUpAsset) -> String {
     }
 }
 fn entries(root: &Path, project: &ProjectConfig, assets: &[BlendUpAsset]) -> Vec<Value> {
-    assets.iter().map(|a| {
-        let ready = project.engine == "godot" && a.status == "exported" && root.join(&a.output_path).is_file();
-        let resource = if ready { a.output_path.strip_prefix(&(project.paths.engine_root.clone() + "/")).map(|p| format!("res://{p}")) } else { None };
-        serde_json::json!({"id": a.id, "name": a.name, "folder": browser_folder(a), "sourcePath": a.source_path,
-            "outputPath": a.output_path, "status": a.status, "godotReady": ready, "resourcePath": resource,
-            "tags": a.metadata.tags, "sourceSignature": stamp(&root.join(&a.source_path)),
-            "outputSignature": stamp(&root.join(&a.output_path))})
-    }).collect()
+    fn version(
+        root: &Path,
+        project: &ProjectConfig,
+        id: &str,
+        name: &str,
+        source: &str,
+        output: &str,
+        status: &str,
+        quality: Option<&UvQualitySummary>,
+        ignored: bool,
+    ) -> Value {
+        let blocked = project.blender.validate_uvs
+            && !ignored
+            && !quality.is_some_and(|q| !q.stale && !q.blocked);
+        let status = if project.engine != "none" && blocked {
+            "error"
+        } else {
+            status
+        };
+        let ready =
+            project.engine == "godot" && status == "exported" && root.join(output).is_file();
+        let resource = if ready {
+            output
+                .strip_prefix(&(project.paths.engine_root.clone() + "/"))
+                .map(|p| format!("res://{p}"))
+        } else {
+            None
+        };
+        serde_json::json!({"id":id,"name":name,"sourcePath":source,"outputPath":output,"status":status,"godotReady":ready,"resourcePath":resource,
+            "sourceSignature":stamp(&root.join(source)),"outputSignature":stamp(&root.join(output))})
+    }
+    assets
+        .iter()
+        .map(|a| {
+            let ignored = a.metadata.ignore_uv_validation;
+            let mut entry = version(
+                root,
+                project,
+                &a.id,
+                &a.name,
+                &a.source_path,
+                &a.output_path,
+                &a.status,
+                a.uv_quality.as_ref(),
+                ignored,
+            );
+            entry["folder"] = serde_json::json!(browser_folder(a));
+            entry["tags"] = serde_json::json!(a.metadata.tags);
+            entry["variants"] = serde_json::json!(a
+                .metadata
+                .variants
+                .iter()
+                .map(|v| {
+                    version(
+                        root,
+                        project,
+                        &v.id,
+                        &v.name,
+                        v.source_path.as_deref().unwrap_or(""),
+                        v.output_path.as_deref().unwrap_or(""),
+                        &v.status,
+                        v.uv_quality.as_ref(),
+                        ignored,
+                    )
+                })
+                .collect::<Vec<_>>());
+            entry
+        })
+        .collect()
 }
 fn write_changed(path: &Path, value: &Value) -> Result<(), String> {
     if read_value(path).as_ref() != Some(value) {
@@ -279,7 +360,7 @@ pub fn snapshot(
     assets: &[BlendUpAsset],
 ) -> (Vec<ShowcaseView>, Integrations) {
     let all = entries(root, project, assets);
-    let index = serde_json::json!({"schemaVersion":1, "projectId":project.project_id, "name":project.name, "artRoot":project.paths.art_root, "assets":all});
+    let index = serde_json::json!({"schemaVersion":2, "projectId":project.project_id, "name":project.name, "artRoot":project.paths.art_root, "assets":all});
     let _ = write_changed(&root.join(".blendup/library/index.json"), &index);
     let blender = read_user_settings().unwrap_or_default().blender_path;
     let mut views = Vec::new();
@@ -695,6 +776,57 @@ fn write_godot_scene(path: &Path, manifest: &Value, layout: &Value) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn library_index_publishes_variants_with_independent_readiness_and_uv_exemption() {
+        let root = super::super::tests::test_root("library_variants");
+        let project_root = root.to_string_lossy().to_string();
+        create_project(CreateProjectOptions {
+            project_root: project_root.clone(),
+            project_name: "Variants".into(),
+            engine: "godot".into(),
+        })
+        .unwrap();
+        fs::create_dir_all(root.join("Art/Table")).unwrap();
+        fs::write(root.join("Art/Table/Table.blend"), b"source").unwrap();
+        let project = read_project_config(&root).unwrap();
+        let asset = scan_assets(&root, &project, &ExportState::default())
+            .unwrap()
+            .remove(0);
+        create_asset_variant(project_root.clone(), asset.id.clone(), "Rouge".into()).unwrap();
+        create_asset_variant(
+            project_root.clone(),
+            asset.id.clone(),
+            "Pas exportée".into(),
+        )
+        .unwrap();
+        let assets = scan_assets(&root, &project, &ExportState::default()).unwrap();
+        let variant = &assets[0].metadata.variants[0];
+        for path in [&asset.output_path, variant.output_path.as_ref().unwrap()] {
+            fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+            fs::write(root.join(path), b"glb").unwrap();
+        }
+        let assets = scan_assets(&root, &project, &ExportState::default()).unwrap();
+        let index = entries(&root, &project, &assets).remove(0);
+        assert_eq!(index["variants"][0]["id"], variant.id);
+        assert_eq!(index["variants"][0]["name"], "Rouge");
+        assert_eq!(index["variants"][0]["godotReady"], true);
+        assert_ne!(index["resourcePath"], index["variants"][0]["resourcePath"]);
+        assert_eq!(index["variants"][1]["godotReady"], false);
+        let mut settings = project.blender.clone();
+        settings.validate_uvs = true;
+        let project = update_project_blender_settings(project_root.clone(), settings).unwrap();
+        let assets = scan_assets(&root, &project, &ExportState::default()).unwrap();
+        let index = entries(&root, &project, &assets).remove(0);
+        assert_eq!(index["godotReady"], false);
+        assert_eq!(index["variants"][0]["godotReady"], false);
+        set_asset_uv_ignored(project_root, asset.id, true).unwrap();
+        let assets = scan_assets(&root, &project, &ExportState::default()).unwrap();
+        let index = entries(&root, &project, &assets).remove(0);
+        assert_eq!(index["godotReady"], true);
+        assert_eq!(index["variants"][0]["godotReady"], true);
+        assert_eq!(index["variants"][1]["godotReady"], false);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn showcase_selection_is_recursive_without_including_sibling_prefixes() {
@@ -872,6 +1004,24 @@ mod tests {
             assert!(
                 output.status.success()
                     && log.contains("BLENDUP_GODOT_SMOKE_OK")
+                    && !log.contains("SCRIPT ERROR"),
+                "{log}"
+            );
+            fs::copy(
+                repo.join("apps/godot-addon/tests/variants_smoke.gd"),
+                root.join("Godot/variants_smoke.gd"),
+            )
+            .unwrap();
+            let output = Command::new(&godot)
+                .args(["--headless", "--path"])
+                .arg(root.join("Godot"))
+                .args(["--quit-after", "600", "--script", "res://variants_smoke.gd"])
+                .output()
+                .unwrap();
+            let log = command_log(&output.stdout, &output.stderr);
+            assert!(
+                output.status.success()
+                    && log.contains("BLENDUP_GODOT_VARIANTS_SMOKE_OK")
                     && !log.contains("SCRIPT ERROR"),
                 "{log}"
             );

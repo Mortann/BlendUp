@@ -39,7 +39,7 @@ export function AssetViewer({ asset, projectRoot }: { asset: BlendUpAsset; proje
     setSpeed(1);
     setLoop(true);
     setShowSkeleton(false);
-    if (!element || asset.status === "ready" || asset.status === "error") {
+    if (!element || !asset.outputPath || asset.status === "ready" || asset.status === "error") {
       setState("missing");
       return;
     }
