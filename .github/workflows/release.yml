@@ -42,7 +42,13 @@ jobs:
           else
             gh release create "$BLENDUP_RELEASE_TAG" --verify-tag --draft --title "BlendUp $BLENDUP_RELEASE_TAG" --notes-file "$notes"
           fi
-          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$BLENDUP_RELEASE_TAG\" and .draft) | .id")
+          # GitHub may briefly omit a newly created draft from the release list.
+          release_id=""
+          for attempt in {1..10}; do
+            release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$BLENDUP_RELEASE_TAG\" and .draft) | .id")
+            if test -n "$release_id"; then break; fi
+            sleep 2
+          done
           test -n "$release_id"
           echo "id=$release_id" >> "$GITHUB_OUTPUT"
 

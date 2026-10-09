@@ -51,7 +51,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-6. Dans l'onglet **Actions**, attendre la réussite des deux plateformes.
+6. Dans l'onglet **Actions**, attendre la réussite des deux plateformes. Si un problème temporaire interrompt le workflow, utiliser **Re-run failed jobs** : le brouillon existant est repris. Ne pas publier tant qu'une plateforme échoue.
 7. Ouvrir **Releases**, télécharger l'installateur Windows, le paquet Linux `.deb` et l'AppImage, puis les tester.
 8. Vérifier les extensions `blendup.zip` et `blendup-godot.zip` et les fichiers `SHA256SUMS-windows.txt` / `SHA256SUMS-linux.txt` joints à la release.
 9. Compléter les notes et publier le brouillon.
