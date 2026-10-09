@@ -110,7 +110,7 @@ export function AssetDetail({
 
       <nav className="detail-tabs" aria-label="Sections de l'asset">
         {([
-          ["overview", "Informations"], ["preview", "Aperçu"], ["variants", `Variantes ${variants.length + 1}`],
+          ["overview", "Informations"], ["preview", "3D / Animations"], ["variants", `Variantes ${variants.length + 1}`],
           ["lods", `LOD ${lods.length || ""}`], ["files", "Fichiers"]
         ] as Array<[DetailTab, string]>).map(([id, label]) => (
           <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)} type="button">{label}</button>

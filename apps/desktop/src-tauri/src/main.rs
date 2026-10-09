@@ -19,6 +19,7 @@ mod project_paths;
 mod showcases;
 
 const EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/export_asset.py");
+const BLENDER_EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/blender_export.py");
 const UV_QUALITY_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/uv_quality.py");
 const UV_BLENDER_SCRIPT: &str = include_str!("../../../blender-addon/blendup/blender_uv.py");
 const UV_CHECK_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/check_uvs.py");
@@ -1030,6 +1031,7 @@ fn prepare_uv_runtime(root: &Path, name: &str, script: &str) -> Result<PathBuf, 
     for (name, content) in [
         ("blendup_uv_quality.py", UV_QUALITY_SCRIPT),
         ("blendup_blender_uv.py", UV_BLENDER_SCRIPT),
+        ("blendup_blender_export.py", BLENDER_EXPORT_SCRIPT),
         (name, script),
     ] {
         fs::write(directory.join(name), content)

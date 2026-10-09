@@ -12,6 +12,7 @@ from ..core.export_state import record_export
 from ..core.project import AssetLocation, locate_asset
 from ..prefs import preferences
 from ..blender_uv import check_and_record, project_policy, passes_uv_gate, uv_gate_message
+from ..blender_export import export_scene
 
 
 def current_asset() -> AssetLocation:
@@ -36,27 +37,8 @@ def export_current(context=None, uv_report=None) -> AssetLocation:
             report = uv_report if uv_report is not None else check_and_record(asset.project.root, asset.source, context)
             if not passes_uv_gate(report, policy):
                 raise ValueError(uv_gate_message(report, policy))
-        asset.output.parent.mkdir(parents=True, exist_ok=True)
-        if asset.export_format == "glb":
-            bpy.ops.export_scene.gltf(
-                filepath=str(asset.output),
-                export_format="GLB",
-                use_selection=selected_only,
-                export_apply=apply_modifiers,
-                export_animations=export_animations,
-            )
-        else:
-            bpy.ops.export_scene.fbx(
-                filepath=str(asset.output),
-                use_selection=selected_only,
-                apply_unit_scale=True,
-                bake_space_transform=False,
-                object_types={"EMPTY", "MESH", "ARMATURE"},
-                add_leaf_bones=False,
-                use_mesh_modifiers=apply_modifiers,
-                bake_anim=export_animations,
-                mesh_smooth_type="FACE",
-            )
+        export_scene(asset.output, asset.export_format, context, selected_only,
+                     apply_modifiers, export_animations)
         record_export(asset, True, "Export terminé.")
         return asset
     except Exception as error:

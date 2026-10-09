@@ -125,12 +125,20 @@ Ces scènes sont générées : fais-en une copie si tu veux modifier durablement
 
 Dans **Paramètres → Bibliothèque dans les éditeurs** :
 
-1. Réinstalle `apps/blender-addon/blendup.zip` (version **0.6.0**) et redémarre Blender. Clique **Synchroniser la bibliothèque Blender**, ou utilise le bouton **Synchroniser** du panneau Blender.
+1. Réinstalle `apps/blender-addon/blendup.zip` (version **0.6.1**) et redémarre Blender. Clique **Synchroniser la bibliothèque Blender**, ou utilise le bouton **Synchroniser** du panneau Blender.
 2. Dans Blender, ouvre un asset ou un Showcase et va dans `N → BlendUp → Bibliothèque du projet`. La liste permet une recherche et un placement au curseur. Le navigateur natif fournit le glisser-déposer. L’import lié est proposé par défaut ; la liste peut aussi importer une copie.
 3. Pour un projet Godot, clique **Installer et activer le panneau Godot** puis rouvre Godot. Le dock **BlendUp** présente les assets du projet associé, leurs aperçus, la recherche et un filtre par dossier. Glisse un asset dans la vue 3D ou utilise **Placer** / le double-clic. Le placement est annulable et reste lié au GLB.
 
 Le panneau Godot n’utilise pas les exports bloqués ou modifiés. Il relit l’index et les imports automatiquement. Les sauvegardes via l’add-on Blender actualisent cet index même quand BlendUp est fermé. Les instances liées suivent les mécanismes habituels de rechargement des bibliothèques Blender et des scènes Godot.
 
 Le plugin est installé sous `<projet moteur>/addons/blendup`. Les autres plugins activés sont conservés. Les fichiers de plugin remplacés sont sauvegardés en `.backup`. Les sources du plugin se trouvent dans `apps/godot-addon/addons/blendup` pour une installation manuelle.
+
+## Animations des personnages
+
+Après un export, sélectionne le personnage et ouvre **3D / Animations**. Choisis un clip pour afficher sa première pose, puis utilise lecture/pause, la barre de temps, la vitesse et la boucle. **Pose de repos** revient au modèle non animé ; **Squelette** affiche les os. Les durées sont en secondes. L'aperçu lit les animations du GLB ou du FBX exporté ; réexporte après une modification dans Blender. Les projets sans moteur utilisent leur aperçu GLB local.
+
+L'application et l'add-on 0.6.1 utilisent le même pipeline. Chaque action du rig devient un clip séparé, y compris les actions conservées sans action active et celles d'une piste NLA contenant plusieurs bandes. Les plages propres aux actions et la cadence Blender sont conservées ; chaque clip commence à zéro seconde. Les réglages Rigify non animés restent à leur valeur enregistrée. Les contrôles visuels et le métarig inutilisé sont exclus ; les poses de bibliothèque marquées comme assets sur une seule image sont ignorées.
+
+Avec Rigify, les os de déformation sont échantillonnés à chaque image et leur hiérarchie d'export est aplatie pour éviter les déformations liées à l'héritage d'échelle. Les B-Bones courbes ne sont pas représentés comme des segments supplémentaires dans les formats moteur : vérifie les zones fortement courbées dans l'aperçu. Pour plusieurs rigs aux mêmes noms d'os, associe les actions au rig voulu dans Blender ; les actions sans association ambiguë sont signalées dans le journal. Le fichier source, les pistes NLA, les réglages et la sélection sont restaurés après l'export. Un export échoué conserve le fichier moteur précédent.
 
 Les réglages Showcases et intégrations sont dans `.blendup/showcases.json` et `.blendup/integrations.json`. L’index, la bibliothèque Blender et les scènes Blender générées sont des caches ignorés par Git ; les scènes Godot et son plugin peuvent être versionnés. Le chemin local de l’exécutable Godot est mémorisé dans `.blendup/local-tools.json` (également ignoré).

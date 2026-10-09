@@ -19,10 +19,12 @@ Référence : [prérequis officiels Tauri](https://v2.tauri.app/start/prerequisi
 Ouvre PowerShell à la racine du dépôt :
 
 ```powershell
-npm install
-npm test
-npm run tauri:build
+npm.cmd install
+npm.cmd test
+npm.cmd run tauri:build
 ```
+
+Sous PowerShell, `npm.cmd` évite le blocage de `npm.ps1` lorsque l'exécution des scripts est désactivée. Après l'installation de Rust et des outils C++, ouvre un nouveau terminal pour prendre en compte leur ajout au `PATH`.
 
 Les installateurs sont générés dans :
 
@@ -70,9 +72,19 @@ chmod +x BlendUp_*.AppImage
 
 ## Développement sans installateur
 
+Sous Windows (PowerShell) :
+
+```powershell
+npm.cmd run tauri:dev
+```
+
+Sous Linux :
+
 ```text
 npm run tauri:dev
 ```
+
+Cette commande lance l'application de bureau complète. `npm run dev` lance uniquement l'interface dans le navigateur ; les opérations sur les projets et les fichiers nécessitent Tauri.
 
 ## Add-on Blender
 
