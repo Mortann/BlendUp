@@ -4,12 +4,13 @@ Add-on léger pour relier un fichier `.blend` placé dans `Art` à son projet Bl
 
 ## Fonctions
 
-L'add-on 0.6.3 ouvre les assets dans la session Blender active, prépare les dossiers
+L'add-on 0.6.4 ouvre les assets dans la session Blender active, prépare les dossiers
 `textures`, `references` et `renders`, puis synchronise les exports avec BlendUp.
 
 - détection automatique du projet à partir du fichier Blender ouvert ;
 - prise en charge des projets 3D sans moteur : gestion des dossiers et validation, sans export manuel ou automatique vers un moteur ;
 - export GLB vers Godot ou FBX vers Unity en respectant les sous-dossiers de `Art` ;
+- export des actions du rig en clips séparés, avec échantillonnage des contraintes, cadence et plages propres aux actions ;
 - état `À exporter`, `À réexporter` ou `À jour` directement dans Blender ;
 - validation rapide des maillages (échelle, UV, matériaux, géométrie non-manifold) ;
 - export manuel ou automatique à chaque sauvegarde ;
@@ -37,6 +38,14 @@ Le cœur Python ne dépend pas de Blender et peut être testé avec :
 ```text
 python apps/blender-addon/tests/test_core.py
 ```
+
+Pour vérifier les animations avec le vrai Blender :
+
+```text
+blender --background --factory-startup --python-exit-code 1 --python apps/blender-addon/tests/blender_animation_smoke.py -- apps/blender-addon .dev-tools/animations/smoke
+```
+
+Ajoute le chemin d'un personnage `.blend` après le dossier de sortie pour vérifier ses clips, les poses des os et leur durée, ainsi que les takes FBX. Le fichier source reste intact. Réinstalle `blendup.zip` après une mise à jour de l'add-on pour bénéficier du correctif d'export des animations.
 
 Pour tester l’installation et l’activation du ZIP avec un vrai Blender, dans un profil temporaire isolé :
 

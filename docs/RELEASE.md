@@ -3,8 +3,8 @@
 Le dépôt contient `.github/workflows/release.yml`. À chaque tag `v*`, GitHub Actions :
 
 1. vérifie la concordance du tag et des versions, les types, le cœur Blender et le backend Rust ;
-2. construit BlendUp sur Windows et Ubuntu ;
-3. crée une release GitHub en brouillon ;
+2. crée ou reprend un seul brouillon avant les builds et refuse de modifier une release déjà publiée ;
+3. construit BlendUp sur Windows et Ubuntu ;
 4. joint les installateurs Windows et Linux, les extensions Blender/Godot et les empreintes SHA-256 ;
 5. conserve les archives sources et les fichiers de publication dans les artefacts Actions.
 
