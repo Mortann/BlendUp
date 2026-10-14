@@ -1075,7 +1075,7 @@ fn read_uv_quality(
         .ok()?
         .as_nanos()
         .to_string();
-    let stale = report.algorithm_version != 2
+    let stale = report.algorithm_version != 3
         || report.unsaved_changes
         || report.source_path != source_path
         || report.source_size != metadata.len()
@@ -4475,7 +4475,7 @@ mod tests {
     fn uv_report_fixture(root: &Path, source: &str, score: f64) -> Value {
         let metadata = fs::metadata(root.join(source)).unwrap();
         serde_json::json!({
-            "algorithmVersion": 2, "score": score, "complete": true, "allowUvOverlap": false,
+            "algorithmVersion": 3, "score": score, "complete": true, "allowUvOverlap": false,
             "sourcePath": source, "sourceSize": metadata.len(),
             "sourceModifiedNs": metadata.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_nanos().to_string(),
             "checkedAt": "1", "objects": [], "issues": []
@@ -4539,6 +4539,11 @@ mod tests {
         write_json(&path, &report).unwrap();
         let summary = read_uv_quality(&root, &project, source).unwrap();
         assert!(!summary.stale && summary.blocked);
+        report["algorithmVersion"] = serde_json::json!(2);
+        write_json(&path, &report).unwrap();
+        assert!(read_uv_quality(&root, &project, source).unwrap().stale);
+        report["algorithmVersion"] = serde_json::json!(3);
+        write_json(&path, &report).unwrap();
         project.blender.minimum_uv_score = 50.0;
         assert!(!read_uv_quality(&root, &project, source).unwrap().blocked);
         project.blender.allow_uv_overlap = true;

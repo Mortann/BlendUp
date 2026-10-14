@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-ALGORITHM_VERSION = 2
+ALGORITHM_VERSION = 3
 EPSILON = 1e-12
 MAX_OVERLAP_PAIRS = 2_000_000
 

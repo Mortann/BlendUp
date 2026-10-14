@@ -22,8 +22,10 @@ def export_objects(context, selected_only):
     # Excluded collections remain in scene.objects but cannot be selected/exported.
     # Respect the active View Layer so HIGH meshes and source libraries stay out.
     layer_objects = set(context.view_layer.objects)
+    visible_objects = {obj for obj in layer_objects if obj.visible_get(view_layer=context.view_layer)}
     objects = set(context.selected_objects) if selected_only else layer_objects.copy()
-    objects.intersection_update(layer_objects)
+    # The eye, viewport disable and hidden parent collections all exclude geometry.
+    objects.intersection_update(visible_objects)
     shapes = {bone.custom_shape for obj in layer_objects if obj.type == "ARMATURE"
               for bone in obj.pose.bones if bone.custom_shape}
     objects = {obj for obj in objects if obj not in shapes and obj.type in {"MESH", "ARMATURE", "EMPTY"}}
@@ -36,6 +38,11 @@ def export_objects(context, selected_only):
         names = ", ".join(sorted(rig.name for rig in excluded_rigs))
         raise ValueError(f"Armature(s) requise(s) absente(s) du View Layer '{context.view_layer.name}' : "
                          f"{names}. Active leur collection avant l'export.")
+    hidden_rigs = rigs - visible_objects
+    if hidden_rigs:
+        names = ", ".join(sorted(rig.name for rig in hidden_rigs))
+        raise ValueError(f"Armature(s) requise(s) masquée(s) : {names}. "
+                         "Affiche leur objet et leur collection avant l'export.")
     objects.update(rigs)
     # Rigify's template is an editing aid, not a second game skeleton. Keep other rigs.
     if any(rig.data.get("rig_id") for rig in rigs):

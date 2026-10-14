@@ -114,9 +114,23 @@ def main():
             config["blender"].update(applyTransformsOnSave=False, unwrapOnSave=False)
             (root / "Godot/Assets").mkdir(parents=True)
             save_config()
+            # A hidden high poly with invalid UVs cannot block the visible low poly.
+            bad_hidden = obj.copy()
+            bad_hidden.data = obj.data.copy()
+            bpy.context.scene.collection.objects.link(bad_hidden)
+            bad_hidden.name = "HiddenHighPolyBadUvs"
+            for loop in bad_hidden.data.uv_layers.active.data: loop.uv = (0, 0)
+            bad_hidden.hide_set(True)
+            report = analyze_scene(project_policy(root))
+            assert report["score"] >= 99 and {entry["objectName"] for entry in report["objects"]} == {obj.name}, report
             bpy.ops.wm.save_as_mainfile(filepath=str(source))
             output = root / "Godot/Assets/Plane/Plane.glb"
             assert output.is_file()
+            report = json.loads(report_path(root, source).read_text(encoding="utf-8"))
+            assert report["score"] >= 99, report
+            bad_hidden.hide_set(False)
+            assert analyze_scene(project_policy(root))["score"] == 0
+            bpy.data.objects.remove(bad_hidden, do_unlink=True)
             previous_output = output.read_bytes()
             previous_mtime = output.stat().st_mtime_ns
             for loop in obj.data.uv_layers.active.data: loop.uv = (0, 0)

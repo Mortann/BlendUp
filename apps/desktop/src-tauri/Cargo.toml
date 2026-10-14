@@ -1,6 +1,6 @@
 [package]
 name = "blendup"
-version = "0.2.2"
+version = "0.2.3"
 description = "BlendUp desktop application"
 authors = ["BlendUp"]
 edition = "2021"

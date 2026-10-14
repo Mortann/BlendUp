@@ -45,8 +45,9 @@ def analyze_scene(policy: UvPolicy, context=None) -> dict:
     triangles = []
     seams = {}
     depsgraph = context.evaluated_depsgraph_get()
-    for obj in context.scene.objects:
-        if obj.type != "MESH": continue
+    for obj in context.view_layer.objects:
+        # Only geometry eligible for export can affect its UV gate.
+        if obj.type != "MESH" or not obj.visible_get(view_layer=context.view_layer): continue
         if obj.mode == "EDIT": obj.update_from_editmode()
         evaluated = obj.evaluated_get(depsgraph)
         mesh = evaluated.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)

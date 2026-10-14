@@ -47,6 +47,12 @@ Le clic droit **Ouvrir dans une nouvelle fenêtre** lance directement l'exécuta
 
 Les fichiers `.blend1`, `.blend2`, etc. sont les sauvegardes de Blender. Ils n’apparaissent pas comme assets et ne sont pas recopiés lors d’une duplication. Les sauvegardes déjà présentes sont conservées.
 
+## Exclure un objet de l'export
+
+À partir de la version **0.2.3**, masquer un objet avec l'œil dans l'Outliner suffit pour l'exclure des exports GLB/FBX. Cela s'applique aussi aux collections masquées, à la désactivation dans le viewport et aux collections exclues du View Layer. Le contrôle UV ignore ces meshes.
+
+Enregistre le `.blend` après avoir caché le high poly, puis réexporte pour retirer sa géométrie d'un ancien GLB/FBX. Les exports depuis l'application utilisent la visibilité sauvegardée dans le fichier. Une armature nécessaire à un mesh visible doit rester visible ; BlendUp indique son nom si elle est masquée. L'icône de sélection et la caméra de rendu ne modifient pas ce filtrage.
+
 ## Renommer les dossiers du projet
 
 Dans **Paramètres → Type de projet**, modifie les chemins **Sources**, **Projet moteur** et **Exports**, puis clique sur **Enregistrer les dossiers**. Il s’agit du nom réel des dossiers, relatif au projet BlendUp. Ferme Blender et le moteur avant ce déplacement.
