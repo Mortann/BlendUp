@@ -6,6 +6,67 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(target_os = "windows")]
 static LATEST_OPEN_REQUEST: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(not(target_os = "windows"))]
+pub fn is_running(_process_id: u32) -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+pub fn is_running(process_id: u32) -> bool {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+        },
+    };
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id);
+        if process.is_null() {
+            return false;
+        }
+        let mut name = vec![0u16; 32768];
+        let mut size = name.len() as u32;
+        let found = QueryFullProcessImageNameW(process, 0, name.as_mut_ptr(), &mut size);
+        CloseHandle(process);
+        found != 0
+            && String::from_utf16_lossy(&name[..size as usize])
+                .to_lowercase()
+                .ends_with("\\blender.exe")
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn running_process_id() -> Option<u32> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+pub fn running_process_id() -> Option<u32> {
+    use windows_sys::Win32::{
+        Foundation::{HWND, LPARAM},
+        UI::WindowsAndMessaging::{
+            EnumWindows, GetWindow, GetWindowThreadProcessId, IsWindowVisible, GW_OWNER,
+        },
+    };
+    unsafe extern "system" fn find(window: HWND, parameter: LPARAM) -> i32 {
+        if IsWindowVisible(window) == 0 || !GetWindow(window, GW_OWNER).is_null() {
+            return 1;
+        }
+        let mut pid = 0;
+        GetWindowThreadProcessId(window, &mut pid);
+        if !is_running(pid) {
+            return 1;
+        }
+        *(parameter as *mut u32) = pid;
+        0
+    }
+    let mut pid = 0;
+    unsafe {
+        EnumWindows(Some(find), &mut pid as *mut u32 as LPARAM);
+    }
+    (pid != 0).then_some(pid)
+}
+
 pub fn focus_when_ready(process_id: Option<u32>, target: PathBuf) {
     #[cfg(target_os = "windows")]
     {
@@ -92,8 +153,11 @@ pub fn focus(process_id: Option<u32>, target: &Path) -> bool {
         0
     }
 
-    let Some(file_name) = target.file_name().and_then(|value| value.to_str()) else {
-        return false;
+    // An acknowledged session may still show the save confirmation, with its old title.
+    let file_name = match target.file_name().and_then(|value| value.to_str()) {
+        Some(name) => name,
+        None if process_id.is_some() => "",
+        None => return false,
     };
     let mut search = Search {
         process_id,

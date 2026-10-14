@@ -20,7 +20,8 @@ mod project_paths;
 mod showcases;
 
 const EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/export_asset.py");
-const BLENDER_EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/blender_export.py");
+const BLENDER_EXPORT_SCRIPT: &str =
+    include_str!("../../../blender-addon/blendup/blender_export.py");
 const UV_QUALITY_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/uv_quality.py");
 const ASSET_POLICY_SCRIPT: &str =
     include_str!("../../../blender-addon/blendup/core/asset_policy.py");
@@ -303,6 +304,7 @@ struct OpenBlendRequest {
     id: String,
     blend_path: String,
     expires_at_ms: u128,
+    project_root: String,
 }
 
 #[derive(Deserialize)]
@@ -1221,6 +1223,7 @@ async fn open_blend_file(
     relative_path: String,
     blender_path: Option<String>,
     show_command_prompt: bool,
+    new_window: Option<bool>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         open_blend_file_impl(
@@ -1228,6 +1231,7 @@ async fn open_blend_file(
             relative_path,
             blender_path,
             show_command_prompt,
+            new_window.unwrap_or(false),
         )
     })
     .await
@@ -1239,6 +1243,7 @@ fn open_blend_file_impl(
     relative_path: String,
     blender_path: Option<String>,
     show_command_prompt: bool,
+    new_window: bool,
 ) -> Result<(), String> {
     let root = validated_project_root(&project_root)?;
     let target = root.join(safe_relative_path(&relative_path)?);
@@ -1246,27 +1251,32 @@ fn open_blend_file_impl(
         return Err(format!("Fichier Blender introuvable: {}", target.display()));
     }
 
-    if request_open_in_running_blender(&root, &target).unwrap_or(false) {
+    if !new_window && request_open_in_running_blender(&root, &target)? {
         return Ok(());
+    }
+    if !new_window {
+        if let Some(pid) = blender_window::running_process_id() {
+            blender_window::focus(Some(pid), Path::new(""));
+            return Err("Blender est déjà ouvert, mais son extension BlendUp ne répond pas. Active ou mets à jour l'extension dans cette session. Le clic droit permet aussi d'ouvrir une nouvelle fenêtre.".into());
+        }
     }
 
     let blender = find_blender_executable(blender_path.as_deref()).ok_or_else(|| {
         "Blender est introuvable. Configure son chemin dans Parametres.".to_string()
     })?;
-    let mut command = blender_open_command(&blender, &target);
+    let mut command = blender_open_command(&blender, &target, new_window);
     apply_command_window_preference(&mut command, show_command_prompt);
     let child = command
         .spawn()
         .map_err(|error| format!("Impossible de lancer {}: {error}", blender.display()))?;
-    let process_id = steam_blender_launcher(&blender)
-        .is_none()
-        .then_some(child.id());
+    let process_id =
+        (new_window || steam_blender_launcher(&blender).is_none()).then_some(child.id());
     blender_window::focus_when_ready(process_id, target);
     Ok(())
 }
 
-fn blender_open_command(blender: &Path, target: &Path) -> Command {
-    if let Some(steam) = steam_blender_launcher(blender) {
+fn blender_open_command(blender: &Path, target: &Path, new_window: bool) -> Command {
+    if let Some(steam) = steam_blender_launcher(blender).filter(|_| !new_window) {
         let mut command = Command::new(steam);
         command.args(["-applaunch", "365670"]).arg(target);
         command
@@ -1318,30 +1328,35 @@ fn steam_blender_launcher(blender: &Path) -> Option<PathBuf> {
 }
 
 fn request_open_in_running_blender(root: &Path, target: &Path) -> Result<bool, String> {
-    let bridge = root.join(".blendup").join("blender-bridge");
+    let sessions = blender_sessions_directory()?;
+    let session = preferred_blender_session(&sessions, root, unix_time_ms());
+    let has_session = session.is_some();
+    let bridge = session.unwrap_or_else(|| root.join(".blendup").join("blender-bridge"));
     let request_file = bridge.join("open-request.json");
     let acknowledgement_file = bridge.join("open-ack.json");
     let now = unix_time_ms();
     let request = OpenBlendRequest {
         id: format!("open_{}_{}", std::process::id(), now),
         blend_path: relative_string(root, target)?,
-        expires_at_ms: now + 1_300,
+        expires_at_ms: now + if has_session { 10_000 } else { 1_300 },
+        project_root: root.to_string_lossy().into_owned(),
     };
     write_json(&request_file, &request)?;
 
-    for _ in 0..16 {
+    for _ in 0..if has_session { 50 } else { 16 } {
         thread::sleep(Duration::from_millis(80));
         let acknowledgement = fs::read_to_string(&acknowledgement_file)
             .ok()
             .and_then(|content| serde_json::from_str::<OpenBlendAcknowledgement>(&content).ok());
-        if acknowledgement
-            .as_ref()
-            .is_some_and(|value| value.id == request.id && value.opened)
-        {
-            blender_window::focus_when_ready(
-                acknowledgement.as_ref().and_then(|value| value.process_id),
-                target.to_path_buf(),
-            );
+        if let Some(ack) = acknowledgement.filter(|value| value.id == request.id) {
+            if !ack.opened {
+                return Err("Blender a refusé l'ouverture. Vérifie sa fenêtre et réessaie.".into());
+            }
+            if let Some(pid) = ack.process_id {
+                blender_window::focus(Some(pid), Path::new(""));
+            } else {
+                blender_window::focus_when_ready(None, target.to_path_buf());
+            }
             return Ok(true);
         }
     }
@@ -1354,7 +1369,52 @@ fn request_open_in_running_blender(root: &Path, target: &Path) -> Result<bool, S
     if is_current_request {
         let _ = fs::remove_file(request_file);
     }
-    Ok(false)
+    if has_session {
+        Err("La session Blender ne répond pas. Termine l'opération ou le dialogue en cours, puis réessaie. Le clic droit permet aussi d'ouvrir une nouvelle fenêtre.".into())
+    } else {
+        Ok(false)
+    }
+}
+
+fn blender_sessions_directory() -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("BLENDUP_SESSION_DIRECTORY") {
+        return Ok(PathBuf::from(path));
+    }
+    Ok(user_settings_path()?
+        .parent()
+        .unwrap()
+        .join("blender-sessions"))
+}
+
+fn preferred_blender_session(sessions: &Path, root: &Path, now: u128) -> Option<PathBuf> {
+    fs::read_dir(sessions)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let directory = entry.path();
+            let metadata: Value =
+                serde_json::from_str(&fs::read_to_string(directory.join("session.json")).ok()?)
+                    .ok()?;
+            let updated = metadata.get("updatedAtMs")?.as_u64()? as u128;
+            let pid = metadata.get("processId")?.as_u64()?;
+            if directory.file_name()?.to_str()? != pid.to_string() {
+                return None;
+            }
+            // A blocking Blender operation can pause the heartbeat. On Windows,
+            // keep its session instead of launching Steam again while it is busy.
+            if now.saturating_sub(updated) > 5_000
+                && !blender_window::is_running(u32::try_from(pid).ok()?)
+            {
+                return None;
+            }
+            let same_project = metadata
+                .get("projectRoot")
+                .and_then(Value::as_str)
+                .is_some_and(|path| Path::new(path) == root);
+            Some(((same_project, updated), directory))
+        })
+        .max_by_key(|(priority, _)| *priority)
+        .map(|(_, directory)| directory)
 }
 
 fn unix_time_ms() -> u128 {
@@ -5096,7 +5156,7 @@ mod tests {
         )
         .unwrap();
         let source = root.join("Models with spaces/Étagère.blend");
-        let command = blender_open_command(&blender, &source);
+        let command = blender_open_command(&blender, &source, false);
         assert_eq!(command.get_program(), steam.as_os_str());
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
@@ -5108,8 +5168,42 @@ mod tests {
         );
         let standalone = root.join("Standalone/blender.exe");
         assert_eq!(
-            blender_open_command(&standalone, &source).get_program(),
+            blender_open_command(&standalone, &source, false).get_program(),
             standalone.as_os_str()
+        );
+        let direct = blender_open_command(&blender, &source, true);
+        assert_eq!(direct.get_program(), blender.as_os_str());
+        assert_eq!(
+            direct.get_args().collect::<Vec<_>>(),
+            vec![source.as_os_str()]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn blender_sessions_include_unnamed_files_prefer_same_project_and_ignore_stale_entries() {
+        let root = test_root("blender_sessions");
+        let sessions = root.join("sessions");
+        let now = 20_000u128;
+        for (pid, project, updated) in [
+            (1, "", 19_900),
+            (2, root.to_str().unwrap(), 19_000),
+            (3, root.to_str().unwrap(), 10_000),
+        ] {
+            let directory = sessions.join(pid.to_string());
+            write_json(&directory.join("session.json"), &serde_json::json!({"processId": pid, "projectRoot": project, "updatedAtMs": updated})).unwrap();
+        }
+        assert_eq!(
+            preferred_blender_session(&sessions, &root, now),
+            Some(sessions.join("2"))
+        );
+        assert_eq!(
+            preferred_blender_session(&sessions, &root.join("other"), now),
+            Some(sessions.join("1"))
+        );
+        assert_eq!(
+            preferred_blender_session(&sessions, &root, now + 10_000),
+            None
         );
         fs::remove_dir_all(root).unwrap();
     }

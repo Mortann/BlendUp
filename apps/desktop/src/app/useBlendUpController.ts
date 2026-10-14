@@ -405,13 +405,14 @@ export function useBlendUpController() {
     }
   };
 
-  const openAssetPathInBlender = async (relativePath: string) => {
+  const openAssetPathInBlender = async (relativePath: string, newWindow = false) => {
     if (!project || openingAsset.current) return;
     openingAsset.current = true;
     setOpeningAssetPath(relativePath);
     const started = performance.now();
     try {
       await openBlendFile({
+        newWindow,
         blenderPath: userSettings.blenderPath ?? undefined,
         projectRoot: project.projectRoot,
         relativePath,
@@ -427,7 +428,7 @@ export function useBlendUpController() {
     }
   };
 
-  const openAssetInBlender = (asset: BlendUpAsset) => openAssetPathInBlender(asset.sourcePath);
+  const openAssetInBlender = (asset: BlendUpAsset, newWindow = false) => openAssetPathInBlender(asset.sourcePath, newWindow);
 
   const openContentPath = async (relativePath: string) => {
     if (!project) return;

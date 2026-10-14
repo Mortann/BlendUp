@@ -41,7 +41,9 @@ Ces raccourcis ne déclenchent aucune action sur les fichiers pendant la saisie 
 
 Dans **Paramètres → Application et lancement de Blender**, active **Ouvrir automatiquement les nouveaux assets dans Blender** pour ouvrir chaque asset dès sa création. Cette option est désactivée par défaut. La création du fichier se fait sans fenêtre de terminal ; l'option d'affichage de la fenêtre de commande concerne l'ouverture de Blender pour travailler sur le fichier.
 
-Si Blender est installé via Steam, BlendUp utilise le lanceur Steam pour les nouvelles sessions interactives. Ferme une ancienne session lancée directement, puis rouvre un asset depuis BlendUp pour permettre à Steam de suivre cette session. Les exports et contrôles en arrière-plan utilisent directement Blender.
+Si Blender est déjà lancé avec l'extension BlendUp active, un asset s'ouvre dans cette même session, même si le fichier courant n'a pas encore été enregistré ou appartient à un autre projet. Blender demande **Enregistrer / Ne pas enregistrer / Annuler** avant de remplacer un travail modifié. Réinstalle l'extension puis redémarre Blender après une mise à jour du pont.
+
+Le clic droit **Ouvrir dans une nouvelle fenêtre** lance directement l'exécutable Blender et permet une seconde session, y compris avec Steam. Pour une première ouverture normale depuis une installation Steam, BlendUp conserve le lanceur Steam. Les exports et contrôles en arrière-plan utilisent directement Blender.
 
 Les fichiers `.blend1`, `.blend2`, etc. sont les sauvegardes de Blender. Ils n’apparaissent pas comme assets et ne sont pas recopiés lors d’une duplication. Les sauvegardes déjà présentes sont conservées.
 

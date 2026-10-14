@@ -188,12 +188,14 @@ export async function openProjectPath(projectRoot: string, relativePath: string)
 }
 
 export async function openBlendFile(options: {
+  newWindow?: boolean;
   blenderPath?: string;
   projectRoot: string;
   relativePath: string;
   showCommandPrompt: boolean;
 }): Promise<void> {
   return invoke("open_blend_file", {
+    newWindow: options.newWindow ?? false,
     blenderPath: options.blenderPath?.trim() || null,
     projectRoot: options.projectRoot,
     relativePath: options.relativePath,

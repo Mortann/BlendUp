@@ -19,14 +19,23 @@ def slot_curves(action, slot=None):
 
 
 def export_objects(context, selected_only):
-    objects = set(context.selected_objects if selected_only else context.scene.objects)
-    shapes = {bone.custom_shape for obj in context.scene.objects if obj.type == "ARMATURE"
+    # Excluded collections remain in scene.objects but cannot be selected/exported.
+    # Respect the active View Layer so HIGH meshes and source libraries stay out.
+    layer_objects = set(context.view_layer.objects)
+    objects = set(context.selected_objects) if selected_only else layer_objects.copy()
+    objects.intersection_update(layer_objects)
+    shapes = {bone.custom_shape for obj in layer_objects if obj.type == "ARMATURE"
               for bone in obj.pose.bones if bone.custom_shape}
     objects = {obj for obj in objects if obj not in shapes and obj.type in {"MESH", "ARMATURE", "EMPTY"}}
     # A selected mesh needs its deformation rig, even when only the mesh was selected.
     rigs = {modifier.object for obj in objects if obj.type == "MESH"
             for modifier in obj.modifiers if modifier.type == "ARMATURE" and modifier.object}
     rigs.update(obj.parent for obj in objects if obj.parent and obj.parent.type == "ARMATURE")
+    excluded_rigs = rigs - layer_objects
+    if excluded_rigs:
+        names = ", ".join(sorted(rig.name for rig in excluded_rigs))
+        raise ValueError(f"Armature(s) requise(s) absente(s) du View Layer '{context.view_layer.name}' : "
+                         f"{names}. Active leur collection avant l'export.")
     objects.update(rigs)
     # Rigify's template is an editing aid, not a second game skeleton. Keep other rigs.
     if any(rig.data.get("rig_id") for rig in rigs):
@@ -73,6 +82,30 @@ def armature_clips(rigs):
             for rig in targets:
                 clips[rig].append((action, slot))
     return clips
+
+
+@contextmanager
+def preserved_context(context):
+    """Keep the editing state even if an export operator changes active objects."""
+    active = context.view_layer.objects.active
+    mode = active.mode if active else "OBJECT"
+    selected = list(context.selected_objects)
+    try:
+        yield
+    finally:
+        current = context.view_layer.objects.active
+        changed = current != active or (current.mode if current else "OBJECT") != mode or set(context.selected_objects) != set(selected)
+        if changed:
+            if current and current.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+            bpy.ops.object.select_all(action="DESELECT")
+            for obj in selected:
+                if obj.name in context.view_layer.objects:
+                    obj.select_set(True)
+            context.view_layer.objects.active = active
+            if active and mode != "OBJECT":
+                active.select_set(True)
+                bpy.ops.object.mode_set(mode=mode)
 
 
 @contextmanager
@@ -176,6 +209,8 @@ def prepared_export(context, objects, animations):
             if not had_data:
                 rig.animation_data_clear()
         scene.frame_set(frame, subframe=subframe)
+        if context.object and context.object.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.object.select_all(action="DESELECT")
         for obj, hidden, hide_select in visibility:
             obj.hide_set(hidden)

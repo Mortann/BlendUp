@@ -4,7 +4,7 @@ Add-on léger pour relier un fichier `.blend` placé dans `Art` à son projet Bl
 
 ## Fonctions
 
-L'add-on 0.6.4 ouvre les assets dans la session Blender active, prépare les dossiers
+L'add-on 0.6.5 ouvre les assets dans la session Blender active, prépare les dossiers
 `textures`, `references` et `renders`, puis synchronise les exports avec BlendUp.
 
 - détection automatique du projet à partir du fichier Blender ouvert ;
@@ -20,6 +20,8 @@ L'add-on 0.6.4 ouvre les assets dans la session Blender active, prépare les dos
 - score UV et blocage des exports insuffisants, avec des rapports lisibles dans BlendUp.
 - exclusion UV par asset, variantes et LOD inclus, enregistrée dans sa fiche BlendUp ;
 - identification de la session Blender qui ouvre un fichier pour la ramener au premier plan sous Windows.
+- ouverture dans une session avec un fichier modifié, sans nom ou hors du projet, avec la confirmation native de sauvegarde ;
+- maintien du mode Pose, du rig actif et de la sélection à la sauvegarde et à l'export.
 
 Dans BlendUp, **Informations → Qualité UV → Ignorer cet asset pour la vérification UV** retire l’asset des contrôles et du blocage UV à l’export. Décoche l’option pour rétablir les contrôles. L’application des transformations et l’unwrap à la sauvegarde restent pilotés par les options du projet.
 

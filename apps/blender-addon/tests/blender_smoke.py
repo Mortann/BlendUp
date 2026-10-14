@@ -55,6 +55,9 @@ def main() -> None:
 
             lod_source = source.parent / "Smoke.lod.lod1.blend"
             generate(source, [(lod_source, 0.5)])
+            # generate() configures its background worker; this test then
+            # resumes normal editor behavior to exercise the live bridge.
+            os.environ.pop("BLENDUP_LOD_GENERATION", None)
             assert lod_source.is_file()
             mesh_objects = [obj for obj in bpy.data.objects if obj.type == "MESH"]
             assert mesh_objects
