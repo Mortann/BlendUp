@@ -9,6 +9,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import zipfile
 
@@ -128,6 +129,14 @@ def package(output, version, addon_version, bundle, system):
     build_addons(output)
     for path in installers:
         shutil.copy2(path, output / path.name)
+    updater_name = f"BlendUp_{version}_x64-update.exe"
+    if system == "Windows":
+        subprocess.run([
+            sys.executable, str(ROOT / "scripts/build_updater.py"),
+            "--installer", str(installers[0]),
+            "--application", str(bundle.parent / "blendup.exe"),
+            "--output", str(output / updater_name),
+        ], check=True)
     build_sources(output, version)
     notes = ROOT / f"docs/releases/v{version}.md"
     shutil.copy2(notes, output / "RELEASE_NOTES.md")
@@ -143,10 +152,11 @@ les construit sur GitHub Actions à partir du tag v{version}.
 1. Enregistrer et envoyer sur GitHub les changements de cette version, y compris
    les nouveaux fichiers, puis créer le tag v{version} sur ce commit.
    Voir docs/RELEASE.md dans les archives sources pour les commandes.
-2. Le workflow crée un brouillon de release avec les installateurs Windows/Linux,
-   les extensions Blender/Godot et leurs empreintes SHA-256.
-3. Vérifier les deux builds dans Actions, tester les installateurs, compléter
-   le texte avec RELEASE_NOTES.md et publier le brouillon.
+2. Le workflow crée un brouillon avec les installateurs Windows/Linux,
+   l'exécutable de mise à jour, les extensions Blender/Godot et leurs empreintes.
+3. Après réussite des deux builds et vérification des fichiers attendus,
+   le workflow publie la version. Vérifier ensuite les téléchargements et
+   la détection de cette version par l'application.
 
 Pour une publication manuelle, joindre les installateurs et les deux extensions.
 GitHub ajoute automatiquement « Source code (zip) » et « Source code (tar.gz) »
@@ -158,6 +168,12 @@ L'extension Blender a sa propre version ({addon_version}).
 Godot : BlendUp peut installer/mettre à jour le panneau depuis les paramètres ;
 sinon extraire blendup-godot.zip à la racine du projet et activer le plugin.
 
+Windows : {updater_name} propose la mise à jour de BlendUp déjà installé,
+de son addon Blender et des addons Godot dans les projets sélectionnés.
+Enregistrer le travail puis fermer les trois applications avant de l'utiliser.
+Les préférences et les autres plugins restent en place ; les fichiers remplacés
+sont sauvegardés dans %LOCALAPPDATA%/BlendUp/update-backups.
+
 SHA256SUMS.txt contient les empreintes des fichiers de ce dossier (hors lui-même).
 La somme de l'archive globale est fournie à côté de celle-ci.
 """
@@ -166,7 +182,7 @@ La somme de l'archive globale est fournie à côté de celle-ci.
     # hashes for its own ZIPs, whose source timestamps may differ between jobs.
     published_names = [*names[system]]
     if system == "Windows":
-        published_names.extend(["blendup.zip", "blendup-godot.zip"])
+        published_names.extend(["blendup.zip", "blendup-godot.zip", updater_name])
     published = [output / name for name in sorted(published_names)]
     (output / f"SHA256SUMS-{system.lower()}.txt").write_text(
         "".join(f"{digest(path)}  {path.name}\n" for path in published), encoding="utf-8"

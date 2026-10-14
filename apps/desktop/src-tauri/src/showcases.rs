@@ -4,7 +4,7 @@ use std::sync::{Mutex, OnceLock};
 
 const BUILD_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/build_library.py");
 const LAYOUT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/showcase.py");
-const PLUGIN_FILES: [(&str, &str); 9] = [
+pub(super) const PLUGIN_FILES: [(&str, &str); 9] = [
     (
         "plugin.cfg",
         include_str!("../../../godot-addon/addons/blendup/plugin.cfg"),

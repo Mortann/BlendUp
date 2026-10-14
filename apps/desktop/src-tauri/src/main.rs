@@ -15,9 +15,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
+mod app_updates;
 mod blender_window;
 mod project_paths;
 mod showcases;
+mod updater;
 
 const EXPORT_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/export_asset.py");
 const BLENDER_EXPORT_SCRIPT: &str =
@@ -4409,6 +4411,12 @@ fn configure_platform_app_identity() {
 fn configure_platform_app_identity() {}
 
 fn main() {
+    if let Some(code) = app_updates::handle_cli() {
+        std::process::exit(code);
+    }
+    if let Some(code) = updater::handle_cli() {
+        std::process::exit(code);
+    }
     configure_platform_app_identity();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -4422,6 +4430,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_updates::check_app_update,
+            app_updates::open_app_update_release,
+            app_updates::install_app_update,
             showcases::configure_showcase,
             showcases::rebuild_showcase,
             showcases::setup_editor_integration,

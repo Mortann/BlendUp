@@ -155,8 +155,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Joindre l'exécutable de mise à jour Windows
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: gh release upload "$BLENDUP_RELEASE_TAG" "release/$BLENDUP_RELEASE_TAG/"*-update.exe --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Joindre les empreintes de cette plateforme
         shell: bash
         run: gh release upload "$BLENDUP_RELEASE_TAG" "release/$BLENDUP_RELEASE_TAG/SHA256SUMS-${{ matrix.checksum_suffix }}.txt" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publier la version validée
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Vérifier les fichiers et publier
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${BLENDUP_RELEASE_TAG#v}"
+          gh api "repos/$GITHUB_REPOSITORY/releases/${{ needs.prepare.outputs.release_id }}" > release.json
+          python - "$version" <<'PY'
+          import json, sys
+          version = sys.argv[1]
+          release = json.load(open("release.json"))
+          expected = {f"BlendUp_{version}_x64-setup.exe", f"BlendUp_{version}_x64-update.exe", f"BlendUp_{version}_amd64.deb", f"BlendUp_{version}_amd64.AppImage", "blendup.zip", "blendup-godot.zip", "SHA256SUMS-windows.txt", "SHA256SUMS-linux.txt"}
+          actual = {asset["name"] for asset in release["assets"] if asset["size"] > 0 and asset["state"] == "uploaded"}
+          assert expected <= actual, f"Fichiers absents : {expected - actual}"
+          assert release["draft"] and not release["prerelease"]
+          PY
+          gh release edit "$BLENDUP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

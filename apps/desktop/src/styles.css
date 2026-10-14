@@ -889,3 +889,12 @@ h1, h2, p { margin-top: 0; }
 .editor-integrations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 22px; }
 @container asset-browser (max-width: 650px) { .showcase-toggle-label { display: none; } }
 @container asset-browser (max-width: 400px) { .asset-items.grid .showcase-card { grid-column: 1 / -1; } }
+
+.app-update-notice { position: fixed; right: 22px; bottom: 22px; z-index: 100; width: min(380px, calc(100vw - 44px)); padding: 20px; box-shadow: 0 12px 44px #36264926; }
+.app-update-notice h3 { margin: 0 20px 10px 0; }
+.app-update-notice p { font-size: 13px; line-height: 1.5; }
+.update-notice-close { position: absolute; right: 8px; top: 8px; padding: 5px; }
+.update-confirm-overlay { position: fixed; inset: 0; z-index: 200; background: #20152b88; display: grid; place-items: center; padding: 24px; }
+.update-confirm { width: min(560px, 100%); padding: 28px; max-height: 90vh; overflow: auto; }
+.update-confirm h2 { margin-top: 0; }
+.update-confirm p { line-height: 1.6; }

@@ -1,9 +1,13 @@
 import { ExternalLink, FolderOpen, Gamepad2, Gauge, LoaderCircle, RefreshCw, Save, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { version as appVersion } from "../../package.json";
 import { ToolStatus } from "../app/ui";
+import { AppUpdateSettings } from "../app/AppUpdateNotice";
+import type { AppUpdates } from "../app/useAppUpdates";
 import type { BlenderProjectSettings, BlendUpProject, GameEngine, ProjectSnapshot, ToolDetection } from "../blendup/types";
 
 export function SettingsView({
+  updates, updateBusy,
   onSetupIntegration, integrationBusy,
   blenderDetection,
   blenderPathInput,
@@ -27,6 +31,8 @@ export function SettingsView({
   onSaveProjectBlenderSettings,
   onSaveProjectPaths
 }: {
+  updates: AppUpdates;
+  updateBusy: boolean;
   onSetupIntegration: (editor: "blender" | "godot") => Promise<void>;
   integrationBusy: boolean;
   blenderDetection: ToolDetection | null;
@@ -80,9 +86,12 @@ export function SettingsView({
         <div>
           <span className="eyebrow">Projet et outils</span>
           <h1>Paramètres</h1>
+          <p>Version de BlendUp : <strong>{appVersion}</strong></p>
           <p>Configure le projet, la préparation des assets et le lancement de Blender.</p>
         </div>
       </header>
+
+      <AppUpdateSettings updates={updates} busy={updateBusy} />
 
       <section className="settings-section content-panel">
         <div className="section-heading"><Gamepad2 size={20} /><div><h2>Type de projet</h2><p>Gère tes assets en 3D ou relie un moteur. Les fichiers existants sont conservés.</p></div></div>
@@ -131,7 +140,7 @@ export function SettingsView({
       <section className="settings-section content-panel">
         <div className="section-heading"><ExternalLink size={20} /><div><h2>Bibliothèque dans les éditeurs</h2><p>Retrouve les assets du projet associé dans Blender et Godot, puis glisse-les dans ta scène.</p></div></div>
         <div className="editor-integrations">
-          <div><h3>Blender</h3><p>Installe l’add-on BlendUp 0.6.3, puis ouvre un asset ou un Showcase. Dans la barre latérale BlendUp, la bibliothèque permet de placer un asset au curseur 3D ou d’ouvrir le navigateur avec glisser-déposer. Les instances sont liées par défaut. Les sauvegardes publient aussi l’état des variantes pour le panneau Godot.</p>
+          <div><h3>Blender</h3><p>Installe l’add-on BlendUp 0.6.6, puis ouvre un asset ou un Showcase. Dans la barre latérale BlendUp, la bibliothèque permet de placer un asset au curseur 3D ou d’ouvrir le navigateur avec glisser-déposer. Les instances sont liées par défaut. Les sauvegardes publient aussi l’état des variantes pour le panneau Godot.</p>
             <button disabled={integrationBusy || project.integrations?.libraryStatus === "generating"} onClick={() => void onSetupIntegration("blender")} type="button"><RefreshCw size={16} />{project.integrations?.libraryStatus === "generating" ? "Synchronisation…" : "Synchroniser la bibliothèque Blender"}</button>
             {project.integrations?.blender ? <p>{project.integrations.libraryCount} assets prêts · synchronisation automatique lorsque BlendUp est ouvert.</p> : null}
             {project.integrations?.libraryErrors.map((error, i) => <p className="field-error" key={i}>{error.name} : {error.error}</p>)}

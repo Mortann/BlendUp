@@ -6,9 +6,13 @@ import { AssetsView } from "./views/AssetsView";
 import { ProblemsView } from "./views/ProblemsView";
 import { SettingsView } from "./views/SettingsView";
 import { WelcomePage } from "./views/WelcomePage";
+import { useAppUpdates } from "./app/useAppUpdates";
+import { AppUpdateNotice } from "./app/AppUpdateNotice";
 
 function App() {
   const app = useBlendUpController();
+  const updates = useAppUpdates();
+  const updateBusy = app.isCreatingProject || app.isLoadingProject || app.isReexporting || app.integrationBusy || app.exportingAssetIds.length > 0 || app.checkingUvAssetIds.length > 0 || app.showcaseBusyIds.length > 0 || app.openingAssetPath !== null;
 
   if (app.isBooting) {
     return <main className="loading-screen"><BrandLogo large /><span>Chargement de BlendUp…</span></main>;
@@ -17,6 +21,7 @@ function App() {
   if (!app.project) {
     return (
       <main className="welcome-shell">
+        <AppUpdateNotice updates={updates} busy={updateBusy} />
         <WelcomePage
           createEngine={app.createEngine}
           createProjectName={app.createProjectName}
@@ -102,6 +107,8 @@ function App() {
         />
       ) : (
         <SettingsView
+          updates={updates}
+          updateBusy={updateBusy}
           onSetupIntegration={app.handleSetupIntegration}
           integrationBusy={app.integrationBusy}
           blenderDetection={app.blenderDetection}
@@ -128,6 +135,7 @@ function App() {
         />
       )}
       {app.openingAssetPath ? <OpeningAssetOverlay path={app.openingAssetPath} /> : null}
+      <AppUpdateNotice updates={updates} busy={updateBusy} />
     </WorkspaceShell>
   );
 }

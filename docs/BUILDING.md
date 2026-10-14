@@ -35,6 +35,8 @@ apps/desktop/src-tauri/target/release/bundle/nsis/
 
 Le fichier `*-setup.exe` (NSIS) est le plus simple à transmettre pour une première version. Le `.msi` convient mieux à un déploiement administré. Windows peut afficher un avertissement SmartScreen tant que l'application n'est pas signée avec un certificat de signature de code.
 
+La préparation de release produit aussi `*-update.exe`, qui met à jour BlendUp, son addon Blender et les addons des projets Godot sélectionnés. Voir [l'exécutable de mise à jour Windows](windows-updater.md).
+
 ## Linux (Ubuntu/Debian)
 
 ### Prérequis

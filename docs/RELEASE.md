@@ -5,8 +5,9 @@ Le dépôt contient `.github/workflows/release.yml`. À chaque tag `v*`, GitHub 
 1. vérifie la concordance du tag et des versions, les types, le cœur Blender et le backend Rust ;
 2. crée ou reprend un seul brouillon avant les builds et refuse de modifier une release déjà publiée ;
 3. construit BlendUp sur Windows et Ubuntu ;
-4. joint les installateurs Windows et Linux, les extensions Blender/Godot et les empreintes SHA-256 ;
-5. conserve les archives sources et les fichiers de publication dans les artefacts Actions.
+4. joint les installateurs Windows et Linux, l'exécutable Windows de mise à jour, les extensions Blender/Godot et les empreintes SHA-256 ;
+5. conserve les archives sources et les fichiers de publication dans les artefacts Actions ;
+6. publie la version seulement après la réussite des deux plateformes et la vérification des huit fichiers attendus. Elle devient alors détectable par les applications déjà installées.
 
 ## Préparer les fichiers localement
 
@@ -54,7 +55,7 @@ git push origin v0.2.0
 6. Dans l'onglet **Actions**, attendre la réussite des deux plateformes. Si un problème temporaire interrompt le workflow, utiliser **Re-run failed jobs** : le brouillon existant est repris. Ne pas publier tant qu'une plateforme échoue.
 7. Ouvrir **Releases**, télécharger l'installateur Windows, le paquet Linux `.deb` et l'AppImage, puis les tester.
 8. Vérifier les extensions `blendup.zip` et `blendup-godot.zip` et les fichiers `SHA256SUMS-windows.txt` / `SHA256SUMS-linux.txt` joints à la release.
-9. Compléter les notes et publier le brouillon.
+9. Vérifier que le dernier job a publié la version et que l’API GitHub `releases/latest` renvoie ce tag. Si une plateforme échoue, le brouillon reste privé.
 
 Le jeton `GITHUB_TOKEN` fourni automatiquement par GitHub suffit au workflow. Le dépôt doit autoriser les workflows à écrire dans le contenu ; le fichier demande explicitement la permission `contents: write`.
 
