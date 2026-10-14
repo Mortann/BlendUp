@@ -67,7 +67,7 @@ def main():
     updater = build_updater(setup, application, ROOT / "apps/blender-addon/blendup.zip", root / "fixture-update.exe")
     request = root / "request avec espaces.json"
     backup = root / "backup"
-    request.write_text(json.dumps({"installDirectory": str(installed), "blenderPath": blender, "projectRoots": [str(project), str(project)], "backupDirectory": str(backup)}), encoding="utf-8")
+    request.write_text(json.dumps({"installDirectory": f'"{installed}"', "blenderPath": blender, "projectRoots": [str(project), str(project)], "backupDirectory": str(backup)}), encoding="utf-8")
     # NSIS options require quotes around the value, rather than the full option.
     result = subprocess.run(f'"{updater}" /S /REQUEST="{request}"', env=env, timeout=240)
     if not (backup / "report.json").exists():

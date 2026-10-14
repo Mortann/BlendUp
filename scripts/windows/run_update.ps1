@@ -24,17 +24,38 @@ function Invoke-UpdateProcess([string]$Executable, [string]$Arguments, [int]$Tim
     return $process.ExitCode
 }
 
+function Resolve-BlendUpInstallDirectory([string]$Location) {
+    if ([string]::IsNullOrWhiteSpace($Location)) { return $null }
+    try {
+        # NSIS may write InstallLocation as a quoted string. Quotes delimit a
+        # command-line argument; they are not part of the directory name.
+        $directory = $Location.Trim().Trim('"').Trim()
+        if (![System.IO.Path]::IsPathRooted($directory)) { return $null }
+        $directory = [System.IO.Path]::GetFullPath($directory)
+        $executable = [System.IO.Path]::Combine($directory, 'blendup.exe')
+        if (Test-Path -LiteralPath $executable -PathType Leaf) { return $directory }
+    } catch {
+        # A malformed or inaccessible registry entry must not hide other paths.
+        return $null
+    }
+    return $null
+}
+
 function Installed-Directory {
     foreach ($hive in @([Microsoft.Win32.Registry]::CurrentUser, [Microsoft.Win32.Registry]::LocalMachine)) {
-        $key = $hive.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall\BlendUp')
-        if ($key) {
-            try {
+        $key = $null
+        try {
+            $key = $hive.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall\BlendUp')
+            if ($key) {
                 # Tauri NSIS stores its install path in the key's default value.
                 foreach ($location in @($key.GetValue('InstallLocation'), $key.GetValue(''))) {
-                    if ($location -and (Test-Path -LiteralPath (Join-Path $location 'blendup.exe'))) { return $location }
+                    $directory = Resolve-BlendUpInstallDirectory $location
+                    if ($directory) { return $directory }
                 }
-            } finally { $key.Dispose() }
-        }
+            }
+        } catch {
+            # Discovery remains usable even when one registry hive is unavailable.
+        } finally { if ($key) { $key.Dispose() } }
     }
     return Join-Path $env:LOCALAPPDATA 'BlendUp'
 }
@@ -110,7 +131,9 @@ function Choose-Update {
     $confirm = New-Object System.Windows.Forms.Button
     $confirm.Text = 'Mettre à jour'; $confirm.Location = New-Object System.Drawing.Point(485, 435); $confirm.Size = New-Object System.Drawing.Size(130, 30)
     $confirm.Add_Click({
-        if (!(Test-Path -LiteralPath (Join-Path $app.Text 'blendup.exe') -PathType Leaf)) { [void][System.Windows.Forms.MessageBox]::Show('Choisis le dossier de BlendUp déjà installé. Pour une première installation, utilise le setup.', 'BlendUp'); return }
+        $directory = Resolve-BlendUpInstallDirectory $app.Text
+        if (!$directory) { [void][System.Windows.Forms.MessageBox]::Show('Choisis le dossier de BlendUp déjà installé. Pour une première installation, utilise le setup.', 'BlendUp'); return }
+        $app.Text = $directory
         if ($blenderCheck.Checked -and !(Test-Path -LiteralPath $blender.Text -PathType Leaf)) { [void][System.Windows.Forms.MessageBox]::Show('Choisis blender.exe ou décoche la mise à jour de son addon.', 'Blender'); return }
         $form.DialogResult = 'OK'; $form.Close()
     }.GetNewClosure()); $form.Controls.Add($confirm)
@@ -131,7 +154,8 @@ try {
     if (!$request) { exit 2 }
     $open = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match '^(blendup|blender|godot.*)$' })
     if ($open.Count) { throw 'Enregistre ton travail et ferme BlendUp, Blender et Godot, puis relance la mise à jour.' }
-    $installDirectory = [System.IO.Path]::GetFullPath($request.installDirectory)
+    $installDirectory = Resolve-BlendUpInstallDirectory $request.installDirectory
+    if (!$installDirectory) { throw 'Installation actuelle de BlendUp introuvable.' }
     $installed = Join-Path $installDirectory 'blendup.exe'
     if (!(Test-Path -LiteralPath $installed -PathType Leaf)) { throw 'Installation actuelle de BlendUp introuvable.' }
     if ($request.blenderPath -and !(Test-Path -LiteralPath $request.blenderPath -PathType Leaf)) { throw 'Blender est introuvable.' }

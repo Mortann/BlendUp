@@ -120,6 +120,10 @@ jobs:
       - name: Vérifier le projet
         run: npm test
 
+      - name: Vérifier la détection de l'installation Windows
+        if: matrix.platform == 'windows-latest'
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/windows_update_discovery_smoke.ps1
+
       - name: Construire et joindre les installateurs
         id: tauri
         uses: tauri-apps/tauri-action@v1
