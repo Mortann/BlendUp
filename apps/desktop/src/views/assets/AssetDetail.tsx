@@ -22,8 +22,9 @@ import { AssetImageGallery, AssetViewer } from "./AssetViewer";
 
 import { UvQualityPanel, UvScoreBadge } from "./UvQuality";
 import { assetPreviewVersion, originalVariantId, savedPreviewVariant, savePreviewVariant } from "./variants";
+import { TextureWorkspace } from "./TextureWorkspace";
 
-type DetailTab = "overview" | "preview" | "variants" | "lods" | "files";
+type DetailTab = "overview" | "preview" | "textures" | "variants" | "lods" | "files";
 
 export function AssetDetail({
   asset,
@@ -51,7 +52,7 @@ export function AssetDetail({
   onCheckUv: () => void;
   onSetUvIgnored: (ignored: boolean) => Promise<unknown>;
   exporting: boolean;
-  onAddImages: (kind: "renders" | "textures") => void;
+  onAddImages: (kind: "renders" | "textures") => Promise<void>;
   onClose: () => void;
   onCreateVariant: (name: string) => Promise<unknown>;
   onDeleteVersion: (versionId: string, versionKind: "variant" | "lod") => Promise<unknown>;
@@ -129,7 +130,7 @@ export function AssetDetail({
 
       <nav className="detail-tabs" aria-label="Sections de l'asset">
         {([
-          ["overview", "Informations"], ["preview", "3D / Animations"], ["variants", `Variantes ${variants.length + 1}`],
+          ["overview", "Informations"], ["preview", "3D / Animations"], ["textures", "Textures / Bake"], ["variants", `Variantes ${variants.length + 1}`],
           ["lods", `LOD ${lods.length || ""}`], ["files", "Fichiers"]
         ] as Array<[DetailTab, string]>).map(([id, label]) => (
           <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)} type="button">{label}</button>
@@ -163,9 +164,10 @@ export function AssetDetail({
             </div>
             <button className="small" onClick={onSetThumbnail} type="button"><ImageIcon size={14} /> Choisir la miniature de l’asset</button>
             <AssetImageGallery asset={asset} kind="renders" onAdd={() => onAddImages("renders")} projectRoot={projectRoot} />
-            <AssetImageGallery asset={asset} kind="textures" onAdd={() => onAddImages("textures")} projectRoot={projectRoot} />
           </>
         ) : null}
+
+        {tab === "textures" ? <TextureWorkspace key={asset.id} asset={asset} projectRoot={projectRoot} onAdd={() => onAddImages("textures")} onOpen={onOpenPath} onOpenBlender={onOpen} /> : null}
 
         {tab === "variants" ? (
           <VariantManager

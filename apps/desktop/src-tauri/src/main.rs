@@ -29,6 +29,7 @@ const ASSET_POLICY_SCRIPT: &str =
     include_str!("../../../blender-addon/blendup/core/asset_policy.py");
 const UV_BLENDER_SCRIPT: &str = include_str!("../../../blender-addon/blendup/blender_uv.py");
 const UV_CHECK_SCRIPT: &str = include_str!("../../../blender-addon/blendup/scripts/check_uvs.py");
+const BAKE_CORE_SCRIPT: &str = include_str!("../../../blender-addon/blendup/core/bake.py");
 
 const CREATE_BLEND_SCRIPT: &str = r#"
 import pathlib
@@ -325,6 +326,7 @@ struct ProjectImageFile {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     modified_at: Option<String>,
+    size_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -1046,6 +1048,7 @@ fn prepare_uv_runtime(root: &Path, name: &str, script: &str) -> Result<PathBuf, 
     for (name, content) in [
         ("blendup_uv_quality.py", UV_QUALITY_SCRIPT),
         ("blendup_asset_policy.py", ASSET_POLICY_SCRIPT),
+        ("blendup_bake_core.py", BAKE_CORE_SCRIPT),
         ("blendup_blender_uv.py", UV_BLENDER_SCRIPT),
         ("blendup_blender_export.py", BLENDER_EXPORT_SCRIPT),
         (name, script),
@@ -1462,7 +1465,7 @@ fn list_project_images(
         depth: usize,
         images: &mut Vec<ProjectImageFile>,
     ) -> Result<(), String> {
-        if depth > 3 {
+        if depth > 5 {
             return Ok(());
         }
         for entry in fs::read_dir(directory)
@@ -1487,6 +1490,7 @@ fn list_project_images(
                         .unwrap_or("Image")
                         .to_string(),
                     modified_at: modified_time(&path).map(time_label),
+                    size_bytes: fs::metadata(&path).map(|m| m.len()).unwrap_or_default(),
                 });
             }
         }

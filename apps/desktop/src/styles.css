@@ -898,3 +898,38 @@ h1, h2, p { margin-top: 0; }
 .update-confirm { width: min(560px, 100%); padding: 28px; max-height: 90vh; overflow: auto; }
 .update-confirm h2 { margin-top: 0; }
 .update-confirm p { line-height: 1.6; }
+/* Textures: lazy previews, map filters and a keyboard-accessible inspector. */
+.texture-workspace { display: grid; gap: 14px; }
+.texture-bake-intro { background: #f3f7fa; border: 1px solid #dbe2e7; border-radius: 10px; padding: 14px; }
+.texture-bake-intro p { font-size: 12px; line-height: 1.65; color: #586570; margin: 8px 0 12px; }
+.texture-bake-intro summary { margin-top: 12px; font-size: 12px; cursor: pointer; }
+.texture-bake-intro code { overflow-wrap: anywhere; }
+.texture-actions, .texture-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.detail-section-heading > .texture-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.texture-search { display: flex; align-items: center; gap: 8px; border: 1px solid #dbe2e7; border-radius: 7px; padding: 0 9px; }
+.texture-search input { width: 100%; background: transparent; border: 0; padding: 9px 0; }
+.texture-filters button { padding: 5px 9px; font-size: 11px; }
+.texture-filters button.active { color: #23583d; border-color: #74a88c; background: #e3f3e9; }
+.texture-backups { display: flex; gap: 7px; align-items: center; font-size: 11px; color: #586570; }
+.texture-backups input { width: 16px; min-height: 16px; height: 16px; padding: 0; flex: 0 0 16px; accent-color: #4d9c87; }
+.texture-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.texture-card { display: flex; flex-direction: column; min-width: 0; gap: 5px; padding: 8px; text-align: left; }
+.texture-card strong { font-size: 11px; width: 100%; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.texture-card > span, .texture-card > small { font-size: 10px; color: #647079; }
+.texture-thumbnail, .texture-inspector-image { background-color: #24282d; background-image: conic-gradient(#32373d 25%, transparent 0 50%, #32373d 0 75%, transparent 0); background-size: 20px 20px; }
+.texture-thumbnail { position: relative; width: 100%; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border-radius: 5px; }
+.texture-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
+.texture-thumbnail > svg { position: absolute; right: 6px; bottom: 6px; color: white; filter: drop-shadow(0 1px 2px black); }
+.texture-thumbnail > span { font-size: 10px; color: #cbd5df; }
+.texture-inspector { width: min(1100px, 92vw); max-width: 92vw; height: min(850px, 90vh); max-height: 90vh; background: #171c22; color: #edf2f7; border: 1px solid #48515e; border-radius: 12px; padding: 0; overflow: hidden; }
+.texture-inspector[open] { display: flex; flex-direction: column; }
+.texture-inspector::backdrop { background: #000b; }
+.texture-inspector header, .texture-inspector footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.texture-inspector header > div { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.texture-inspector header span { font-size: 12px; color: #aab4c0; }
+.texture-inspector-image { min-height: 0; flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; }
+.texture-inspector-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.texture-inspector-image.actual-size { display: block; }
+.texture-inspector-image.actual-size img { max-width: none; max-height: none; }
+.texture-inspector footer code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; white-space: nowrap; }
+.texture-inspector footer button { flex-shrink: 0; }

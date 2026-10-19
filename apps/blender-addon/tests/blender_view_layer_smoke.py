@@ -66,7 +66,7 @@ def main():
     assert export_objects(context, True) == {game}
     # Even a stale selection must not leak a newly hidden object into the export.
     from types import SimpleNamespace
-    selected_context = SimpleNamespace(view_layer=context.view_layer, selected_objects=[game, hidden, disabled])
+    selected_context = SimpleNamespace(scene=context.scene, view_layer=context.view_layer, selected_objects=[game, hidden, disabled])
     assert export_objects(selected_context, True) == {game}
 
     rig = bpy.data.objects.new("RequiredExcludedRig", bpy.data.armatures.new("Rig"))

@@ -10,9 +10,11 @@ import bpy
 
 try:
     from .core.asset_policy import uv_validation_ignored
+    from .core.bake import bake_helpers
     from .core.uv_quality import ALGORITHM_VERSION, UvPolicy, UvTriangle, measure_uv_quality, passes_uv_gate, uv_gate_message
 except ImportError:  # Also embedded as standalone modules by the desktop application.
     from blendup_asset_policy import uv_validation_ignored
+    from blendup_bake_core import bake_helpers
     from blendup_uv_quality import ALGORITHM_VERSION, UvPolicy, UvTriangle, measure_uv_quality, passes_uv_gate, uv_gate_message
 
 
@@ -45,9 +47,10 @@ def analyze_scene(policy: UvPolicy, context=None) -> dict:
     triangles = []
     seams = {}
     depsgraph = context.evaluated_depsgraph_get()
+    helpers = bake_helpers(context.scene.objects)
     for obj in context.view_layer.objects:
         # Only geometry eligible for export can affect its UV gate.
-        if obj.type != "MESH" or not obj.visible_get(view_layer=context.view_layer): continue
+        if obj.type != "MESH" or obj in helpers or not obj.visible_get(view_layer=context.view_layer): continue
         if obj.mode == "EDIT": obj.update_from_editmode()
         evaluated = obj.evaluated_get(depsgraph)
         mesh = evaluated.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
@@ -111,7 +114,13 @@ def prepare_before_save(policy: UvPolicy, context=None) -> list[str]:
     mode = active.mode if active else "OBJECT"
     selected = list(context.selected_objects)
     meshes = [obj for obj in context.scene.objects if obj.type == "MESH" and obj.data.polygons]
+    # Automatic unwrapping after a bake would invalidate its texture mapping.
+    baked = [obj for obj in meshes if any(slot.material and slot.material.get("blendup_baked") for slot in obj.material_slots)]
+    helpers = bake_helpers(context.scene.objects)
+    meshes = [obj for obj in meshes if obj not in baked and obj not in helpers]
     warnings = []
+    if baked:
+        warnings.append("UV et transformations conservés pour les LOW déjà bakés : " + ", ".join(obj.name for obj in baked))
     hidden = {}
     mesh_selection = {}
     uv_selection = {}

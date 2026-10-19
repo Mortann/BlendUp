@@ -5,6 +5,11 @@ import json
 
 import bpy
 
+try:
+    from .core.bake import bake_helpers
+except ImportError:
+    from blendup_bake_core import bake_helpers
+
 
 def slot_curves(action, slot=None):
     """Support both Blender 4.2 actions and the slotted actions introduced in 4.4."""
@@ -26,6 +31,7 @@ def export_objects(context, selected_only):
     objects = set(context.selected_objects) if selected_only else layer_objects.copy()
     # The eye, viewport disable and hidden parent collections all exclude geometry.
     objects.intersection_update(visible_objects)
+    objects.difference_update(bake_helpers(context.scene.objects))
     shapes = {bone.custom_shape for obj in layer_objects if obj.type == "ARMATURE"
               for bone in obj.pose.bones if bone.custom_shape}
     objects = {obj for obj in objects if obj not in shapes and obj.type in {"MESH", "ARMATURE", "EMPTY"}}

@@ -207,6 +207,7 @@ export interface ProjectImageFile {
   path: string;
   name: string;
   modifiedAt?: string;
+  sizeBytes?: number;
 }
 
 export async function readProjectFileDataUrl(projectRoot: string, relativePath?: string): Promise<string> {

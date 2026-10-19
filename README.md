@@ -17,6 +17,7 @@ BlendUp est une application de bureau pour organiser des assets Blender dans un 
 - exporte en `.glb` vers Godot ou en `.fbx` vers Unity en conservant l'arborescence de `Art` ;
 - affiche les dossiers réellement présents dans `Art` avec recherche, favoris, vues et glisser-déposer ;
 - montre les aperçus 3D, miniatures, images, textures, notes et tags ;
+- bake automatiquement les normales et cartes PBR d’un HIGH vers son LOW, puis branche le matériau dans Blender ;
 - crée de vraies variantes `.blend`, navigables et exportables séparément ;
 - génère des LOD Blender éditables à 50 %, 25 % et 12,5 % ;
 - exporte l'asset principal, toutes ses variantes et tous ses LOD en une action ;
@@ -55,7 +56,7 @@ Avec Unity, le même principe est utilisé sous `Unity/Assets`, avec des exports
 3. Dans BlendUp, crée ou ouvre un projet, puis indique le chemin de Blender dans **Paramètres**.
 4. Crée un asset dans `Art`, travaille dans Blender, puis utilise **Exporter** ou **Tout exporter**.
 
-Pour les détails, consulte [le guide d'utilisation](docs/utilisation.md) et [le guide des variantes et LOD](docs/variants-et-lod.md).
+Pour les détails, consulte [le guide d'utilisation](docs/utilisation.md), [le guide des variantes et LOD](docs/variants-et-lod.md) et [le guide textures et bake](docs/textures-et-bake.md).
 
 ## Installation et compilation
 

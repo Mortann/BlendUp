@@ -449,7 +449,7 @@ export function AssetsView({
             onSetUvIgnored={(ignored) => onSetAssetUvIgnored(selectedAsset.id, ignored)}
             asset={selectedAsset}
             exporting={exportingAssetIds.includes(selectedAsset.id)}
-            onAddImages={(kind) => void onAddAssetImages(selectedAsset.id, kind)}
+            onAddImages={(kind) => onAddAssetImages(selectedAsset.id, kind)}
             onClose={() => { setSelectedAssetId(null); setActiveTarget({ kind: "background" }); }}
             onCreateVariant={(name) => onCreateAssetVariant(selectedAsset.id, name)}
             onDeleteVersion={(versionId, versionKind) => onDeleteAssetVersion(selectedAsset.id, versionId, versionKind)}
