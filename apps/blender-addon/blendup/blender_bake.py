@@ -79,25 +79,11 @@ def organize_pair(context):
         raise ValueError("Rends les objets liés locaux avant d'organiser la paire.")
     from .core.bake import object_role
     key = object_role(low)[0]
+    if any(obj.get(PAIR_KEY) and str(obj[PAIR_KEY]).casefold() != key.casefold() for obj in highs):
+        raise ValueError("La sélection contient une autre paire de bake. Désélectionne-la avant d'organiser cette pièce.")
     texture_stem(key)
-    parents = list(low.users_collection)
-    parent = parents[0] if parents else context.scene.collection
-    root = next((c for c in context.scene.collection.children_recursive if c.get("blendup_bake_root") == key), None)
-    if not root:
-        root = bpy.data.collections.new(f"{key}_BAKE")
-        root["blendup_bake_root"] = key
-        parent.children.link(root)
-    from .scene_assets import compact_asset_roots
-    compact_asset_roots(context, [key])
-    for role, objects in (("LOW", [low]), ("HIGH", highs)):
-        for obj in objects:
-            obj[ROLE_KEY], obj[PAIR_KEY] = role, key
-            old_collections = list(obj.users_collection)
-            if obj.name not in root.objects:
-                root.objects.link(obj)
-            for previous in old_collections:
-                if previous != root:
-                    previous.objects.unlink(obj)
+    from .scene_assets import organize_asset
+    organize_asset(context, key, low, highs)
     return key
 
 
@@ -193,6 +179,8 @@ def output_material(low, pair_name, images):
     result = []
     for index, original in enumerate(originals):
         material = original.copy() if original else bpy.data.materials.new(f"{pair_name}_Baked")
+        if "blendup_atlas_source" in material:
+            del material["blendup_atlas_source"]
         material.name = f"{pair_name}_Baked_{index + 1}"
         material.use_nodes = True
         tree = material.node_tree
@@ -223,6 +211,8 @@ def output_material(low, pair_name, images):
             else:
                 tree.links.new(node.outputs["Color"], shader.inputs[{"BASE_COLOR": "Base Color", "ROUGHNESS": "Roughness", "METALLIC": "Metallic"}[channel]])
         material["blendup_baked"] = True
+        material["blendup_source_material"] = original.get("blendup_source_material", original.name) if original else ""
+
         result.append(material)
     return result
 
@@ -348,6 +338,8 @@ def bake_pairs(context, pairs, output_dir, options=None, progress=None):
                     else:
                         final.unlink(missing_ok=True)
                 raise
+            old_baked = {slot.material for pair, _, _ in prepared for slot in pair["LOW"][0].material_slots
+                         if slot.material and slot.material.get("blendup_baked")}
             for pair, _, new_materials in prepared:
                 low = pair["LOW"][0]
                 # Object-linked slots preserve shared mesh data and other objects.
@@ -360,6 +352,12 @@ def bake_pairs(context, pairs, output_dir, options=None, progress=None):
                 for role in ("HIGH", "CAGE"):
                     for obj in pair[role]:
                         obj[ROLE_KEY], obj[PAIR_KEY] = role, pair["name"]
+            from .bake_materials import IMAGE_KEY, remove_unused_bakes
+            for pair, images, _ in prepared:
+                for channel, image in images.items():
+                    pair["LOW"][0][IMAGE_KEY + channel] = image
+            context.view_layer.update()
+            remove_unused_bakes(old_baked)
             report = {"schemaVersion": 1, "createdAt": stamp, "source": bpy.data.filepath, "files": files, "restPose": options.rest_pose}
             (output_dir / "bake-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             return report

@@ -7,6 +7,7 @@ from contextlib import contextmanager
 ROLE_KEY = "blendup_bake_role"
 PAIR_KEY = "blendup_bake_pair"
 PREVIEW_LAYERS_KEY = "blendup_preview_low_layers"
+ASSET_KEY = "blendup_asset_root"
 ROLES = {"LOW", "HIGH", "CAGE"}
 
 
@@ -49,8 +50,9 @@ def bake_groups(objects) -> dict[str, dict]:
 
 def bake_helpers(objects) -> set:
     groups = bake_groups(objects)
-    return {obj for group in groups.values() for role in ("HIGH", "CAGE") for obj in group[role]
-            if group["LOW"] or str(obj.get(ROLE_KEY, "")).upper() in {"HIGH", "CAGE"}}
+    return ({obj for obj in objects if obj.get(ASSET_KEY)} |
+            {obj for group in groups.values() for role in ("HIGH", "CAGE") for obj in group[role]
+             if group["LOW"] or str(obj.get(ROLE_KEY, "")).upper() in {"HIGH", "CAGE"}})
 
 
 @contextmanager

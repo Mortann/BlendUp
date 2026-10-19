@@ -43,8 +43,8 @@ assert organize_pair(bpy.context) == "Étagère"
 collection_count = len(bpy.data.collections)
 assert organize_pair(bpy.context) == "Étagère"
 assert len(bpy.data.collections) == collection_count
-assert bpy.data.collections["Étagère"].get("blendup_asset_layout") == "COMPACT"
-assert not bpy.data.collections["Étagère"].children
+from blendup.scene_assets import asset_container
+assert set(asset_container(bpy.context.scene, "Étagère").children) == {low, high}
 assert {o.name for o in export_objects(bpy.context, False)} == {"Étagère", "Helmet"}
 settings = (bpy.context.scene.render.engine, bpy.context.view_layer.objects.active, set(bpy.context.selected_objects))
 counts = (len(bpy.data.scenes), len(bpy.data.objects), len(bpy.data.meshes))
@@ -89,7 +89,7 @@ prior = Path(report["files"][0]["path"]).read_bytes()
 excluded_sources = bpy.data.collections.new("Excluded sources")
 bpy.context.scene.collection.children.link(excluded_sources)
 excluded_sources.objects.link(high)
-bpy.data.collections["Étagère"].objects.unlink(high)
+[c.objects.unlink(high) for c in list(high.users_collection) if c != excluded_sources]
 bpy.context.view_layer.update()
 high_layer = bpy.context.view_layer.layer_collection.children[excluded_sources.name]
 high_layer.exclude = True

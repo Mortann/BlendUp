@@ -1,58 +1,45 @@
 import bpy
+from bpy.app.handlers import persistent
 
 from ..core.bake import bake_groups
-from ..scene_assets import compact_asset_roots, show_asset_role
+from ..scene_assets import create_high, select_asset_role, show_asset_role, toggle_asset_visibility, align_high_parent, parent_signature
 
 
-_outliner_filters = {}
-
-
-def outliner_spaces(context):
-    if context.area and context.area.type == "OUTLINER":
-        return [context.area.spaces.active] if context.area.spaces.active.display_mode == "VIEW_LAYER" else []
-    return [area.spaces.active for area in context.screen.areas if area.type == "OUTLINER"
-            and area.spaces.active.display_mode == "VIEW_LAYER"] if context.screen else []
-
-
-def set_asset_view(spaces, compact):
-    for space in spaces:
-        key = space.as_pointer()
-        if compact:
-            _outliner_filters.setdefault(key, (space.use_filter_object, space.use_filter_collection))
-            space.use_filter_collection = True
-            space.use_filter_object = False
-        else:
-            space.use_filter_object, space.use_filter_collection = _outliner_filters.pop(key, (True, True))
-
-
-class BLENDUP_OT_outliner_assets(bpy.types.Operator):
-    bl_idname = "blendup.outliner_assets"
-    bl_label = "Vue Assets / Détails"
-    bl_description = "Affiche une entrée par collection d'asset dans l'Outliner ; ne masque aucun objet dans la vue 3D"
-
-    def execute(self, context):
-        spaces = outliner_spaces(context)
-        if not spaces:
-            self.report({"WARNING"}, "Aucun Outliner dans cet espace de travail.")
-            return {"CANCELLED"}
-        set_asset_view(spaces, any(space.use_filter_object for space in spaces))
-        return {"FINISHED"}
-
-
-class BLENDUP_OT_compact_assets(bpy.types.Operator):
-    bl_idname = "blendup.compact_assets"
-    bl_label = "Simplifier les assets existants"
-    bl_description = "Remplace les niveaux BAKE / LOW / HIGH / CAGE créés par BlendUp par une collection par asset. Les objets, matériaux et liens de bake sont conservés"
+class BLENDUP_OT_create_high(bpy.types.Operator):
+    bl_idname = "blendup.create_high"
+    bl_label = "Créer le HIGH"
+    bl_description = "Duplique le LOW actif avec un maillage indépendant, nomme le HIGH et organise la paire. Aucun niveau de subdivision n'est ajouté"
     bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == "OBJECT" and context.object is not None and context.object.type == "MESH"
 
     def execute(self, context):
         try:
-            count = compact_asset_roots(context)
-            if not count:
-                self.report({"INFO"}, "Aucune collection de bake BlendUp à simplifier.")
-                return {"CANCELLED"}
-            set_asset_view(outliner_spaces(context), True)
-            self.report({"INFO"}, f"{count} asset(s) simplifié(s). Le bouton Détails réaffiche les objets.")
+            high = create_high(context)
+            self.report({"INFO"}, f"{high.name} créé et sélectionné. Ajoute les détails ou une subdivision selon tes besoins.")
+            return {"FINISHED"}
+        except Exception as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+
+
+class BLENDUP_OT_align_high_parent(bpy.types.Operator):
+    bl_idname = "blendup.align_high_parent"
+    bl_label = "Rattacher HIGH au parent du LOW"
+    bl_description = "Le HIGH suivra le même parent ou os que le LOW. Conserve sa position actuelle et organise la paire. Refuse les HIGH animés ou avec contraintes"
+    bl_options = {"REGISTER", "UNDO"}
+    asset_key: bpy.props.StringProperty()
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == "OBJECT"
+
+    def execute(self, context):
+        try:
+            align_high_parent(context, self.asset_key)
+            self.report({"INFO"}, "HIGH rattaché au parent du LOW, position conservée et paire organisée.")
             return {"FINISHED"}
         except Exception as error:
             self.report({"ERROR"}, str(error))
@@ -61,23 +48,25 @@ class BLENDUP_OT_compact_assets(bpy.types.Operator):
 
 class BLENDUP_OT_show_asset_role(bpy.types.Operator):
     bl_idname = "blendup.show_asset_role"
-    bl_label = "Afficher la version"
-    bl_description = "Affiche et sélectionne la version de cet asset ; masque ses autres versions dans le View Layer courant"
+    bl_label = "Composants de l'asset"
+    bl_description = "Sélection : ajoute ou retire cette version sans désélectionner les autres. Œil : change seulement sa visibilité. Voir seul : isole la version"
     bl_options = {"REGISTER", "UNDO"}
-
     asset_key: bpy.props.StringProperty()
-    role: bpy.props.EnumProperty(items=[("LOW", "LOW", "Version de jeu"), ("HIGH", "HIGH", "Source détaillée"), ("CAGE", "Cage", "Cage de projection")], default="LOW")
+    role: bpy.props.EnumProperty(items=[("ALL", "Tous", "Sélectionner LOW et HIGH"), ("LOW", "LOW", "Version de jeu"), ("HIGH", "HIGH", "Source détaillée"), ("CAGE", "Cage", "Cage de projection")], default="LOW")
+    action: bpy.props.EnumProperty(items=[("SELECT", "Sélection", "Ajouter ou retirer de la sélection"), ("VISIBILITY", "Visibilité", "Afficher ou masquer cette version"), ("SOLO", "Voir seul", "Afficher seulement cette version de la paire")], default="SELECT")
 
     @classmethod
     def poll(cls, context):
-        if context.mode != "OBJECT":
-            cls.poll_message_set("Passe en mode Objet pour changer de version")
-            return False
-        return True
+        return context.mode == "OBJECT"
 
     def execute(self, context):
         try:
-            show_asset_role(context, self.asset_key, self.role)
+            if self.action == "VISIBILITY":
+                toggle_asset_visibility(context, self.asset_key, self.role)
+            elif self.action == "SOLO":
+                show_asset_role(context, self.asset_key, self.role)
+            else:
+                select_asset_role(context, self.asset_key, self.role)
             return {"FINISHED"}
         except Exception as error:
             self.report({"ERROR"}, str(error))
@@ -85,7 +74,7 @@ class BLENDUP_OT_show_asset_role(bpy.types.Operator):
 
 
 class BLENDUP_PT_scene_assets(bpy.types.Panel):
-    bl_label = "Assets dans la scène"
+    bl_label = "Assets de bake"
     bl_idname = "BLENDUP_PT_scene_assets"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -93,51 +82,60 @@ class BLENDUP_PT_scene_assets(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        row = layout.row(align=True)
-        spaces = outliner_spaces(context)
-        compact = bool(spaces) and all(not space.use_filter_object for space in spaces)
-        row.operator("blendup.outliner_assets", text="Détails" if compact else "Vue Assets", icon="OUTLINER")
-        row.operator("blendup.compact_assets", text="Simplifier", icon="OUTLINER_COLLECTION")
+        layout.operator("blendup.create_high", icon="DUPLICATE")
         layout.prop(context.window_manager, "blendup_scene_asset_search", text="", icon="VIEWZOOM")
         query = context.window_manager.blendup_scene_asset_search.casefold().strip()
         groups = sorted((g for g in bake_groups(context.scene.objects).values() if g["LOW"]), key=lambda g: g["name"].casefold())
-        selected = set(context.selected_objects)
         for group in groups:
             if query and query not in group["name"].casefold():
                 continue
-            row = layout.row(align=True)
-            active = bool(selected.intersection(group["LOW"] + group["HIGH"] + group["CAGE"]))
-            button = row.operator("blendup.show_asset_role", text=group["name"], icon="OUTLINER_OB_MESH", depress=active)
-            button.asset_key, button.role = group["name"], "LOW"
+            box = layout.box()
+            row = box.row(align=True)
+            row.label(text=group["name"], icon="EMPTY_AXIS")
+            button = row.operator("blendup.show_asset_role", text="Tous", icon="RESTRICT_SELECT_OFF")
+            button.asset_key, button.role = group["name"], "ALL"
             for role in ("LOW", "HIGH", "CAGE"):
                 if not group[role]:
                     continue
-                visible = any(obj.name in context.view_layer.objects and obj.visible_get(view_layer=context.view_layer) for obj in group[role])
-                button = row.operator("blendup.show_asset_role", text="Cage" if role == "CAGE" else role, depress=visible)
+                targets = [o for o in group[role] if o.name in context.view_layer.objects]
+                row = box.row(align=True)
+                selected = bool(targets) and all(o.select_get() for o in targets)
+                button = row.operator("blendup.show_asset_role", text=role, depress=selected)
                 button.asset_key, button.role = group["name"], role
+                visible = any(o.visible_get() for o in targets)
+                button = row.operator("blendup.show_asset_role", text="", icon="HIDE_OFF" if visible else "HIDE_ON")
+                button.asset_key, button.role, button.action = group["name"], role, "VISIBILITY"
+                button = row.operator("blendup.show_asset_role", text="Voir seul")
+                button.asset_key, button.role, button.action = group["name"], role, "SOLO"
+            if len(group["LOW"]) == 1 and any(parent_signature(o) != parent_signature(group["LOW"][0]) for o in group["HIGH"] + group["CAGE"]):
+                button = box.operator("blendup.align_high_parent", icon="CONSTRAINT_BONE")
+                button.asset_key = group["name"]
         if not groups:
-            layout.label(text="Organise une paire LOW / HIGH pour commencer.", icon="INFO")
-        layout.label(text="Vue Assets : collections seules dans l'Outliner")
+            layout.label(text="Sélectionne un LOW puis crée son HIGH.", icon="INFO")
+        layout.label(text="Déplie l'objet · Asset dans l'Outliner.")
 
 
-def draw_outliner_assets(self, context):
-    if context.space_data.display_mode != "VIEW_LAYER":
-        return
-    compact = not context.space_data.use_filter_object
-    self.layout.operator("blendup.outliner_assets", text="Détails" if compact else "Assets", icon="OUTLINER_COLLECTION", depress=compact)
+@persistent
+def restore_legacy_outliner_filters(_unused=None):
+    if any(c.get("blendup_bake_root") for c in bpy.data.collections):
+        for screen in bpy.data.screens:
+            for area in screen.areas:
+                for space in area.spaces:
+                    if space.type == "OUTLINER" and space.display_mode == "VIEW_LAYER" and not space.use_filter_object:
+                        space.use_filter_object = True
 
 
 def register_scene_assets():
     bpy.types.WindowManager.blendup_scene_asset_search = bpy.props.StringProperty(name="Rechercher un asset", default="", options={"SKIP_SAVE"})
-    bpy.types.OUTLINER_HT_header.append(draw_outliner_assets)
+    # Blender restricts bpy.data while enabling an add-on from Preferences.
+    bpy.app.timers.register(restore_legacy_outliner_filters, first_interval=0.1)
+    bpy.app.handlers.load_post.append(restore_legacy_outliner_filters)
 
 
 def unregister_scene_assets():
-    bpy.types.OUTLINER_HT_header.remove(draw_outliner_assets)
+    if bpy.app.timers.is_registered(restore_legacy_outliner_filters):
+        bpy.app.timers.unregister(restore_legacy_outliner_filters)
+    if restore_legacy_outliner_filters in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(restore_legacy_outliner_filters)
     if hasattr(bpy.types.WindowManager, "blendup_scene_asset_search"):
         del bpy.types.WindowManager.blendup_scene_asset_search
-    for screen in bpy.data.screens:
-        spaces = [space for area in screen.areas for space in area.spaces
-                  if space.type == "OUTLINER" and space.as_pointer() in _outliner_filters]
-        set_asset_view(spaces, False)
-    _outliner_filters.clear()

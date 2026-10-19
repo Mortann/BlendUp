@@ -45,6 +45,13 @@ def export_objects(context, selected_only):
     rigs = {modifier.object for obj in objects if obj.type == "MESH"
             for modifier in obj.modifiers if modifier.type == "ARMATURE" and modifier.object}
     rigs.update(obj.parent for obj in objects if obj.parent and obj.parent.type == "ARMATURE")
+    # Bake containers may sit between a bone-parented LOW and its rig.
+    for obj in list(objects):
+        parent = obj.parent
+        while parent and parent.get("blendup_asset_root"):
+            parent = parent.parent
+        if parent and parent.type == "ARMATURE":
+            rigs.add(parent)
     excluded_rigs = rigs - layer_objects
     if excluded_rigs:
         names = ", ".join(sorted(rig.name for rig in excluded_rigs))
