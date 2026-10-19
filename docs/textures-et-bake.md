@@ -10,13 +10,23 @@ Pour organiser automatiquement : sélectionner le ou les HIGH, puis le LOW en de
 
 ```text
 Props/
-└─ Plastron_BAKE/
-   ├─ Plastron_LOW/     objet Plastron
-   ├─ Plastron_HIGH/    objet Plastron_High, autres sources éventuelles
-   └─ Plastron_CAGE/    cage facultative
+└─ Plastron/              une collection par asset
+   ├─ Plastron            objet LOW
+   ├─ Plastron_High       objet HIGH, autres sources éventuelles
+   └─ Plastron_Cage       cage facultative
 ```
 
-Le lien est mémorisé sur les objets et collections : les objets peuvent ensuite être renommés. Un objet ajouté directement à la collection HIGH ou CAGE est reconnu par son rôle. Réutiliser **Organiser la paire** complète les collections existantes.
+Depuis BlendUp 0.3.1 / extension 0.7.1, cette structure compacte remplace les sous-collections LOW / HIGH / CAGE. Le lien est mémorisé sur les objets : ils peuvent ensuite être renommés. Une cage nommée `Plastron_CAGE` est reconnue automatiquement ; les objets des anciennes collections HIGH ou CAGE gardent leur rôle lors de la conversion.
+
+### Une seule entrée par pièce dans l’Outliner
+
+Dans **N → BlendUp → Assets dans la scène**, cliquer **Simplifier** pour convertir les anciennes structures `Nom_BAKE → Nom_LOW / Nom_HIGH / Nom_CAGE`. Cela conserve les noms des objets, maillages, transformations, matériaux, liens de bake et leur visibilité dans chaque View Layer. Les collections partagées ou liées, et celles contenant des sous-collections personnalisées, doivent être séparées avant la conversion. Les autres collections restent en place. La conversion est annulable par Ctrl+Z et n’enregistre pas le fichier automatiquement.
+
+Le bouton **Assets** dans l’en-tête de l’Outliner (ou **Vue Assets** dans le panneau) affiche uniquement les collections : une ligne `Epaulière1_Droite` remplace les lignes techniques. Il agit sur les filtres de l’Outliner et ne masque aucun maillage dans la vue 3D. **Détails** réaffiche les objets.
+
+La liste **Assets dans la scène** propose une recherche et les boutons **LOW**, **HIGH** et éventuellement **Cage** par pièce. Ils affichent et sélectionnent cette version dans le View Layer courant, en masquant les autres versions de la même pièce. Les autres assets restent tels quels. Le bouton portant le nom de l’asset sélectionne son LOW. Le mode Objet est nécessaire pour changer de version.
+
+L’export et le contrôle UV continuent d’utiliser le LOW lorsque celui-ci est masqué uniquement par l’affichage HIGH/Cage de BlendUp. Les collections exclues ou masquées manuellement restent respectées. Sauvegarder le `.blend` pour conserver l’organisation et le mode d’affichage.
 
 Les HIGH et CAGE associés à un LOW sont exclus des exports et des mesures UV. Un objet nommé `Temple_HIGH` sans paire reste un asset ordinaire. Le bake peut lire les sources masquées ou dans une collection exclue ; leur visibilité est restaurée après l’opération.
 

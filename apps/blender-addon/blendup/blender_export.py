@@ -6,9 +6,9 @@ import json
 import bpy
 
 try:
-    from .core.bake import bake_helpers
+    from .core.bake import bake_helpers, bake_groups, preview_low_visibility
 except ImportError:
-    from blendup_bake_core import bake_helpers
+    from blendup_bake_core import bake_helpers, bake_groups, preview_low_visibility
 
 
 def slot_curves(action, slot=None):
@@ -27,8 +27,14 @@ def export_objects(context, selected_only):
     # Excluded collections remain in scene.objects but cannot be selected/exported.
     # Respect the active View Layer so HIGH meshes and source libraries stay out.
     layer_objects = set(context.view_layer.objects)
-    visible_objects = {obj for obj in layer_objects if obj.visible_get(view_layer=context.view_layer)}
+    with preview_low_visibility(context) as preview_lows:
+        visible_objects = {obj for obj in layer_objects if obj.visible_get(view_layer=context.view_layer)}
+        preview_lows = set(preview_lows)
     objects = set(context.selected_objects) if selected_only else layer_objects.copy()
+    if selected_only and preview_lows:
+        for group in bake_groups(context.scene.objects).values():
+            if objects.intersection(group["HIGH"] + group["CAGE"]):
+                objects.update(preview_lows.intersection(group["LOW"]))
     # The eye, viewport disable and hidden parent collections all exclude geometry.
     objects.intersection_update(visible_objects)
     objects.difference_update(bake_helpers(context.scene.objects))

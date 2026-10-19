@@ -10,11 +10,11 @@ import bpy
 
 try:
     from .core.asset_policy import uv_validation_ignored
-    from .core.bake import bake_helpers
+    from .core.bake import bake_helpers, preview_low_visibility
     from .core.uv_quality import ALGORITHM_VERSION, UvPolicy, UvTriangle, measure_uv_quality, passes_uv_gate, uv_gate_message
 except ImportError:  # Also embedded as standalone modules by the desktop application.
     from blendup_asset_policy import uv_validation_ignored
-    from blendup_bake_core import bake_helpers
+    from blendup_bake_core import bake_helpers, preview_low_visibility
     from blendup_uv_quality import ALGORITHM_VERSION, UvPolicy, UvTriangle, measure_uv_quality, passes_uv_gate, uv_gate_message
 
 
@@ -44,6 +44,11 @@ def _seam_diagnostics(mesh, layer) -> dict:
 
 def analyze_scene(policy: UvPolicy, context=None) -> dict:
     context = context or bpy.context
+    with preview_low_visibility(context):
+        return _analyze_visible_scene(policy, context)
+
+
+def _analyze_visible_scene(policy: UvPolicy, context) -> dict:
     triangles = []
     seams = {}
     depsgraph = context.evaluated_depsgraph_get()

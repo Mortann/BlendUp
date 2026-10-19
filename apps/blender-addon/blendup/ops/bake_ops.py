@@ -25,12 +25,14 @@ class BLENDUP_PG_bake(bpy.types.PropertyGroup):
 class BLENDUP_OT_organize_bake(bpy.types.Operator):
     bl_idname = "blendup.organize_bake"
     bl_label = "Organiser la paire"
-    bl_description = "Sélectionne HIGH puis LOW actif : crée les collections LOW / HIGH et mémorise leur lien sans renommer les objets"
+    bl_description = "Sélectionne HIGH puis LOW actif : crée une collection d'asset compacte et mémorise leur lien sans renommer les objets"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
         try:
             name = organize_pair(context)
+            from .scene_asset_ops import outliner_spaces, set_asset_view
+            set_asset_view(outliner_spaces(context), True)
             self.report({"INFO"}, f"Paire {name} organisée. Les HIGH seront ignorés à l'export.")
             return {"FINISHED"}
         except Exception as error:

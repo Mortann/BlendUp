@@ -1,7 +1,7 @@
 bl_info = {
     "name": "BlendUp",
     "author": "BlendUp",
-    "version": (0, 7, 0),
+    "version": (0, 7, 1),
     "blender": (4, 2, 0),
     "location": "Vue 3D > Barre latérale > BlendUp",
     "description": "Gère les assets 3D BlendUp et les exports vers Godot ou Unity",
@@ -31,6 +31,8 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.blendup_validation_summary = bpy.props.StringProperty(default="")
     register_properties()
+    from .ops.scene_asset_ops import register_scene_assets
+    register_scene_assets()
     from .ops.bake_ops import BLENDUP_PG_bake
     bpy.types.Scene.blendup_bake = bpy.props.PointerProperty(type=BLENDUP_PG_bake)
     register_handlers()
@@ -40,6 +42,8 @@ def unregister():
     if not bpy:
         return
     unregister_handlers()
+    from .ops.scene_asset_ops import unregister_scene_assets
+    unregister_scene_assets()
     unregister_properties()
     if hasattr(bpy.types.Scene, "blendup_bake"):
         del bpy.types.Scene.blendup_bake

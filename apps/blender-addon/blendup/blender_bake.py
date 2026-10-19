@@ -75,8 +75,10 @@ def organize_pair(context):
     highs = [o for o in context.selected_objects if o.type == "MESH" and o != low]
     if not low or low.type != "MESH" or not highs:
         raise ValueError("Sélectionne le ou les HIGH, puis le LOW en dernier (objet actif).")
-    from .core.bake import name_role
-    key = name_role(low.name)[0]
+    if any(not obj.is_editable for obj in [low, *highs]):
+        raise ValueError("Rends les objets liés locaux avant d'organiser la paire.")
+    from .core.bake import object_role
+    key = object_role(low)[0]
     texture_stem(key)
     parents = list(low.users_collection)
     parent = parents[0] if parents else context.scene.collection
@@ -85,19 +87,16 @@ def organize_pair(context):
         root = bpy.data.collections.new(f"{key}_BAKE")
         root["blendup_bake_root"] = key
         parent.children.link(root)
-    for role, objects in (("LOW", [low]), ("HIGH", highs), ("CAGE", [])):
-        collection = next((c for c in root.children if c.get(ROLE_KEY) == role), None)
-        if not collection:
-            collection = bpy.data.collections.new(f"{key}_{role}")
-            root.children.link(collection)
-        collection[ROLE_KEY], collection[PAIR_KEY] = role, key
+    from .scene_assets import compact_asset_roots
+    compact_asset_roots(context, [key])
+    for role, objects in (("LOW", [low]), ("HIGH", highs)):
         for obj in objects:
             obj[ROLE_KEY], obj[PAIR_KEY] = role, key
             old_collections = list(obj.users_collection)
-            if obj.name not in collection.objects:
-                collection.objects.link(obj)
+            if obj.name not in root.objects:
+                root.objects.link(obj)
             for previous in old_collections:
-                if previous != collection:
+                if previous != root:
                     previous.objects.unlink(obj)
     return key
 

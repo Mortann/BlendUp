@@ -43,6 +43,8 @@ assert organize_pair(bpy.context) == "Étagère"
 collection_count = len(bpy.data.collections)
 assert organize_pair(bpy.context) == "Étagère"
 assert len(bpy.data.collections) == collection_count
+assert bpy.data.collections["Étagère"].get("blendup_asset_layout") == "COMPACT"
+assert not bpy.data.collections["Étagère"].children
 assert {o.name for o in export_objects(bpy.context, False)} == {"Étagère", "Helmet"}
 settings = (bpy.context.scene.render.engine, bpy.context.view_layer.objects.active, set(bpy.context.selected_objects))
 counts = (len(bpy.data.scenes), len(bpy.data.objects), len(bpy.data.meshes))
@@ -84,8 +86,12 @@ for channel in options.channels:
 # Re-bake backs up previous files rather than silently destroying them.
 prior = Path(report["files"][0]["path"]).read_bytes()
 # A HIGH excluded from the source View Layer must still evaluate for baking.
-group_layer = bpy.context.view_layer.layer_collection.children["Étagère_BAKE"]
-high_layer = group_layer.children["Étagère_HIGH"]
+excluded_sources = bpy.data.collections.new("Excluded sources")
+bpy.context.scene.collection.children.link(excluded_sources)
+excluded_sources.objects.link(high)
+bpy.data.collections["Étagère"].objects.unlink(high)
+bpy.context.view_layer.update()
+high_layer = bpy.context.view_layer.layer_collection.children[excluded_sources.name]
 high_layer.exclude = True
 high.hide_viewport = True
 bake_pairs(bpy.context, discover_pairs(bpy.context), root / "textures", BakeOptions(resolution=256, samples=1))

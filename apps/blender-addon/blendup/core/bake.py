@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 
 ROLE_KEY = "blendup_bake_role"
 PAIR_KEY = "blendup_bake_pair"
+PREVIEW_LAYERS_KEY = "blendup_preview_low_layers"
 ROLES = {"LOW", "HIGH", "CAGE"}
 
 
@@ -49,6 +51,27 @@ def bake_helpers(objects) -> set:
     groups = bake_groups(objects)
     return {obj for group in groups.values() for role in ("HIGH", "CAGE") for obj in group[role]
             if group["LOW"] or str(obj.get(ROLE_KEY, "")).upper() in {"HIGH", "CAGE"}}
+
+
+@contextmanager
+def preview_low_visibility(context):
+    """Expose LOWs hidden only by HIGH preview, restoring the editing display."""
+    layer = context.view_layer
+    hidden = []
+    eligible = set()
+    try:
+        for obj in layer.objects:
+            if layer.name not in obj.get(PREVIEW_LAYERS_KEY, ()) or object_role(obj)[1] != "LOW":
+                continue
+            if obj.hide_get(view_layer=layer):
+                hidden.append(obj)
+                obj.hide_set(False, view_layer=layer)
+            if obj.visible_get(view_layer=layer):
+                eligible.add(obj)
+        yield eligible
+    finally:
+        for obj in hidden:
+            obj.hide_set(True, view_layer=layer)
 
 
 def texture_stem(value: str) -> str:
