@@ -135,6 +135,33 @@ def preserved_context(context):
 
 
 @contextmanager
+def without_bake_containers(context):
+    """Export the original parenting, then restore the editable asset tree.
+
+    glTF sampling cannot resolve bone children through an unexported Empty.
+    Disconnect the technical containers too: they must not enter bone sampling.
+    """
+    containers = [o for o in context.scene.objects if o.get("blendup_asset_root")]
+    roots = [(o, o.parent, o.parent_type, o.parent_bone, o.matrix_parent_inverse.copy(), o.matrix_basis.copy()) for o in containers]
+    children = [(o, o.parent, o.parent_type, o.parent_bone, o.matrix_parent_inverse.copy(), o.matrix_basis.copy())
+                for o in context.scene.objects if o.parent in containers]
+    try:
+        for obj, parent, _, _, inverse, basis in children:
+            obj.parent, obj.parent_type, obj.parent_bone = parent.parent, parent.parent_type, parent.parent_bone
+            obj.matrix_parent_inverse = parent.matrix_parent_inverse @ parent.matrix_basis @ inverse
+            obj.matrix_basis = basis
+        for root in containers:
+            root.parent = None
+        context.view_layer.update()
+        yield
+    finally:
+        for obj, parent, parent_type, bone, inverse, basis in [*roots, *children]:
+            obj.parent, obj.parent_type, obj.parent_bone = parent, parent_type, bone
+            obj.matrix_parent_inverse, obj.matrix_basis = inverse, basis
+        context.view_layer.update()
+
+
+@contextmanager
 def prepared_export(context, objects, animations):
     scene = context.scene
     selected = list(context.selected_objects)
@@ -258,7 +285,7 @@ def export_scene(output, export_format, context=None, selected_only=False,
     if not objects:
         raise ValueError("Aucun objet à exporter.")
     try:
-        with prepared_export(context, objects, animations) as has_clips:
+        with without_bake_containers(context), prepared_export(context, objects, animations) as has_clips:
             if export_format == "glb":
                 result = bpy.ops.export_scene.gltf(
                     filepath=str(temporary), export_format="GLB", use_selection=True,

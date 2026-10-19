@@ -8,7 +8,7 @@ Pour une paire, nommer les maillages `Plastron_LOW` et `Plastron_HIGH`. Le nom e
 
 **Créer le HIGH** dans **N → BlendUp → Assets de bake** duplique le LOW actif avec un maillage indépendant, le nomme, organise la paire et sélectionne le HIGH. Aucun niveau de subdivision n’est imposé : ajouter les détails selon le besoin.
 
-Pour deux versions déjà créées : sélectionner les HIGH puis le LOW en dernier (ou utiliser **Tous** dans la liste) et cliquer **Organiser la paire**. Depuis BlendUp 0.4.0 / extension 0.8.0, seule cette paire est regroupée sous un objet vide Blender :
+Pour deux versions déjà créées : sélectionner les HIGH puis le LOW en dernier (ou utiliser **Tous** dans la liste) et cliquer **Organiser la paire**. Depuis BlendUp 0.4.1 / extension 0.8.1, seule cette paire est regroupée sous un objet vide Blender :
 
 ```text
 Props/

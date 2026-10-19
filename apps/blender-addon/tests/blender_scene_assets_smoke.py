@@ -229,6 +229,25 @@ for frame, matrix in before_matrices.items():
     scene.frame_set(frame)
     assert all(abs(a-b) < 1e-5 for ra, rb in zip(bone_low.matrix_world, matrix) for a,b in zip(ra,rb))
 assert rig in export_objects(context, False)
+bone_container = bone_low.parent
+selection = set(context.selected_objects)
+export_scene(out / "BoneAsset.glb", "glb", selected_only=True)
+data = (out / "BoneAsset.glb").read_bytes()
+length, _ = struct.unpack_from("<II", data, 12)
+gltf = json.loads(data[20:20 + length])
+low_index = next(i for i, n in enumerate(gltf["nodes"]) if n.get("name") == bone_low.name)
+bone_node = next(n for n in gltf["nodes"] if n.get("name") == rig.data.bones[0].name)
+assert low_index in bone_node["children"] and gltf["animations"]
+assert bone_low.parent == bone_high.parent == bone_container and bone_container.parent == rig
+assert set(context.selected_objects) == selection
+export_scene(out / "BoneAsset.fbx", "fbx", selected_only=True)
+assert bone_low.parent == bone_container and bone_container.parent == rig
+try:
+    export_scene(out / "Invalid.bad", "unsupported", selected_only=True)
+    raise AssertionError("Expected export failure")
+except ValueError:
+    pass
+assert bone_low.parent == bone_container and bone_container.parent == rig
 
 out = Path(args[1]).resolve()
 out.mkdir(parents=True, exist_ok=True)
