@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
 
@@ -48,11 +49,61 @@ pub(super) const PLUGIN_FILES: [(&str, &str); 9] = [
 pub struct ShowcaseConfig {
     id: String,
     folder: String,
-    #[serde(default = "default_spacing")]
-    spacing: f64,
+    #[serde(flatten)]
+    options: ShowcaseOptions,
 }
-fn default_spacing() -> f64 {
-    1.5
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShowcaseOptions {
+    spacing: f64,
+    aspect_ratio: Option<f64>,
+    sort_order: ShowcaseSortOrder,
+    excluded_asset_ids: BTreeSet<String>,
+}
+
+impl Default for ShowcaseOptions {
+    fn default() -> Self {
+        Self {
+            spacing: 1.5,
+            aspect_ratio: None,
+            sort_order: ShowcaseSortOrder::Default,
+            excluded_asset_ids: BTreeSet::new(),
+        }
+    }
+}
+
+impl ShowcaseOptions {
+    fn validate(&self) -> Result<(), String> {
+        if !(0.1..=100.0).contains(&self.spacing) {
+            return Err("L’espacement doit être compris entre 0,1 et 100 mètres.".into());
+        }
+        if self
+            .aspect_ratio
+            .is_some_and(|ratio| !(0.1..=10.0).contains(&ratio))
+        {
+            return Err("Le ratio largeur / profondeur doit être compris entre 0,1 et 10.".into());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum ShowcaseSortOrder {
+    #[default]
+    Default,
+    SmallFirst,
+    Folder,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShowcaseAssetView {
+    id: String,
+    name: String,
+    folder: String,
+    godot_ready: bool,
 }
 
 #[derive(Serialize)]
@@ -60,9 +111,9 @@ fn default_spacing() -> f64 {
 pub struct ShowcaseView {
     id: String,
     folder: String,
-    spacing: f64,
+    options: ShowcaseOptions,
+    assets: Vec<ShowcaseAssetView>,
     pub status: String,
-    asset_count: usize,
     included_count: usize,
     godot_count: usize,
     blender_path: String,
@@ -118,8 +169,7 @@ fn configurations(root: &Path) -> Vec<ShowcaseConfig> {
                 && c.id
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-                && c.spacing.is_finite()
-                && (0.1..=100.0).contains(&c.spacing)
+                && c.options.validate().is_ok()
         })
         .collect()
 }
@@ -263,26 +313,45 @@ fn godot_path(project: &ProjectConfig, id: &str) -> Option<String> {
     (project.engine == "godot")
         .then(|| format!("{}/BlendUp/Showcases/{id}.tscn", project.paths.engine_root))
 }
+fn showcase_assets<'a>(
+    config: &'a ShowcaseConfig,
+    all: &'a [Value],
+) -> impl Iterator<Item = &'a Value> {
+    all.iter().filter(|a| {
+        a["folder"]
+            .as_str()
+            .is_some_and(|folder| path_is_inside(folder, &config.folder))
+    })
+}
+
 fn showcase_job(
     root: &Path,
     project: &ProjectConfig,
     config: &ShowcaseConfig,
     all: &[Value],
 ) -> Value {
-    let assets: Vec<_> = all
-        .iter()
+    let mut assets: Vec<_> = showcase_assets(config, all)
         .filter(|a| {
+            a["id"]
+                .as_str()
+                .is_some_and(|id| !config.options.excluded_asset_ids.contains(id))
+        })
+        .collect();
+    if config.options.sort_order == ShowcaseSortOrder::Folder {
+        assets.sort_by(|a, b| {
             a["folder"]
                 .as_str()
-                .is_some_and(|folder| path_is_inside(folder, &config.folder))
-        })
-        .cloned()
-        .collect();
+                .cmp(&b["folder"].as_str())
+                .then_with(|| a["name"].as_str().cmp(&b["name"].as_str()))
+                .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+        });
+    }
     let signature = digest(
-        &serde_json::json!({"v": 1, "config":config, "engine":project.engine, "paths":project.paths, "assets":assets}),
+        &serde_json::json!({"v": 2, "config":config, "engine":project.engine, "paths":project.paths, "assets":assets}),
     );
     serde_json::json!({"mode":"showcase", "root":root.to_string_lossy(), "projectId":project.project_id,
-        "folder":config.folder, "spacing":config.spacing, "target":scene_dir(root, &config.id).join("Showcase.blend").to_string_lossy(),
+        "folder":config.folder, "spacing":config.options.spacing, "aspectRatio":config.options.aspect_ratio,
+        "sortOrder":config.options.sort_order, "target":scene_dir(root, &config.id).join("Showcase.blend").to_string_lossy(),
         "assets":assets, "signature":signature})
 }
 fn run_blender(
@@ -371,8 +440,11 @@ pub fn snapshot(
         let manifest = showcase_job(root, project, &config, &all);
         let directory = scene_dir(root, &config.id);
         let state = read_value(&directory.join("state.json")).unwrap_or(Value::Null);
-        let layout = read_value(&directory.join("Showcase.json")).unwrap_or(Value::Null);
+        let layout = read_value(&directory.join("Showcase.json"))
+            .filter(|layout| layout["signature"] == manifest["signature"])
+            .unwrap_or(Value::Null);
         let stale = state["signature"] != manifest["signature"]
+            || layout.is_null()
             || !directory.join("Showcase.blend").is_file()
             || godot_path(project, &config.id).is_some_and(|p| !root.join(p).is_file());
         let failed = state["signature"] == manifest["signature"] && state["error"].is_string();
@@ -397,52 +469,75 @@ pub fn snapshot(
                 });
             }
         }
+        let placed_ids: HashSet<_> = layout["placements"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|placement| placement["id"].as_str())
+            .collect();
+        let godot_count = if stale || failed {
+            0
+        } else {
+            manifest["assets"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|a| {
+                    a["godotReady"] == true
+                        && a["id"].as_str().is_some_and(|id| placed_ids.contains(id))
+                })
+                .count()
+        };
         views.push(ShowcaseView {
             id: config.id.clone(),
+            assets: showcase_assets(&config, &all)
+                .map(|a| ShowcaseAssetView {
+                    id: a["id"].as_str().unwrap_or_default().into(),
+                    name: a["name"].as_str().unwrap_or_default().into(),
+                    folder: a["folder"].as_str().unwrap_or_default().into(),
+                    godot_ready: a["godotReady"] == true,
+                })
+                .collect(),
             folder: config.folder,
-            spacing: config.spacing,
+            options: config.options,
             status: if busy(&job_key) {
                 "generating"
-            } else if failed || layout["errors"].as_array().is_some_and(|v| !v.is_empty()) {
+            } else if failed {
                 "error"
             } else if stale {
                 "outdated"
+            } else if layout["errors"].as_array().is_some_and(|v| !v.is_empty()) {
+                "error"
             } else {
                 "ready"
             }
             .into(),
-            asset_count: manifest["assets"].as_array().map_or(0, Vec::len),
-            included_count: layout["placements"].as_array().map_or(0, Vec::len),
-            godot_count: manifest["assets"].as_array().map_or(0, |v| {
-                v.iter()
-                    .filter(|a| {
-                        a["godotReady"] == true
-                            && layout["placements"]
-                                .as_array()
-                                .is_some_and(|p| p.iter().any(|p| p["id"] == a["id"]))
-                    })
-                    .count()
-            }),
+            included_count: placed_ids.len(),
+            godot_count,
             blender_path: relative_string(root, &directory.join("Showcase.blend"))
                 .unwrap_or_default(),
             godot_path: godot_path(project, &config.id),
-            error: state["error"].as_str().map(str::to_owned).or_else(|| {
-                layout["errors"]
-                    .as_array()
-                    .filter(|v| !v.is_empty())
-                    .map(|v| {
-                        v.iter()
-                            .map(|e| {
-                                format!(
-                                    "{} : {}",
-                                    e["name"].as_str().unwrap_or("Asset"),
-                                    e["error"].as_str().unwrap_or("Erreur")
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    })
-            }),
+            error: state["error"]
+                .as_str()
+                .filter(|_| failed)
+                .map(str::to_owned)
+                .or_else(|| {
+                    layout["errors"]
+                        .as_array()
+                        .filter(|v| !v.is_empty())
+                        .map(|v| {
+                            v.iter()
+                                .map(|e| {
+                                    format!(
+                                        "{} : {}",
+                                        e["name"].as_str().unwrap_or("Asset"),
+                                        e["error"].as_str().unwrap_or("Erreur")
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        })
+                }),
         });
     }
     let mut integrations = integration_config(root);
@@ -490,25 +585,25 @@ pub fn configure_showcase(
     project_root: String,
     folder: String,
     enabled: bool,
-    spacing: Option<f64>,
+    options: Option<ShowcaseOptions>,
 ) -> Result<String, String> {
     let root = validated_project_root(&project_root)?;
     let project = read_project_config(&root)?;
     let directory = validated_art_directory(&root, &project, &folder, true)?;
     let folder = relative_string(&root, &directory)?;
-    let gap = spacing.unwrap_or(1.5);
-    if !gap.is_finite() || !(0.1..=100.0).contains(&gap) {
-        return Err("L’espacement doit être compris entre 0,1 et 100 mètres.".into());
+    if let Some(options) = &options {
+        options.validate()?;
     }
     let mut configs = configurations(&root);
+    let already_enabled = configs.iter().any(|config| config.folder == folder);
     if let Some(existing) = configs.iter_mut().find(|c| c.folder == folder) {
         if busy(&key(&root, &existing.id)) {
             return Err("La scène est en cours de génération.".into());
         }
-        if enabled {
-            existing.spacing = gap;
-        } else {
+        if !enabled {
             configs.retain(|c| c.folder != folder);
+        } else if let Some(options) = options {
+            existing.options = options;
         }
     } else if enabled {
         configs.push(ShowcaseConfig {
@@ -517,14 +612,16 @@ pub fn configure_showcase(
                 digest(&serde_json::json!([folder, unix_time_ms().to_string()]))
             ),
             folder,
-            spacing: gap,
+            options: options.unwrap_or_default(),
         });
     }
     write_json(&config_path(&root), &configs)?;
-    Ok(if enabled {
-        "Showcase activé : les scènes vont être générées automatiquement."
-    } else {
+    Ok(if !enabled {
         "Showcase désactivé. Les scènes générées sont conservées."
+    } else if already_enabled {
+        "Options du Showcase enregistrées."
+    } else {
+        "Showcase activé : les scènes vont être générées automatiquement."
     }
     .into())
 }
@@ -561,9 +658,32 @@ pub async fn rebuild_showcase(
 
 pub fn retarget(root: &Path, from: &str, to: &str) -> Result<(), String> {
     let mut configs = configurations(root);
+    // Assets without metadata derive their IDs from their source paths.
+    if configs
+        .iter()
+        .any(|config| !config.options.excluded_asset_ids.is_empty())
+    {
+        let metadata = read_asset_metadata(root);
+        let mut sources = Vec::new();
+        collect_blend_files(&root.join(to), &mut sources)?;
+        for source in sources {
+            let new_path = relative_string(root, &source)?;
+            if !metadata.contains_key(&normalize_relative_string(&new_path)) {
+                let old_id = asset_id_for_path(&replace_path_prefix(&new_path, to, from));
+                for config in &mut configs {
+                    if config.options.excluded_asset_ids.remove(&old_id) {
+                        config
+                            .options
+                            .excluded_asset_ids
+                            .insert(asset_id_for_path(&new_path));
+                    }
+                }
+            }
+        }
+    }
     for config in &mut configs {
         if path_is_inside(&config.folder, from) {
-            config.folder = format!("{to}{}", &config.folder[from.len()..]);
+            config.folder = replace_path_prefix(&config.folder, from, to);
         }
     }
     if config_path(root).exists() {
@@ -748,7 +868,16 @@ fn write_godot_scene(path: &Path, manifest: &Value, layout: &Value) -> Result<()
         .collect();
     let x = layout["floor"][0].as_f64().unwrap_or(4.0);
     let z = layout["floor"][1].as_f64().unwrap_or(4.0);
-    let distance = x.max(z).max(4.0);
+    let height = placements
+        .iter()
+        .filter_map(|p| Some(p["bounds"][1][2].as_f64()? - p["bounds"][0][2].as_f64()?))
+        .fold(0.0, f64::max);
+    let distance = x.max(z).max(4.0).max(height);
+    let (camera_x, camera_rotation) = if manifest["sortOrder"] == "smallFirst" {
+        (0.0, "-45, 0, 0")
+    } else {
+        (distance, "-35.26439, 45, 0")
+    };
     let mut text = format!("; Generated by BlendUp. Rebuilt automatically; copy this scene before editing.\n[gd_scene load_steps={} format=3]\n\n", included.len() + 4);
     for (i, (a, _)) in included.iter().enumerate() {
         text += &format!(
@@ -756,7 +885,7 @@ fn write_godot_scene(path: &Path, manifest: &Value, layout: &Value) -> Result<()
             a["resourcePath"]
         );
     }
-    text += &format!("\n[sub_resource type=\"StandardMaterial3D\" id=\"FloorMaterial\"]\nalbedo_color = Color(0.24, 0.27, 0.3, 1)\n\n[sub_resource type=\"PlaneMesh\" id=\"FloorMesh\"]\nmaterial = SubResource(\"FloorMaterial\")\nsize = Vector2({x}, {z})\n\n[sub_resource type=\"Environment\" id=\"Environment\"]\nbackground_mode = 1\nbackground_color = Color(0.18, 0.2, 0.24, 1)\nambient_light_source = 3\nambient_light_color = Color(1, 1, 1, 1)\nambient_light_energy = 0.5\n\n[node name=\"Showcase\" type=\"Node3D\"]\n\n[node name=\"Sol\" type=\"MeshInstance3D\" parent=\".\"]\nmesh = SubResource(\"FloorMesh\")\n\n[node name=\"WorldEnvironment\" type=\"WorldEnvironment\" parent=\".\"]\nenvironment = SubResource(\"Environment\")\n\n[node name=\"Sun\" type=\"DirectionalLight3D\" parent=\".\"]\nrotation_degrees = Vector3(-45, -30, 0)\nlight_energy = 1.5\nshadow_enabled = true\n\n[node name=\"Camera\" type=\"Camera3D\" parent=\".\"]\nposition = Vector3({distance}, {distance}, {distance})\nrotation_degrees = Vector3(-35.26439, 45, 0)\nprojection = 1\nsize = {}\nfar = {}\ncurrent = true\n", distance * 1.8, (distance * 10.0).max(4000.0));
+    text += &format!("\n[sub_resource type=\"StandardMaterial3D\" id=\"FloorMaterial\"]\nalbedo_color = Color(0.24, 0.27, 0.3, 1)\n\n[sub_resource type=\"PlaneMesh\" id=\"FloorMesh\"]\nmaterial = SubResource(\"FloorMaterial\")\nsize = Vector2({x}, {z})\n\n[sub_resource type=\"Environment\" id=\"Environment\"]\nbackground_mode = 1\nbackground_color = Color(0.18, 0.2, 0.24, 1)\nambient_light_source = 3\nambient_light_color = Color(1, 1, 1, 1)\nambient_light_energy = 0.5\n\n[node name=\"Showcase\" type=\"Node3D\"]\n\n[node name=\"Sol\" type=\"MeshInstance3D\" parent=\".\"]\nmesh = SubResource(\"FloorMesh\")\n\n[node name=\"WorldEnvironment\" type=\"WorldEnvironment\" parent=\".\"]\nenvironment = SubResource(\"Environment\")\n\n[node name=\"Sun\" type=\"DirectionalLight3D\" parent=\".\"]\nrotation_degrees = Vector3(-45, -30, 0)\nlight_energy = 1.5\nshadow_enabled = true\n\n[node name=\"Camera\" type=\"Camera3D\" parent=\".\"]\nposition = Vector3({camera_x}, {distance}, {distance})\nrotation_degrees = Vector3({camera_rotation})\nprojection = 1\nsize = {}\nfar = {}\ncurrent = true\n", distance * 1.8, (distance * 10.0).max(4000.0));
     for (i, (a, p)) in included.iter().enumerate() {
         let off = &p["offset"];
         let name = a["name"]
@@ -832,24 +961,31 @@ mod tests {
     fn showcase_selection_is_recursive_without_including_sibling_prefixes() {
         let root = super::super::tests::test_root("showcase_selection");
         let project = new_project_config("Test", "godot");
-        let config = ShowcaseConfig {
-            id: "showcase-test".into(),
-            folder: "Art/Props".into(),
-            spacing: 1.5,
-        };
+        let config: ShowcaseConfig = serde_json::from_value(serde_json::json!({
+            "id":"showcase-test", "folder":"Art/Props", "spacing":1.5
+        }))
+        .unwrap();
         let all = vec![
-            serde_json::json!({"folder":"Art/Props","id":"a"}),
-            serde_json::json!({"folder":"Art/Props/Sub","id":"b"}),
+            serde_json::json!({"folder":"Art/Props/Sub","id":"b","name":"B"}),
+            serde_json::json!({"folder":"Art/Props","id":"a","name":"A"}),
             serde_json::json!({"folder":"Art/Props2","id":"c"}),
         ];
         let job = showcase_job(&root, &project, &config, &all);
         assert_eq!(job["assets"].as_array().unwrap().len(), 2);
+        assert_eq!(job["assets"][0]["id"], "b");
+        assert_eq!(job["sortOrder"], "default");
+        assert!(job["aspectRatio"].is_null());
         let mut changed = config.clone();
-        changed.spacing = 3.0;
-        assert_ne!(
-            job["signature"],
-            showcase_job(&root, &project, &changed, &all)["signature"]
-        );
+        changed.options.sort_order = ShowcaseSortOrder::Folder;
+        changed.options.aspect_ratio = Some(2.0);
+        let sorted = showcase_job(&root, &project, &changed, &all);
+        assert_eq!(sorted["assets"][0]["id"], "a");
+        assert_eq!(sorted["aspectRatio"], 2.0);
+        changed.options.excluded_asset_ids.insert("a".into());
+        let filtered = showcase_job(&root, &project, &changed, &all);
+        assert_eq!(filtered["assets"], serde_json::json!([all[0]]));
+        assert_ne!(job["signature"], sorted["signature"]);
+        assert_ne!(sorted["signature"], filtered["signature"]);
     }
 
     #[test]
@@ -862,19 +998,45 @@ mod tests {
         })
         .unwrap();
         fs::create_dir_all(root.join("Art/Props/Sub")).unwrap();
+        fs::write(root.join("Art/Props/Sub/Loose.blend"), b"source").unwrap();
         let project_root = root.to_string_lossy().to_string();
+        let mut options = ShowcaseOptions {
+            spacing: 2.0,
+            aspect_ratio: Some(16.0 / 9.0),
+            sort_order: ShowcaseSortOrder::SmallFirst,
+            excluded_asset_ids: BTreeSet::from([asset_id_for_path("Art/Props/Sub/Loose.blend")]),
+        };
         configure_showcase(
             project_root.clone(),
             "Art/Props/Sub".into(),
             true,
-            Some(2.0),
+            Some(options.clone()),
         )
         .unwrap();
-        assert!(configure_showcase(project_root.clone(), "Art".into(), true, Some(-1.0)).is_err());
+        let invalid = ShowcaseOptions {
+            spacing: -1.0,
+            ..options.clone()
+        };
+        assert!(
+            configure_showcase(project_root.clone(), "Art".into(), true, Some(invalid)).is_err()
+        );
+        let invalid = ShowcaseOptions {
+            aspect_ratio: Some(0.0),
+            ..options.clone()
+        };
+        assert!(
+            configure_showcase(project_root.clone(), "Art".into(), true, Some(invalid)).is_err()
+        );
         assert!(configure_showcase(project_root.clone(), "../Outside".into(), true, None).is_err());
         let id = configurations(&root)[0].id.clone();
         rename_folder(project_root.clone(), "Art/Props".into(), "Items".into()).unwrap();
         assert_eq!(configurations(&root)[0].folder, "Art/Items/Sub");
+        options.excluded_asset_ids =
+            BTreeSet::from([asset_id_for_path("Art/Items/Sub/Loose.blend")]);
+        assert_eq!(
+            configurations(&root)[0].options.excluded_asset_ids,
+            options.excluded_asset_ids
+        );
         update_project_paths(
             project_root.clone(),
             ProjectPaths {
@@ -886,6 +1048,10 @@ mod tests {
         .unwrap();
         assert_eq!(configurations(&root)[0].folder, "Sources/Items/Sub");
         assert_eq!(configurations(&root)[0].id, id);
+        assert_eq!(
+            serde_json::to_value(&configurations(&root)[0].options).unwrap(),
+            serde_json::to_value(options).unwrap()
+        );
         configure_showcase(project_root, "Sources/Items/Sub".into(), false, None).unwrap();
         assert!(configurations(&root).is_empty());
         fs::remove_dir_all(root).unwrap();
@@ -954,13 +1120,34 @@ mod tests {
         let project = read_project_config(&root).unwrap();
         let assets = scan_assets(&root, &project, &read_export_state(&root)).unwrap();
         assert_eq!(assets.len(), 2);
-        let config = ShowcaseConfig {
+        let mut config = ShowcaseConfig {
             id: "showcase-test".into(),
             folder: "Art/Props".into(),
-            spacing: 2.0,
+            options: ShowcaseOptions {
+                spacing: 2.0,
+                aspect_ratio: Some(1.0),
+                sort_order: ShowcaseSortOrder::SmallFirst,
+                ..ShowcaseOptions::default()
+            },
         };
+        let tall = assets.iter().find(|asset| asset.name == "Tall").unwrap();
+        config.options.excluded_asset_ids.insert(tall.id.clone());
         write_json(&config_path(&root), &vec![config.clone()]).unwrap();
-        let job = showcase_job(&root, &project, &config, &entries(&root, &project, &assets));
+        let all = entries(&root, &project, &assets);
+        let job = showcase_job(&root, &project, &config, &all);
+        generate(&root, &project, &config, &job, Some(&blender)).unwrap();
+        let (scenes, _) = snapshot(&root, &project, &assets);
+        assert_eq!(scenes[0].assets.len(), 2);
+        assert_eq!(scenes[0].included_count, 1);
+        assert_eq!(scenes[0].godot_count, 1);
+        let godot_scene = root.join(scenes[0].godot_path.as_ref().unwrap());
+        assert!(!fs::read_to_string(&godot_scene)
+            .unwrap()
+            .contains("Tall.glb"));
+
+        config.options.excluded_asset_ids.clear();
+        write_json(&config_path(&root), &vec![config.clone()]).unwrap();
+        let job = showcase_job(&root, &project, &config, &all);
         assert!(
             job["assets"]
                 .as_array()

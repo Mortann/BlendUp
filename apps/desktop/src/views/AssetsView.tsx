@@ -26,7 +26,7 @@ import {
   X
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
-import type { AssetLod, AssetMutationResult, AssetVariant, BlendUpAsset, ProjectSnapshot } from "../blendup/types";
+import type { AssetLod, AssetMutationResult, AssetVariant, BlendUpAsset, ProjectSnapshot, ShowcaseOptions } from "../blendup/types";
 import { AssetCard, FolderCard } from "./assets/AssetVisual";
 import { ShowcaseCard } from "./assets/ShowcaseCard";
 import type { AssetDialogState, AssetExplorerSettings, AssetQuickFilter, ClipboardEntry, ContextMenuState, ContextTarget } from "./assets/model";
@@ -100,7 +100,7 @@ export function AssetsView({
   setSelectedAssetId,
   snapshot
 }: {
-  onConfigureShowcase: (folder: string, enabled: boolean, spacing?: number) => Promise<void>;
+  onConfigureShowcase: (folder: string, enabled: boolean, options?: ShowcaseOptions) => Promise<boolean>;
   onRebuildShowcase: (id: string) => Promise<boolean>;
   onOpenShowcase: (id: string, editor: "blender" | "godot") => Promise<void>;
   showcaseBusyIds: string[];
@@ -432,7 +432,15 @@ export function AssetsView({
               <div className={`asset-items ${settings.displayMode} thumb-${settings.thumbnailSize}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnFolder(event, currentPath)}>
                 {visibleFolders.map((folder) => <FolderCard assetCount={folderAssetCount(snapshot.assets, folder)} displayMode={settings.displayMode} key={folder} name={baseName(folder)} onContextMenu={(event) => openMenu(event, { kind: "folder", path: folder })} onDropAsset={(assetId) => void onMoveAsset(assetId, folder)} onDropFolder={(source) => void onMoveFolder(source, folder)} onOpen={() => navigate(folder)} onSelect={() => { setSelectedAssetId(null); setActiveTarget({ kind: "folder", path: folder }); }} path={folder} previewAssets={snapshot.assets.filter((asset) => assetBrowserFolder(asset) === folder || assetBrowserFolder(asset).startsWith(`${folder}/`)).slice(0, 4)} projectRoot={snapshot.projectRoot} thumbnailSize={settings.thumbnailSize} />)}
                 {visibleAssets.map((asset) => <AssetCard asset={asset} displayMode={settings.displayMode} exporting={exportingAssetIds.includes(asset.id)} favorite={favorites.includes(asset.id)} key={asset.id} onContextMenu={(event) => openMenu(event, { kind: "asset", assetId: asset.id })} onExport={() => void (standalone ? onExportAsset(asset.id) : onExportAssetVersions(asset.id))} onOpen={() => onOpenAsset(asset)} onSelect={() => setSelectedAssetId(asset.id)} onToggleFavorite={() => toggleFavorite(asset.id)} projectRoot={snapshot.projectRoot} selected={asset.id === selectedAssetId} thumbnailSize={settings.thumbnailSize} />)}
-                {showShowcase && currentShowcase ? <ShowcaseCard key={currentShowcase.id} scene={currentShowcase} busy={showcaseBusyIds.includes(currentShowcase.id)} onOpen={(editor) => void onOpenShowcase(currentShowcase.id, editor)} onRefresh={() => void onRebuildShowcase(currentShowcase.id)} onConfigure={(enabled, spacing) => void onConfigureShowcase(currentPath, enabled, spacing)} onExportMissing={async () => { for (const asset of snapshot.assets.filter((asset) => (assetBrowserFolder(asset) === currentPath || assetBrowserFolder(asset).startsWith(`${currentPath}/`)) && asset.status !== "exported")) await onExportAsset(asset.id); }} /> : null}
+                {showShowcase && currentShowcase ? <ShowcaseCard
+                  key={currentShowcase.id}
+                  scene={currentShowcase}
+                  busy={showcaseBusyIds.includes(currentShowcase.id)}
+                  onOpen={(editor) => void onOpenShowcase(currentShowcase.id, editor)}
+                  onRefresh={() => void onRebuildShowcase(currentShowcase.id)}
+                  onConfigure={(enabled, options) => onConfigureShowcase(currentShowcase.folder, enabled, options)}
+                  onExportMissing={async (ids) => { for (const id of ids) await onExportAsset(id); }}
+                /> : null}
               </div>
             ) : (
               <div className="empty-state"><FileBox size={35} /><h2>{query || filter !== "all" ? "Aucun résultat" : "Ce dossier est vide"}</h2><p>{query ? "Essaie une recherche plus large." : "Crée un asset Blender ou un dossier pour commencer."}</p>{!query && filter === "all" ? <div className="button-row"><button onClick={() => setDialog({ kind: "createFolder", parent: currentPath })} type="button"><FolderPlus size={15} /> Dossier</button><button className="primary" onClick={() => setDialog({ kind: "createAsset", parent: currentPath })} type="button"><Plus size={15} /> Asset</button></div> : null}</div>

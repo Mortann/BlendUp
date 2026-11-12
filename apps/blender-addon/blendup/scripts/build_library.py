@@ -249,7 +249,9 @@ def build_showcase(manifest):
             bounds.append(bound)
         except Exception as error:
             errors.append({"id": asset["id"], "name": asset["name"], "error": str(error)})
-    offsets, floor = arrange(bounds, manifest.get("spacing", 1.5))
+    small_first = manifest.get("sortOrder") == "smallFirst"
+    offsets, floor = arrange(bounds, manifest.get("spacing", 1.5),
+                             aspect_ratio=manifest.get("aspectRatio"), small_first=small_first)
     placements = []
     for (asset, collection), offset, bound in zip(assets, offsets, bounds):
         instance = bpy.data.objects.new(asset["name"], None)
@@ -269,11 +271,12 @@ def build_showcase(manifest):
     bpy.context.object.rotation_euler = (math.radians(25), math.radians(-30), 0)
     bpy.context.object.data.energy = 2
     distance = max(*floor, max((high[2] - low[2] for low, high in bounds), default=1))
-    bpy.ops.object.camera_add(location=(distance, -distance, distance))
+    bpy.ops.object.camera_add(location=(0 if small_first else distance, -distance, distance))
     camera = bpy.context.object
     camera.rotation_euler = (-camera.location).to_track_quat("-Z", "Y").to_euler()
     camera.data.type = "ORTHO"
     camera.data.ortho_scale = distance * 1.8
+    camera.data.clip_end = max(1000, distance * 10)
     bpy.context.scene.camera = camera
     bpy.context.scene.world = bpy.data.worlds.new("Showcase")
     bpy.context.scene.world.color = (0.3, 0.3, 0.3)
@@ -282,6 +285,8 @@ def build_showcase(manifest):
             if area.type == "VIEW_3D":
                 area.spaces.active.region_3d.view_distance = distance * 1.6
                 area.spaces.active.region_3d.view_location = (0, 0, 0)
+                if small_first:
+                    area.spaces.active.region_3d.view_rotation = camera.rotation_euler.to_quaternion()
                 area.spaces.active.clip_end = max(1000, distance * 10)
     temporary = target.with_name("Showcase.building.blend")
     bpy.context.preferences.filepaths.save_version = 0

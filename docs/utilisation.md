@@ -120,11 +120,11 @@ Les rapports sont conservés dans `.blendup/uv-reports`. Un fichier modifié, un
 
 Dans l’explorateur, ouvre un dossier puis active **Showcase** dans la barre du haut, ou utilise **clic droit → Activer le Showcase** sur le dossier. Une carte violette apparaît après ses dossiers et assets. Elle comprend les assets principaux de tous les sous-dossiers ; les sauvegardes `.blend1`, variantes et LOD n’ajoutent pas de doublons.
 
-BlendUp dispose les objets sur un sol neutre, conserve leur taille, les centre dans des cases adaptées à leurs dimensions et les pose sur le sol. Les options de la carte règlent l’espacement minimum. Un éclairage et une caméra permettent aussi de voir l’ensemble.
+BlendUp dispose les objets à leur taille réelle sur un sol neutre, avec un éclairage et une caméra. Dans **Options de la scène**, coche les assets à afficher, règle l’espacement minimum et choisis la forme du sol (automatique, carré, paysage, portrait ou ratio personnalisé). Tu peux aussi placer les objets les plus bas devant ou trier les assets par sous-dossier. Clique sur **Appliquer** pour enregistrer ces réglages et régénérer les scènes.
 
 - **Blender** ouvre `.blendup/showcases/<id>/Showcase.blend`, avec des instances liées aux sources.
 - Dans un projet Godot, **Godot** ouvre automatiquement `BlendUp/Showcases/<id>.tscn` dans le moteur. Lors du premier lancement, choisis l’exécutable si nécessaire. Le panneau Godot permet ensuite de réutiliser la session ouverte.
-- La scène Godot référence uniquement les GLB à jour. Les exports absents, anciens ou bloqués sont comptés sur la carte ; corrige-les et exporte-les pour les ajouter. La scène Blender reste indépendante du contrôle des exports.
+- La scène Godot référence les GLB à jour des assets cochés. La carte compte les exports absents, anciens ou bloqués parmi cette sélection. La scène Blender utilise directement les sources cochées.
 - Les scènes se régénèrent après un changement de sources, d’exports ou d’options lorsque BlendUp est ouvert. **Régénérer** permet de relancer manuellement une génération échouée.
 
 Ces scènes sont générées : fais-en une copie si tu veux modifier durablement leur disposition. Désactiver l’option retire la carte et arrête les mises à jour ; les fichiers déjà générés sont conservés. Le réglage suit les déplacements et renommages des dossiers et du dossier sources.

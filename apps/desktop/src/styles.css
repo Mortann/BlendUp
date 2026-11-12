@@ -882,7 +882,13 @@ h1, h2, p { margin-top: 0; }
 .showcase-content details { margin-top: 10px; }
 .showcase-content summary { cursor: pointer; color: #66517e; }
 .showcase-content label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 9px 0; }
-.showcase-content input { min-width: 0; width: 64px; }
+.showcase-options input[type="number"] { min-width: 0; width: 72px; }
+.showcase-options select { max-width: 100%; }
+.showcase-options fieldset { min-width: 0; margin: 10px 0; border: 1px solid #d8cde8; border-radius: 8px; }
+.showcase-options fieldset .showcase-actions { margin: 2px 0 6px; }
+.showcase-assets { max-height: 200px; overflow-y: auto; padding: 0; margin: 0; list-style: none; }
+.showcase-assets label { flex-wrap: nowrap; cursor: pointer; margin: 0; padding: 5px 2px; overflow-wrap: anywhere; }
+.showcase-assets small { display: block; color: #675d74; }
 .asset-items.list .showcase-card, .asset-items.compact .showcase-card { display: flex; }
 .asset-items.list .showcase-visual, .asset-items.compact .showcase-visual { width: 120px; min-width: 120px; }
 .asset-items.list .showcase-content, .asset-items.compact .showcase-content { flex: 1; }

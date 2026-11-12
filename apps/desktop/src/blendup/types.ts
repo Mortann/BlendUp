@@ -139,10 +139,19 @@ export interface ProjectSnapshot {
   integrations?: EditorIntegrations;
 }
 
+export interface ShowcaseOptions {
+  spacing: number;
+  aspectRatio: number | null;
+  sortOrder: "default" | "smallFirst" | "folder";
+  excludedAssetIds: string[];
+}
+
 export interface FolderShowcase {
-  id: string; folder: string; spacing: number;
+  id: string; folder: string;
+  options: ShowcaseOptions;
+  assets: { id: string; name: string; folder: string; godotReady: boolean }[];
   status: "ready" | "outdated" | "generating" | "error";
-  assetCount: number; includedCount: number; godotCount: number;
+  includedCount: number; godotCount: number;
   blenderPath: string; godotPath?: string; error?: string;
 }
 

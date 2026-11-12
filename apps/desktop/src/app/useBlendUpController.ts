@@ -53,6 +53,7 @@ import type {
   BlendUpProject,
   GameEngine,
   ProjectSnapshot,
+  ShowcaseOptions,
   ToolDetection,
   UserSettings
 } from "../blendup/types";
@@ -244,13 +245,14 @@ export function useBlendUpController() {
 
   const [showcaseBusyIds, setShowcaseBusyIds] = useState<string[]>([]);
   const [integrationBusy, setIntegrationBusy] = useState(false);
-  const handleConfigureShowcase = async (folder: string, enabled: boolean, spacing?: number) => {
-    if (!project) return;
+  const handleConfigureShowcase = async (folder: string, enabled: boolean, options?: ShowcaseOptions): Promise<boolean> => {
+    if (!project) return false;
     try {
-      const message = await configureShowcase(project.projectRoot, folder, enabled, spacing);
+      const message = await configureShowcase(project.projectRoot, folder, enabled, options);
       setOperationMessage({ tone: "success", title: message });
       await refreshProject();
-    } catch (error) { showError("Option Showcase impossible", error); }
+      return true;
+    } catch (error) { showError("Option Showcase impossible", error); return false; }
   };
   const handleRebuildShowcase = async (id: string): Promise<boolean> => {
     if (!project || showcaseBusyIds.includes(id)) return false;

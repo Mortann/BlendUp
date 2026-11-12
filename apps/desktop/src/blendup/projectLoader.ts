@@ -12,6 +12,7 @@ import type {
   ExportAssetResult,
   GameEngine,
   ProjectSnapshot,
+  ShowcaseOptions,
   ToolDetection,
   UpdateProjectEngineResult,
   UserSettings
@@ -19,8 +20,8 @@ import type {
 
 const userSettingsStorageKey = "blendup:user-settings";
 
-export const configureShowcase = (projectRoot: string, folder: string, enabled: boolean, spacing = 1.5) =>
-  invoke<string>("configure_showcase", { projectRoot, folder, enabled, spacing });
+export const configureShowcase = (projectRoot: string, folder: string, enabled: boolean, options?: ShowcaseOptions) =>
+  invoke<string>("configure_showcase", { projectRoot, folder, enabled, options });
 export const rebuildShowcase = (projectRoot: string, id: string, blenderPath?: string) =>
   invoke<string>("rebuild_showcase", { projectRoot, id, blenderPath });
 export const setupEditorIntegration = (projectRoot: string, editor: "godot" | "blender") =>

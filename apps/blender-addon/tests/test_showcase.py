@@ -62,6 +62,25 @@ class ShowcaseTests(unittest.TestCase):
 
     def test_empty_showcase_has_a_floor(self):
         self.assertEqual(arrange([]), ([], (4.0, 4.0)))
+        self.assertEqual(arrange([], aspect_ratio=2), ([], (8.0, 4.0)))
+
+    def test_shaped_layout_keeps_small_assets_in_front_at_real_scale(self):
+        bounds = [((10, 10, 2), (18, 11, 10)), ((-3, 4, 5), (-2, 6, 6)), ((0, 0, 0), (1, 1, 2))]
+        for ratio in (0.5, 1, 2, 10):
+            with self.subTest(ratio=ratio):
+                offsets, floor = arrange(bounds, 1, aspect_ratio=ratio, small_first=True)
+                self.assertAlmostEqual(floor[0] / floor[1], ratio)
+                placed = [tuple(tuple(point[i] + off[i] for i in range(3)) for point in bound)
+                          for bound, off in zip(bounds, offsets)]
+                self.assertLess(placed[1][0][1], placed[0][0][1])
+                for low, high in placed:
+                    self.assertEqual(low[2], 0)
+                    for axis in (0, 1):
+                        self.assertGreaterEqual(low[axis], -floor[axis] / 2)
+                        self.assertLessEqual(high[axis], floor[axis] / 2)
+                for i, (a, b) in enumerate(placed):
+                    for c, d in placed[i + 1:]:
+                        self.assertTrue(any(b[axis] + 1 <= c[axis] or d[axis] + 1 <= a[axis] for axis in (0, 1)))
 
     def test_library_excludes_backups_versions_and_uses_custom_roots(self):
         with tempfile.TemporaryDirectory() as directory:

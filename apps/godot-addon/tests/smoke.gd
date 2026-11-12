@@ -9,7 +9,12 @@ func run_test() -> void:
     assert(packed != null, "Generated Showcase must load")
     var scene := packed.instantiate()
     root.add_child(scene)
-    assert(scene.get_node("Sol") is MeshInstance3D)
+    var floor_node := scene.get_node("Sol") as MeshInstance3D
+    assert(floor_node != null)
+    var floor_mesh := floor_node.mesh as PlaneMesh
+    assert(is_equal_approx(floor_mesh.size.x, floor_mesh.size.y))
+    assert(is_equal_approx(scene.get_node("Camera").position.x, 0.0))
+    var depths := {}
     var count := 0
     for child in scene.get_children():
         if not child.scene_file_path.is_empty():
@@ -19,7 +24,9 @@ func run_test() -> void:
             for mesh in meshes:
                 var bounds: AABB = mesh.global_transform * mesh.get_aabb()
                 assert(abs(bounds.position.y) < 0.001, "Export instance must rest on the floor")
+                depths[str(child.name).get_slice("_", 0)] = bounds.get_center().z
     assert(count == 2)
+    assert(depths["Small"] > depths["Tall"], "The smaller asset must be closer to the camera")
     var drag_script := load("res://addons/blendup/drag_list.gd") as Script
     var list: ItemList = drag_script.new()
     root.add_child(list)
